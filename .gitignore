@@ -1,0 +1,32 @@
+# Logs
+*.log
+
+# Entorno virtual
+.env
+env/
+.venv/
+autodrome_env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Archivos temporales o de sistema
+*.swp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Archivos de configuración sensibles
+acme.json
+
+# Archivos de compilación
+*.egg-info/
+dist/
+build/
+
+# Archivos de test temporales
+.pytest_cache/
+coverage.xml
+htmlcov/
