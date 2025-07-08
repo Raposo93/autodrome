@@ -2,3 +2,5 @@ requests
 python-dotenv
 mutagen
 yt-dlp
+flask
+flask-cors
