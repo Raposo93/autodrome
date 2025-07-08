@@ -1,14 +1,14 @@
-from yt_api import YTApi
-from metadata_service import MetadataService
-from downloader import Downloader
-from organizer import Organizer
-from logger import logger
+from autodrome.yt_api import YTApi
+from autodrome.metadata_service import MetadataService
+from autodrome.yt_downloader import YTDownloader
+from autodrome.organizer import Organizer
+from autodrome.logger import logger
 
 class Autodrome:
-    def __init__(self, yt_api, metadata_service, downloader, organizer):
+    def __init__(self, yt_api, metadata_service, yt_downloader, organizer):
         self.yt_api = yt_api
         self.metadata_service = metadata_service
-        self.downloader = downloader
+        self.downloader = yt_downloader
         self.organizer = organizer
     
     def run(self):
@@ -82,7 +82,7 @@ class Autodrome:
     
 yt_api = YTApi()
 metadata_service = MetadataService()
-downloader = Downloader()
+downloader = YTDownloader()
 organizer = Organizer()
 
 # Instanciar Autodrome con estos objetos

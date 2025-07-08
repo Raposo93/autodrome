@@ -30,3 +30,5 @@ build/
 .pytest_cache/
 coverage.xml
 htmlcov/
+/examples
+.vscode

@@ -1,9 +1,7 @@
-import config
-from http_client import HTTP_client
-from models import Playlist
-from logger import logger
-
-
+from autodrome import config
+from autodrome.http_client import HTTP_client
+from autodrome.models.playlist import Playlist
+from autodrome.logger import logger
 
 conf = config.Config()
 
@@ -20,7 +18,7 @@ class YTApi:
             "part": "snippet",
             "q": query,
             "type": "playlist",
-            "maxResults": 5,
+            "maxResults": 10,
             "key": self.google_api_key
         }
         logger.debug(f"Searching playlists for query: {query}")
@@ -34,10 +32,14 @@ class YTApi:
         
         results = []
         for item in data.get("items", []):
-            playlist_id = item["id"]["playlistId"]
+            try:
+                playlist_id = item["id"]["playlistId"]
+            except KeyError as e:
+                logger.warning(f"Malformed item (missing key): {e} - {item}")
+                continue
             title = item["snippet"]["title"]
             channel = item["snippet"]["channelTitle"]
-            # track_count lo puedes dejar None si no tienes ese dato aún
+            thumbnail = item["snippet"]["thumbnails"].get("medium", {}).get("url")
             track_count = self.get_track_count(playlist_id)
             results.append(
                 Playlist(
@@ -45,6 +47,7 @@ class YTApi:
                     title=title,
                     channel=channel,
                     url=f"https://www.youtube.com/playlist?list={playlist_id}",
+                    thumbnail=thumbnail,
                     track_count=track_count
                 )
             )
@@ -72,13 +75,3 @@ class YTApi:
         except Exception as e:
             logger.warning(f"Could not fetch track count for playlist {playlist_id}: {e}")
             return None
-
-        
-        return track_count
-
-    
-
-########################
-
-# ytApi = YT_api()
-# print(ytApi.google_api_key)

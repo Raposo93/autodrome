@@ -1,4 +1,4 @@
-import config
+from autodrome import config
 import requests
 
 conf = config.Config()

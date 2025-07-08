@@ -1,11 +1,9 @@
 import subprocess
-from logger import logger
-from contextlib import contextmanager
+from autodrome.logger import logger
 from tempfile import TemporaryDirectory
 import os
 
-class Downloader:
-
+class YTDownloader:
     def create_temp_folder(self):
         return TemporaryDirectory()
 

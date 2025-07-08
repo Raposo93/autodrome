@@ -3,7 +3,10 @@ import os
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3, APIC, error
 from mutagen.mp3 import MP3
-from logger import logger
+from autodrome.logger import logger
+from autodrome import config
+
+conf = config.Config()
 
 class Organizer:
     def tag_and_rename(self, folder_path, artist, album, tracks, cover_path=None):
@@ -58,28 +61,26 @@ class Organizer:
         logger.debug(f"Cover art embedded successfully in '{mp3_file_path}'")
 
 
-    def move_to_library(self, temp_folder, artist, album, destination):
+    def move_to_library(self, temp_folder, artist, album):
         """
         Mueve la carpeta temporal con la música a la carpeta de biblioteca,
         organizada por artista y álbum.
         """
+        destination = conf.library_path
         artist_folder = os.path.join(destination, self._sanitize_filename(artist))
         album_folder = os.path.join(artist_folder, self._sanitize_filename(album))
 
         try:
             logger.debug(f"Moving album folder from '{temp_folder}' to '{album_folder}'")
 
-            # Crear carpetas si no existen
             os.makedirs(album_folder, exist_ok=True)
 
-            # Mover todo el contenido de la carpeta temporal a la carpeta destino
             for item in os.listdir(temp_folder):
                 src = os.path.join(temp_folder, item)
                 dst = os.path.join(album_folder, item)
                 logger.debug(f"Moving '{src}' to '{dst}'")
                 shutil.move(src, dst)
 
-            # Opcional: borrar carpeta temporal si está vacía
             if not os.listdir(temp_folder):
                 os.rmdir(temp_folder)
                 logger.debug(f"Deleted empty temporary folder '{temp_folder}'")
