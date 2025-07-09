@@ -123,7 +123,8 @@ export default {
         playlist_url: this.selectedPlaylist.url,
         artist: this.selectedRelease.artist,
         album: this.selectedRelease.title,
-        release_id: this.selectedRelease.id
+        release_id: this.selectedRelease.id,
+        track_count: this.selectedPlaylist.track_count || null
       })
 
       try {
@@ -131,7 +132,8 @@ export default {
           playlist_url: this.selectedPlaylist.url,
           artist: this.selectedRelease.artist,
           album: this.selectedRelease.title,
-          release_id: this.selectedRelease.id
+          release_id: this.selectedRelease.id,
+          track_count: this.selectedPlaylist.track_count || null
         })
         this.downloadSuccess = true
       } catch (e) {
