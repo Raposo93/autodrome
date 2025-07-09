@@ -39,7 +39,7 @@ class Organizer:
 
             
     def embed_cover_art(self, mp3_file_path, cover_image_path):
-        logger.debug(f"Embedding cover art from '{cover_image_path}' into '{mp3_file_path}'")
+        # logger.debug(f"Embedding cover art from '{cover_image_path}' into '{mp3_file_path}'")
         audio = MP3(mp3_file_path, ID3=ID3)
 
         try:

@@ -17,6 +17,6 @@ class Config:
         log_level = getattr(logging, log_level_str, logging.INFO)
 
         logger.setLevel(log_level)
-        logger.info(f"Config loaded. User-Agent: {self.user_agent}")
-        logger.info(f"Library path: {self.library_path}")
+        # logger.info(f"Config loaded. User-Agent: {self.user_agent}")
+        # logger.info(f"Library path: {self.library_path}")
 

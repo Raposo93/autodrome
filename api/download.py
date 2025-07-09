@@ -17,6 +17,8 @@ def download():
     artist = data.get("artist")
     album = data.get("album")
     release_id = data.get("release_id")
+    track_count = data.get("track_count")  # <- Aquí
+
 
     if not all([playlist_url, artist, album, release_id]):
         return jsonify({"error": "Missing required parameters"}), 400
@@ -25,7 +27,7 @@ def download():
         tracks = metadata_service.get_tracks(release_id)
 
         with yt_downloader.create_temp_folder() as tmpdir:
-            yt_downloader.download_playlist(playlist_url, tmpdir)
+            yt_downloader.download_playlist(playlist_url, tmpdir, total=track_count)
             cover_path = metadata_service.get_cover_art(release_id)  # Ajusta para que devuelva path local o None
             organizer.tag_and_rename(tmpdir, artist, album, tracks, cover_path)
             organizer.move_to_library(tmpdir, artist, album)
