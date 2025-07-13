@@ -1,5 +1,5 @@
 class Track:
-    def __init__(self, number, title):
+    def __init__(self, number: int, title: str):
         self.number = number
         self.title = title
 
