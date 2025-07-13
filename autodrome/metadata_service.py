@@ -16,7 +16,8 @@ class MetadataService:
     def search_releases(self, artist: Optional[str], album: Optional[str]):
         query = self._build_mb_query(artist, album)
         data = self._fetch_releases_data(query)
-        releases = self._parse_releases(data, artist)     
+        releases = self._parse_releases(data, artist)
+        # logger.debug(f"releases: {releases}")     
         return releases
 
     def get_tracks(self, release_id: str) -> List[Track]:
@@ -55,11 +56,11 @@ class MetadataService:
         releases = []
         for r in data.get("releases", []):
             release_id = r["id"]
-            tracks = self.get_tracks(release_id)  # llama al método ya existente
+            tracks = self.get_tracks(release_id)
 
             releases.append(
                 Release(
-                    id=release_id,
+                    release_id=release_id,
                     title=r.get("title", "Unknown"),
                     date=r.get("date", "Unknown"),
                     artist=r.get("artist-credit", [{}])[0].get("name", artist),
@@ -85,7 +86,6 @@ class MetadataService:
 
         def get_track_sort_key(t):
             number_str = t.get("number", "")
-            # Tomar parte antes del punto si existe (e.g. "1.1" -> "1")
             number_main = number_str.split(".")[0] if number_str else ""
             position = t.get("position", 0)
 
@@ -101,7 +101,7 @@ class MetadataService:
 
         for medium in data.get("media", []):
             for t in medium.get("tracks", []):
-                logger.debug(f"response trackRaw: {t}")
+                # logger.debug(f"response trackRaw: {t}")
 
                 sort_key = get_track_sort_key(t)
                 title = t.get("title", "Unknown")

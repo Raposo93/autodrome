@@ -1,3 +1,6 @@
+from typing import List, Optional
+
+
 class Release:
     def __init__(self, release_id: str, title: str, date: str, artist: str, tracks: Optional[List[dict]] = None):
         self.id = release_id
