@@ -1,11 +1,12 @@
 from flask import Blueprint, request, jsonify
+from autodrome.http_client import HTTP_client
 from autodrome.metadata_service import MetadataService
 from autodrome.yt_api import YTApi
 from autodrome.logger import logger
 
 search_bp = Blueprint("search", __name__)
-metadata_service = MetadataService()
-yt_api = YTApi()
+metadata_service = MetadataService(http_client=HTTP_client())
+yt_api = YTApi(http_client=HTTP_client)
 
 @search_bp.route("/")
 def combined_search():

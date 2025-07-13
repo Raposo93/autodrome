@@ -7,8 +7,8 @@ import os
 
 class MetadataService:
     
-    def __init__(self):
-        self.http_client = HTTP_client() 
+    def __init__(self, http_client: HTTP_client):
+        self.http_client = http_client
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.cover_dir = os.path.abspath(os.path.join(self.base_dir, '..', 'covers'))
 
@@ -19,6 +19,17 @@ class MetadataService:
         releases = self._parse_releases(data, artist)     
         return releases
 
+    def get_tracks(self, release_id: str) -> List[Track]:
+        data = self._fetch_tracks_data(release_id)
+        tracks = self._parse_tracks(data)
+        return tracks
+    
+    def get_cover_art(self, release_id: str) -> Optional[str]:
+        path = self._cover_art_path(release_id)
+        if self._download_cover_art(release_id, path):
+            return path
+        return None
+    
     def _build_mb_query(self, artist: Optional[str], album: Optional[str]) -> str:
         terms = []
         if album:
@@ -57,11 +68,6 @@ class MetadataService:
             )
         return releases
 
-    def get_tracks(self, release_id: str) -> List[Track]:
-        data = self._fetch_tracks_data(release_id)
-        tracks = self._parse_tracks(data)
-        return tracks
-    
     def _fetch_tracks_data(self, release_id: str) -> Dict[str, Any]:
         url = f"https://musicbrainz.org/ws/2/release/{release_id}"
         params = {
@@ -104,12 +110,6 @@ class MetadataService:
         tracks.sort(key=lambda tr: tr.number)
         return tracks
 
-    def get_cover_art(self, release_id: str) -> Optional[str]:
-        path = self._cover_art_path(release_id)
-        if self._download_cover_art(release_id, path):
-            return path
-        return None
-    
     def _cover_art_path(self, release_id: str) -> str:
         os.makedirs(self.cover_dir, exist_ok=True)
         return os.path.join(self.cover_dir, f"{release_id}.jpg")

@@ -1,9 +1,10 @@
 from flask import Blueprint, request, jsonify
+from autodrome.http_client import HTTP_client
 from autodrome.metadata_service import MetadataService
 from autodrome.logger import logger
 
 tracks_bp = Blueprint("tracks", __name__)
-metadata_service = MetadataService()
+metadata_service = MetadataService(http_client=HTTP_client())
 
 @tracks_bp.route("/")
 

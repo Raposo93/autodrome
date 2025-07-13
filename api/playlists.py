@@ -1,9 +1,10 @@
 from flask import Blueprint, request, jsonify
+from autodrome.http_client import HTTP_client
 from autodrome.yt_api import YTApi
 from autodrome.logger import logger
 
 playlists_bp = Blueprint("playlists", __name__)
-yt_api = YTApi()
+yt_api = YTApi(http_client=HTTP_client)
 
 @playlists_bp.route("/")
 def playlists():

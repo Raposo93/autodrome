@@ -6,12 +6,11 @@ from autodrome.logger import logger
 conf = config.Config()
 
 class YTApi:
-    def __init__(self):
+    def __init__(self, http_client: HTTP_client):
+        self.http_client = http_client
         self.google_api_key = conf.google_api_key
         self.base_url = "https://www.googleapis.com/youtube/v3"
-        self.http_client = HTTP_client()
 
-    
     def search_playlist(self, query):
         url = f"{self.base_url}/search"
         params = {

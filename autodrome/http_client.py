@@ -4,7 +4,7 @@ import requests
 conf = config.Config()
 
 class HTTP_client:
-    def __init__(self, api_key=None):
+    def __init__(self, api_key: str=None):
         self.api_key = api_key
         self.headers = {
             "User-Agent": conf.user_agent
