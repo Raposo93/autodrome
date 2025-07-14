@@ -89,23 +89,12 @@ export default {
         this.playlists = response.data.playlists || []
         this.releases = response.data.releases || []
 
-        for (const rel of this.releases) {
-          this.fetchCoverArt(rel)
-        }
       } catch (e) {
         this.errorPlaylists = "Error fetching playlists"
         this.errorReleases = "Error fetching releases"
       } finally {
         this.loadingPlaylists = false
         this.loadingReleases = false
-      }
-    },
-    async fetchCoverArt(release) {
-      try {
-        const res = await api.getCoverArt(release.id)
-        release.cover_art_path = res.data.path
-      } catch {
-        release.cover_art_path = this.defaultReleaseImg
       }
     },
     selectPlaylist(pl) {

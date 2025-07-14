@@ -33,6 +33,17 @@ class MetadataService:
         except Exception as e:
             logger.error(f"Failed to download cover art for {release_id}: {e}")
             return None
+    
+    def _get_cover_url(self, release_id: str) -> Optional[str]:
+        url = f"https://coverartarchive.org/release/{release_id}"
+        try:
+            data = self.http_client.get(url)
+            for image in data.get("images", []):
+                if image.get("front", False):
+                    return image.get("image")
+        except Exception as e:
+            logger.warning(f"Could not fetch cover URL for {release_id}: {e}")
+        return None
 
     def _build_mb_query(self, artist: Optional[str], album: Optional[str]) -> str:
         terms = []
@@ -59,13 +70,14 @@ class MetadataService:
         releases = []
         for r in data.get("releases", []):
             release_id = r["id"]
+            cover_url = self._get_cover_url(release_id)
             tracks = self.get_tracks(release_id)
-
             releases.append(
                 Release(
                     release_id=release_id,
                     title=r.get("title", "Unknown"),
                     date=r.get("date", "Unknown"),
+                    cover_url=cover_url,
                     artist=r.get("artist-credit", [{}])[0].get("name", artist),
                     tracks=[t.to_dict() for t in tracks]
                 )

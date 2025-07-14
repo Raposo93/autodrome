@@ -2,10 +2,11 @@ from typing import List, Optional
 
 
 class Release:
-    def __init__(self, release_id: str, title: str, date: str, artist: str, tracks: Optional[List[dict]] = None):
+    def __init__(self, release_id: str, title: str, date: str, artist: str,cover_url: Optional[str], tracks: Optional[List[dict]] = None):
         self.id = release_id
         self.title = title
         self.date = date
+        self.cover_url = cover_url
         self.artist = artist
         self.tracks = tracks or []
 

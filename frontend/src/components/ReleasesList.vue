@@ -11,7 +11,7 @@
         @click="$emit('select', rel)"
       >
         <img 
-          :src="`/api/covers_dir/${rel.id}.jpg`" 
+          :src="rel.cover_url" 
           @error="handleImageError"
           alt="Release cover" 
           width="70"
