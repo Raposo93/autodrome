@@ -27,10 +27,13 @@ class MetadataService:
     
     def get_cover_art(self, release_id: str) -> Optional[str]:
         path = self._cover_art_path(release_id)
-        if self._download_cover_art(release_id, path):
+        try:
+            self._download_cover_art(release_id, path)
             return path
-        return None
-    
+        except Exception as e:
+            logger.error(f"Failed to download cover art for {release_id}: {e}")
+            return None
+
     def _build_mb_query(self, artist: Optional[str], album: Optional[str]) -> str:
         terms = []
         if album:
@@ -116,13 +119,9 @@ class MetadataService:
     
     def _download_cover_art(self, release_id: str, path: str) -> bool:
         url = f"https://coverartarchive.org/release/{release_id}/front"
-        try:
-            response = self.http_client.get_binary(url)
-            with open(path, "wb") as f:
-                for chunk in response.iter_content(1024):
-                    f.write(chunk)
-            logger.info(f"Cover art saved to {path}")
-            return True
-        except Exception as e:
-            logger.warning(f"Cover art not available for release {release_id}: {e}")
-            return False
+        response = self.http_client.get_binary(url)
+        with open(path, "wb") as f:
+            for chunk in response.iter_content(1024):
+                f.write(chunk)
+        logger.info(f"Cover art saved to {path}")
+        
