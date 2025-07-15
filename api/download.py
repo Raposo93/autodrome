@@ -1,4 +1,6 @@
 from flask import Blueprint, request, jsonify
+from autodrome.http_client import HTTP_client
+from autodrome.metadata_service import MetadataService
 from autodrome.yt_downloader import YTDownloader
 from autodrome.organizer import Organizer
 from autodrome.logger import logger
@@ -8,6 +10,7 @@ download_bp = Blueprint("download", __name__)
 
 controller = DownloaderController(
     downloader=YTDownloader(),
+    metadata_service=MetadataService(http_client=HTTP_client()),
     organizer=Organizer()
 )
 

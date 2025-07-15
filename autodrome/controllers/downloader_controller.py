@@ -2,13 +2,12 @@ from typing import Any, Dict, List, Optional
 from autodrome.logger import logger
 from autodrome.models.track import Track
 from autodrome.services.redis_cache import RedisCache
-from autodrome.models.release import Release
-import os
 
 class DownloaderController:
-    def __init__(self, downloader, organizer):
+    def __init__(self, downloader, organizer, metadata_service):
         self.downloader = downloader
         self.organizer = organizer
+        self.metadata_service = metadata_service
         self.redis_cache = RedisCache()
 
     def download_and_tag(self, playlist_url: str, artist: str, album: str, release_id: str, track_count: Optional[int] = None) -> None:
@@ -25,7 +24,7 @@ class DownloaderController:
         with self.downloader.create_temp_folder() as tmpdir:
             self.downloader.download_playlist(playlist_url, tmpdir, total=track_count)
 
-            cover_path: str = os.path.join("covers", f"{release_id}.jpg")  # o usar release.cover_url si tienes URL completa
+            cover_path = self.metadata_service.get_cover_art(release_id)
 
             self.organizer.tag_and_rename(tmpdir, artist, album, tracks, cover_path)
             self.organizer.move_to_library(tmpdir, artist, album)

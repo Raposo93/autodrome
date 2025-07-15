@@ -42,16 +42,27 @@ class MetadataService:
                 self.redis_cache.set_release(release_id, cache_data)
 
         return releases
-    
+
     def get_cover_art(self, release_id: str) -> Optional[str]:
-        path = self._cover_art_path(release_id)
+        path = self.get_cover_path(release_id)  # Cambiado aquí
+        if os.path.exists(path):
+            return os.path.abspath(path)
         try:
             self._download_cover_art(release_id, path)
-            return os.path.abspath(path)
+            return os.path.abspath(path) if os.path.exists(path) else None
         except Exception as e:
             logger.error(f"Failed to download cover art for {release_id}: {e}")
             return None
 
+    def should_download_cover(self, release_id: str) -> bool:
+        path = self.get_cover_path(release_id)  # Cambiado aquí
+        return not os.path.exists(path)
+
+    def get_cover_path(self, release_id: str) -> str:
+        os.makedirs(self.cover_dir, exist_ok=True)
+        return os.path.join(self.cover_dir, f"{release_id}.jpg")
+
+    
     def _get_tracks(self, release_id: str) -> List[Track]:
         data = self._fetch_tracks_data(release_id)
         # logger.debug(f"_get_tracks data: {data}")
@@ -151,16 +162,17 @@ class MetadataService:
 
         tracks.sort(key=lambda tr: tr.number)
         return tracks
-
-    def _cover_art_path(self, release_id: str) -> str:
-        os.makedirs(self.cover_dir, exist_ok=True)
-        return os.path.join(self.cover_dir, f"{release_id}.jpg")
     
     def _download_cover_art(self, release_id: str, path: str) -> bool:
         url = f"https://coverartarchive.org/release/{release_id}/front"
-        response = self.http_client.get_binary(url)
-        with open(path, "wb") as f:
-            for chunk in response.iter_content(1024):
-                f.write(chunk)
-        logger.info(f"Cover art saved to {path}")
+        try:
+            response = self.http_client.get_binary(url)
+            with open(path, "wb") as f:
+                for chunk in response.iter_content(1024):
+                    f.write(chunk)
+            logger.info(f"Cover art saved to {path}")
+            return True
+        except Exception as e:
+            logger.error(f"Error downloading cover art for {release_id}: {e}")
+            return False
         

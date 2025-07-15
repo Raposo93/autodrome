@@ -5,17 +5,10 @@ from mutagen.id3 import ID3, APIC, error
 from mutagen.mp3 import MP3
 from autodrome.logger import logger
 from autodrome import config
-
-conf = config.Config()
-
 from typing import List, Optional
-import os
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import ID3
-from mutagen.mp3 import MP3
-from autodrome.logger import logger
 from autodrome.models.track import Track
 
+conf = config.Config()
 
 class Organizer:
     def tag_and_rename(
@@ -47,7 +40,7 @@ class Organizer:
             audio.save()
             
             
-            absolute_cover_path = os.path.abspath(cover_path)
+            absolute_cover_path = os.path.abspath(cover_path) if cover_path else None
             logger.debug(f"absolute_cover_path: {absolute_cover_path} : {os.path.isfile(absolute_cover_path)}")
 
             if absolute_cover_path and os.path.isfile(absolute_cover_path):
@@ -57,7 +50,6 @@ class Organizer:
             #     self.embed_cover_art(new_path, cover_path)
             else:
                 logger.debug(f"No valid cover art found to embed for '{new_filename}' (path: {cover_path})")
-            logger.debug(f"cover_path: {cover_path}")
         logger.info("Tagging and renaming completed.")
 
 
