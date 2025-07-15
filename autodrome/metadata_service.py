@@ -3,37 +3,61 @@ from autodrome.http_client import HTTP_client
 from autodrome.models.track import Track
 from autodrome.models.release import Release
 from autodrome.logger import logger
+from autodrome.services.redis_cache import RedisCache
 import os
 
 class MetadataService:
     
     def __init__(self, http_client: HTTP_client):
         self.http_client = http_client
+        self.redis_cache = RedisCache()
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.cover_dir = os.path.abspath(os.path.join(self.base_dir, '..', 'covers'))
 
-        
-    def search_releases(self, artist: Optional[str], album: Optional[str]):
+    def search_releases(self, artist: Optional[str], album: Optional[str]) -> List[Release]:
         query = self._build_mb_query(artist, album)
         data = self._fetch_releases_data(query)
         releases = self._parse_releases(data, artist)
-        # logger.debug(f"releases: {releases}")     
-        return releases
 
-    def get_tracks(self, release_id: str) -> List[Track]:
-        data = self._fetch_tracks_data(release_id)
-        tracks = self._parse_tracks(data)
-        return tracks
+        for i, release in enumerate(releases):
+            release_id = release.id
+            cached = self.redis_cache.get_release(release_id)
+            if cached:
+                logger.debug(f"Cache hit for release {release_id}")
+                # Reconstruimos los Track desde dicts
+                releases[i].tracks = [Track(**track) for track in cached.get("tracks", [])]
+            else:
+                logger.debug(f"Cache miss for release {release_id}")
+                tracks = self._get_tracks(release_id)
+                releases[i].tracks = tracks
+                # Preparamos diccionario serializable para Redis
+                cache_data = {
+                    "id": release.id,
+                    "title": release.title,
+                    "date": release.date,
+                    "artist": release.artist,
+                    "cover_url": release.cover_url,
+                    "tracks": [t.to_dict() for t in tracks]
+                }
+                self.redis_cache.set_release(release_id, cache_data)
+
+        return releases
     
     def get_cover_art(self, release_id: str) -> Optional[str]:
         path = self._cover_art_path(release_id)
         try:
             self._download_cover_art(release_id, path)
-            return path
+            return os.path.abspath(path)
         except Exception as e:
             logger.error(f"Failed to download cover art for {release_id}: {e}")
             return None
-    
+
+    def _get_tracks(self, release_id: str) -> List[Track]:
+        data = self._fetch_tracks_data(release_id)
+        # logger.debug(f"_get_tracks data: {data}")
+        tracks = self._parse_tracks(data)
+        return tracks
+
     def _get_cover_url(self, release_id: str) -> Optional[str]:
         url = f"https://coverartarchive.org/release/{release_id}"
         try:
@@ -69,9 +93,11 @@ class MetadataService:
     def _parse_releases(self, data: Dict[str, Any], artist: Optional[str]) -> List[Release]:
         releases = []
         for r in data.get("releases", []):
+            # logger.debug(f"response releaseRaw: {r}")
             release_id = r["id"]
             cover_url = self._get_cover_url(release_id)
-            tracks = self.get_tracks(release_id)
+            tracks = self._get_tracks(release_id)
+            # logger.debug(f"response tracks: {tracks}")
             releases.append(
                 Release(
                     release_id=release_id,
@@ -82,6 +108,7 @@ class MetadataService:
                     tracks=[t.to_dict() for t in tracks]
                 )
             )
+        logger.debug(f"Parsed releases: {releases}")
         return releases
 
     def _fetch_tracks_data(self, release_id: str) -> Dict[str, Any]:

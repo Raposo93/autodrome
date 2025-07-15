@@ -1,5 +1,3 @@
-# autodrome/controllers/search_controller.py
-
 from autodrome.metadata_service import MetadataService
 from autodrome.yt_api import YTApi
 from autodrome.http_client import HTTP_client
@@ -21,7 +19,17 @@ class SearchController:
         releases = []
         if artist or album:
             releases_results = self.metadata_service.search_releases(artist, album)
-            releases = [r.__dict__ for r in releases_results]
+            releases = [
+                {
+                    "id": r.id,
+                    "title": r.title,
+                    "date": r.date,
+                    "artist": r.artist,
+                    "cover_url": r.cover_url,
+                    "tracks": [t.to_dict() for t in r.tracks]
+                }
+                for r in releases_results
+            ]
 
         return {
             "playlists": playlists,

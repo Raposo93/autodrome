@@ -4,3 +4,4 @@ mutagen
 yt-dlp
 flask
 flask-cors
+redis
