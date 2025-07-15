@@ -24,8 +24,7 @@ class YTDownloader:
                 logger.info(msg)
 
             elif d.get('status') == 'downloading':
-                idx = d.get('_download_index', 0) + 1
-                msg = f"Downloading item {idx} of {total}" if total else f"Downloading item {idx}"
+                msg = "beginning download"
                 if msg != self._last_log_msg:
                     logger.info(msg)
                     self._last_log_msg = msg
