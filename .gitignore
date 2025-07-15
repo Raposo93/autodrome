@@ -33,3 +33,4 @@ htmlcov/
 /examples
 .vscode
 covers
+.coverage
