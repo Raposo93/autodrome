@@ -1,7 +1,7 @@
 from autodrome.yt_api import YTApi
 from autodrome.metadata_service import MetadataService
 from autodrome.yt_downloader import YTDownloader
-from autodrome.organizer import Organizer
+from autodrome.services.organizer import Organizer
 from autodrome.logger import logger
 from autodrome.http_client import HTTP_client
 
