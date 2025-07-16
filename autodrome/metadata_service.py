@@ -24,13 +24,11 @@ class MetadataService:
             cached = self.redis_cache.get_release(release_id)
             if cached:
                 logger.debug(f"Cache hit for release {release_id}")
-                # Reconstruimos los Track desde dicts
                 releases[i].tracks = [Track(**track) for track in cached.get("tracks", [])]
             else:
                 logger.debug(f"Cache miss for release {release_id}")
                 tracks = self._get_tracks(release_id)
                 releases[i].tracks = tracks
-                # Preparamos diccionario serializable para Redis
                 cache_data = {
                     "id": release.id,
                     "title": release.title,
@@ -44,7 +42,7 @@ class MetadataService:
         return releases
 
     def get_cover_art(self, release_id: str) -> Optional[str]:
-        path = self.get_cover_path(release_id)  # Cambiado aquí
+        path = self.get_cover_path(release_id)
         if os.path.exists(path):
             return os.path.abspath(path)
         try:
@@ -55,7 +53,7 @@ class MetadataService:
             return None
 
     def should_download_cover(self, release_id: str) -> bool:
-        path = self.get_cover_path(release_id)  # Cambiado aquí
+        path = self.get_cover_path(release_id)
         return not os.path.exists(path)
 
     def get_cover_path(self, release_id: str) -> str:

@@ -19,12 +19,12 @@ class DownloaderController:
             raise ValueError(f"Release {release_id} not found in cache")
 
         tracks: List[Track] = [Track(**t) for t in cached.get("tracks", [])]
-        logger.debug(f"Cached tracks: {tracks}")
+        date = cached.get("date")
 
         with self.downloader.create_temp_folder() as tmpdir:
             self.downloader.download_playlist(playlist_url, tmpdir, total=track_count)
 
             cover_path = self.metadata_service.get_cover_art(release_id)
 
-            self.organizer.tag_and_rename(tmpdir, artist, album, tracks, cover_path)
+            self.organizer.tag_and_rename(tmpdir, artist, album, tracks, cover_path, date)
             self.organizer.move_to_library(tmpdir, artist, album)

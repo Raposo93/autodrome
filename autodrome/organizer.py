@@ -17,7 +17,9 @@ class Organizer:
         artist: str,
         album: str,
         tracks: List[Track],
-        cover_path: Optional[str] = None
+        cover_path: Optional[str] = None,
+        date: Optional[str] = None
+
     ) -> None:
         logger.debug(f"Tagging and renaming files in folder: {folder_path}")
 
@@ -37,6 +39,8 @@ class Organizer:
             audio["album"] = album
             audio["title"] = track.title
             audio["tracknumber"] = str(track.number)
+            if date:
+                audio["date"] = date
             audio.save()
             
             
@@ -45,9 +49,6 @@ class Organizer:
 
             if absolute_cover_path and os.path.isfile(absolute_cover_path):
                 self.embed_cover_art(new_path, absolute_cover_path)
-            # if cover_path and os.path.isfile(cover_path):
-            #     logger.debug(f"Embedding cover art from: {cover_path}")
-            #     self.embed_cover_art(new_path, cover_path)
             else:
                 logger.debug(f"No valid cover art found to embed for '{new_filename}' (path: {cover_path})")
         logger.info("Tagging and renaming completed.")
@@ -67,7 +68,7 @@ class Organizer:
             audio.tags.add(
                 APIC(
                     encoding=3,          
-                    mime='image/jpeg',   # Cambia si usas PNG: image/png
+                    mime='image/jpeg',
                     type=3,              
                     desc='Cover',
                     data=img.read()

@@ -22,7 +22,6 @@ class SearchController:
         if artist or album:
             releases_results = self.metadata_service.search_releases(artist, album)
             
-            # Descargas en paralelo solo si faltan
             to_download = [r.id for r in releases_results if self.metadata_service.should_download_cover(r.id)]
             
             if to_download:
