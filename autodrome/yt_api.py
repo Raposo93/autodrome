@@ -1,76 +1,75 @@
+from typing import List, Optional
 from autodrome import config
 from autodrome.http_client import HTTP_client
 from autodrome.models.playlist import Playlist
 from autodrome.logger import logger
 
-conf = config.Config()
 
 class YTApi:
+    BASE_URL = "https://www.googleapis.com/youtube/v3"
+
     def __init__(self, http_client: HTTP_client):
         self.http_client = http_client
-        self.google_api_key = conf.google_api_key
-        self.base_url = "https://www.googleapis.com/youtube/v3"
+        self.api_key = config.Config().google_api_key
 
-    def search_playlist(self, query):
-        url = f"{self.base_url}/search"
+    def search_playlist(self, query: str) -> List[Playlist]:
+        logger.debug(f"Searching playlists for query: {query}")
+        data = self._fetch_search_results(query)
+        return self._parse_playlists(data)
+
+    def _fetch_search_results(self, query: str) -> dict:
+        url = f"{self.BASE_URL}/search"
         params = {
             "part": "snippet",
             "q": query,
             "type": "playlist",
             "maxResults": 10,
-            "key": self.google_api_key
+            "key": self.api_key,
         }
-        logger.debug(f"Searching playlists for query: {query}")
         try:
-            logger.debug(f"Request sent to YouTube API with query: {query}")
-            data = self.http_client.get(url, params)
-            logger.info(f"Received {len(data.get('items', []))} playlists")
+            return self.http_client.get(url, params)
         except Exception as e:
             logger.error(f"Error searching playlists: {e}")
-            return []
-        
+            return {}
+
+    def _parse_playlists(self, data: dict) -> List[Playlist]:
         results = []
         for item in data.get("items", []):
-            try:
-                playlist_id = item["id"]["playlistId"]
-            except KeyError as e:
-                logger.warning(f"Malformed item (missing key): {e} - {item}")
+            playlist_id = self._extract_playlist_id(item)
+            if not playlist_id:
                 continue
-            title = item["snippet"]["title"]
-            channel = item["snippet"]["channelTitle"]
-            thumbnail = item["snippet"]["thumbnails"].get("medium", {}).get("url")
-            track_count = self.get_track_count(playlist_id)
-            results.append(
-                Playlist(
-                    playlist_id=playlist_id,
-                    title=title,
-                    channel=channel,
-                    url=f"https://www.youtube.com/playlist?list={playlist_id}",
-                    thumbnail=thumbnail,
-                    track_count=track_count
-                )
+
+            snippet = item.get("snippet", {})
+            playlist = Playlist(
+                playlist_id=playlist_id,
+                title=snippet.get("title", "Untitled"),
+                channel=snippet.get("channelTitle", "Unknown"),
+                url=f"https://www.youtube.com/playlist?list={playlist_id}",
+                thumbnail=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
+                track_count=self._get_track_count(playlist_id)
             )
+            results.append(playlist)
+        logger.info(f"Parsed {len(results)} playlists")
         return results
 
-    def get_track_count(self, playlist_id):
-        """Fetch the number of videos in a YouTube playlist using its ID."""
-        count_url = f"{self.base_url}/playlists"
-        count_params = {
+    def _extract_playlist_id(self, item: dict) -> Optional[str]:
+        try:
+            return item["id"]["playlistId"]
+        except KeyError as e:
+            logger.warning(f"Malformed item (missing playlistId): {e} - {item}")
+            return None
+
+    def _get_track_count(self, playlist_id: str) -> Optional[int]:
+        url = f"{self.BASE_URL}/playlists"
+        params = {
             "part": "contentDetails",
             "id": playlist_id,
-            "key": self.google_api_key
+            "key": self.api_key,
         }
-
         try:
-            count_data = self.http_client.get(count_url, count_params)
-            items = count_data.get("items")
-            
-            if items and isinstance(items, list) and "contentDetails" in items[0]:
-                return items[0]["contentDetails"].get("itemCount")
-            else:
-                logger.warning(f"Missing or unexpected contentDetails for playlist {playlist_id}")
-                return None
-
+            data = self.http_client.get(url, params)
+            item = data.get("items", [{}])[0]
+            return item.get("contentDetails", {}).get("itemCount")
         except Exception as e:
             logger.warning(f"Could not fetch track count for playlist {playlist_id}: {e}")
             return None
