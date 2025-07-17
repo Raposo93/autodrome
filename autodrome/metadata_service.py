@@ -15,6 +15,7 @@ class MetadataService:
         self.cover_dir = os.path.abspath(os.path.join(self.base_dir, '..', 'covers'))
 
     def search_releases(self, artist: Optional[str], album: Optional[str]) -> List[Release]:
+        logger.debug(f"MetadataService: start release search for artist='{artist}' album='{album}'")
         query = self._build_mb_query(artist, album)
         data = self._fetch_releases_data(query)
         releases = self._parse_releases(data, artist)
@@ -24,11 +25,16 @@ class MetadataService:
             cached = self.redis_cache.get_release(release_id)
             if cached:
                 logger.debug(f"Cache hit for release {release_id}")
-                releases[i].tracks = [Track(**track) for track in cached.get("tracks", [])]
+                release.cover_url = cached.get("cover_url")
+                # releases[i].tracks = [Track(**track) for track in cached.get("tracks", [])]
+                release.tracks = [Track(**track) for track in cached.get("tracks", [])]
             else:
                 logger.debug(f"Cache miss for release {release_id}")
                 tracks = self._get_tracks(release_id)
-                releases[i].tracks = tracks
+                cover_url = self._get_cover_url(release_id)
+                # releases[i].tracks = tracks
+                release.tracks = tracks
+                release.cover_url = cover_url
                 cache_data = {
                     "id": release.id,
                     "title": release.title,
@@ -100,21 +106,22 @@ class MetadataService:
             return {}
 
     def _parse_releases(self, data: Dict[str, Any], artist: Optional[str]) -> List[Release]:
+        logger.debug("MetadataService: parsing releases and downloading metadata")
         releases = []
         for r in data.get("releases", []):
             # logger.debug(f"response releaseRaw: {r}")
             release_id = r["id"]
-            cover_url = self._get_cover_url(release_id)
-            tracks = self._get_tracks(release_id)
+            # cover_url = self._get_cover_url(release_id)
+            # tracks = self._get_tracks(release_id)
             # logger.debug(f"response tracks: {tracks}")
             releases.append(
                 Release(
                     release_id=release_id,
                     title=r.get("title", "Unknown"),
                     date=r.get("date", "Unknown"),
-                    cover_url=cover_url,
+                    cover_url=None,
                     artist=r.get("artist-credit", [{}])[0].get("name", artist),
-                    tracks=[t.to_dict() for t in tracks]
+                    tracks=[]
                 )
             )
         logger.debug(f"Parsed releases: {releases}")

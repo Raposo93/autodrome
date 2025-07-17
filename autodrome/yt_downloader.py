@@ -6,7 +6,7 @@ from typing import Callable, Optional
 
 class YTDownloader:
     def __init__(self):
-        pass  # Sin estado interno innecesario
+        pass
 
     def create_temp_folder(self) -> TemporaryDirectory:
         return TemporaryDirectory()
