@@ -1,52 +1,55 @@
 from yt_dlp import YoutubeDL
 from autodrome.logger import logger
 from tempfile import TemporaryDirectory
-import os
+from pathlib import Path
+from typing import Callable, Optional
 
 class YTDownloader:
     def __init__(self):
-        self.total = None
-        self._completed = 0
-        self._last_log_msg = None
+        pass  # Sin estado interno innecesario
 
-    def create_temp_folder(self):
+    def create_temp_folder(self) -> TemporaryDirectory:
         return TemporaryDirectory()
 
-    def download_playlist(self, url, dest, total=None):
+    def download_playlist(self, url: str, dest: str, total: Optional[int] = None) -> None:
         logger.info(f"Downloading playlist to: {dest}")
-        logger.debug(f"total: {total}")
-        self._completed = 0
+        logger.debug(f"Total expected: {total}")
 
-        def hook(d):
-            if d.get('status') == 'finished':
-                self._completed += 1
-                msg = f"Downloaded {self._completed} of {total}" if total else f"Downloaded {self._completed}"
-                logger.info(msg)
+        hook = self._build_progress_hook(total)
+        ydl_opts = self._build_ydl_opts(Path(dest), hook)
 
-            elif d.get('status') == 'downloading':
-                msg = "beginning download"
-                if msg != self._last_log_msg:
-                    logger.info(msg)
-                    self._last_log_msg = msg
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
 
-                    
-        ydl_opts = {
+        logger.info("Playlist download completed successfully.")
+
+    def _build_ydl_opts(self, dest: Path, hook: Callable) -> dict:
+        return {
             'format': 'bestaudio/best',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'outtmpl': os.path.join(dest, '%(playlist_index)02d - %(title)s.%(ext)s'),
+            'outtmpl': str(dest / '%(playlist_index)02d - %(title)s.%(ext)s'),
             'progress_hooks': [hook],
             'quiet': True,
             'no_warnings': True,
+            'ignoreerrors': True,
         }
 
-        try:
-            with YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-            logger.info("Playlist download completed successfully.")
-        except Exception as e:
-            logger.error(f"yt-dlp failed: {e}")
-            raise
+    def _build_progress_hook(self, total: Optional[int]) -> Callable:
+        completed = 0
+        last_log_msg = None
+
+        def hook(d):
+            nonlocal completed, last_log_msg
+            if d.get('status') == 'finished':
+                completed += 1
+                msg = f"Downloaded {completed} of {total}" if total else f"Downloaded {completed}"
+                logger.info(msg)
+            elif d.get('status') == 'downloading' and last_log_msg != "beginning download":
+                logger.info("beginning download")
+                last_log_msg = "beginning download"
+
+        return hook
