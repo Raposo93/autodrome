@@ -36,7 +36,7 @@ class YTDownloader:
             'quiet': True,
             'no_warnings': True,
             'ignoreerrors': True,
-        }
+            }
 
     def _build_progress_hook(self, total: Optional[int]) -> Callable:
         completed = 0

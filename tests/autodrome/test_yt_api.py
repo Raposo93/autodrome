@@ -56,7 +56,6 @@ def test_search_playlist_handles_empty_response(mock_http_client):
     assert results == []
 
 def test_search_playlist_handles_missing_playlist_id(mock_http_client):
-    # Respuesta con item sin playlistId
     mock_response = {
         "items": [
             {
