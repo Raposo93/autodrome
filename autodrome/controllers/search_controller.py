@@ -1,11 +1,11 @@
 from autodrome.metadata_service import MetadataService
 from autodrome.yt_api import YTApi
-from autodrome.http_client import HTTP_client
+from autodrome.http_client import HttpClient
 import concurrent.futures
 
 class SearchController:
     def __init__(self, http_client=None):
-        self.http_client = http_client or HTTP_client()
+        self.http_client = http_client or HttpClient()
         self.metadata_service = MetadataService(http_client=self.http_client)
         self.yt_api = YTApi(http_client=self.http_client)
 

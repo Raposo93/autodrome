@@ -1,6 +1,6 @@
 from typing import List, Optional
 from autodrome import config
-from autodrome.http_client import HTTP_client
+from autodrome.http_client import HttpClient
 from autodrome.models.playlist import Playlist
 from autodrome.logger import logger
 
@@ -8,7 +8,7 @@ from autodrome.logger import logger
 class YTApi:
     BASE_URL = "https://www.googleapis.com/youtube/v3"
 
-    def __init__(self, http_client: HTTP_client):
+    def __init__(self, http_client: HttpClient):
         self.http_client = http_client
         self.api_key = config.Config().google_api_key
 

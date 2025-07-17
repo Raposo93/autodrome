@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional
-from autodrome.http_client import HTTP_client
+from autodrome.http_client import  HttpClient
 from autodrome.models.track import Track
 from autodrome.models.release import Release
 from autodrome.logger import logger
@@ -8,7 +8,7 @@ import os
 
 class MetadataService:
     
-    def __init__(self, http_client: HTTP_client):
+    def __init__(self, http_client: HttpClient):
         self.http_client = http_client
         self.redis_cache = RedisCache()
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
