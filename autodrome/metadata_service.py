@@ -91,7 +91,7 @@ class MetadataService:
         params = {
             "query": query,
             "fmt": "json",
-            "limit": 5,
+            "limit": 10,
         }
         try:
             return self.http_client.get(url, params=params)
