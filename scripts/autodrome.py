@@ -3,7 +3,7 @@ from autodrome.metadata_service import MetadataService
 from autodrome.yt_downloader import YTDownloader
 from autodrome.services.organizer import Organizer
 from autodrome.logger import logger
-from autodrome.http_client import HTTP_client
+from autodrome.http_client_async import HTTP_client
 
 class Autodrome:
     def __init__(self, yt_api, metadata_service, yt_downloader, organizer):

@@ -1,21 +1,22 @@
-from flask import Blueprint, request, jsonify
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from autodrome.controllers.search_controller import SearchController
 from autodrome.logger import logger
 
-search_bp = Blueprint("search", __name__)
-controller = SearchController()
+search_router = APIRouter()
 
-@search_bp.route("/")
-def combined_search():
-    artist = request.args.get("artist", "").strip()
-    album = request.args.get("album", "").strip()
+@search_router.get("/")
+async def combined_search(request: Request):
+    artist = request.query_params.get("artist", "").strip()
+    album = request.query_params.get("album", "").strip()
 
     if not artist and not album:
-        return jsonify({"error": "Missing 'artist' or 'album' parameter"}), 400
+        return JSONResponse(status_code=400, content={"error": "Missing 'artist' or 'album' parameter"})
 
     try:
-        results = controller.search(artist, album)
-        return jsonify(results)
+        controller = request.app.state.search_controller
+        results = await controller.search(artist, album)
+        return JSONResponse(content=results)
     except Exception as e:
         logger.error(f"Error in combined search: {e}")
-        return jsonify({"error": str(e)}), 500
+        return JSONResponse(status_code=500, content={"error": str(e)})

@@ -1,16 +1,47 @@
-from flask import Flask
-from api.search import search_bp
-from api.download import download_bp
-from flask_cors import CORS
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from api.search import search_router
+from api.download import download_router
+from autodrome.http_client_async import AsyncHttpClient
+from autodrome.controllers.search_controller import SearchController
+from autodrome.controllers.downloader_controller import DownloaderController
+import aiohttp
+
+from autodrome.metadata_service import MetadataService
+from autodrome.services.organizer import Organizer
+from autodrome.yt_downloader import YTDownloader
 
 
-app = Flask(__name__)
-# Configure CORS in production mode
-CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Crear sesión HTTP reutilizable
+    aiohttp_session = aiohttp.ClientSession()
+    app.state.aiohttp_session = aiohttp_session
 
-app.register_blueprint(search_bp, url_prefix='/api/search')
-app.register_blueprint(download_bp, url_prefix='/api/download')
+    # Crear cliente y controlador con esa sesión
+    app.state.http_client = AsyncHttpClient(session=aiohttp_session)
+    app.state.search_controller = SearchController(http_client=app.state.http_client)
+    app.state.downloader_controller = DownloaderController(
+        downloader=YTDownloader(),
+        organizer=Organizer(),
+        metadata_service=MetadataService(http_client=app.state.http_client),
+        http_client=app.state.http_client)
+    yield
 
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    # Al cerrar, cerrar la sesión http
+    await aiohttp_session.close()
 
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Ajustar esto en producción
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(search_router, prefix="/api/search")
+app.include_router(download_router, prefix="/api/download")
