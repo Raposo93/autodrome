@@ -23,10 +23,10 @@ async def download(request: Request):
         artist = body["artist"]
         album = body["album"]
         release_id = body["release_id"]
+        track_count = body.get("track_count")
 
         controller = request.app.state.downloader_controller
-        result = await controller.download_and_tag(playlist_url, artist, album, release_id)
-        logger.info(f"JSONResponse(content=result):{JSONResponse(content=result)}")
+        result = await controller.download_and_tag(playlist_url, artist, album, release_id, track_count)
         return JSONResponse(content=result)
 
     except Exception as e:
