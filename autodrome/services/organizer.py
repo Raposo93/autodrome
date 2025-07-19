@@ -29,7 +29,8 @@ class Organizer:
 
         for file, track in zip(files, tracks):
             original_path = os.path.join(folder_path, file)
-            new_filename = f"{track.number:02d} - {track.title}.mp3"
+            sanitized_title = self._sanitize_filename(track.title)
+            new_filename = f"{track.number:02d} - {sanitized_title}.mp3"
             new_path = os.path.join(folder_path, new_filename)
             os.rename(original_path, new_path)
 
