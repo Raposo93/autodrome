@@ -15,7 +15,6 @@ class MetadataService:
         self.cover_dir = os.path.abspath(os.path.join(self.base_dir, '..', 'covers'))
 
     async def search_releases(self, artist: Optional[str], album: Optional[str]) -> List[Release]:
-        logger.debug(f"MetadataService: start release search for artist='{artist}' album='{album}'")
         query = self._build_mb_query(artist, album)
         data = await self._fetch_releases_data(query)
         releases = self._parse_releases(data, artist)
@@ -62,6 +61,7 @@ class MetadataService:
             return os.path.abspath(path)
         try:
             success = await self._download_cover_art(release_id, path)
+            logger.debug(f"Cover art download {'succeeded' if success else 'failed'} for {release_id}")
             return os.path.abspath(path) if success else None
         except Exception as e:
             logger.error(f"Failed to download cover art for {release_id}: {e}")
@@ -141,10 +141,9 @@ class MetadataService:
         return tracks
 
     def _parse_releases(self, data: Dict[str, Any], artist: Optional[str]) -> List[Release]:
-        logger.debug("MetadataService: parsing releases and downloading metadata")
         
         if not isinstance(data, dict) or "releases" not in data:
-            # logger.warning(f"MetadataService: unexpected data format received: {data}")
+            logger.warning(f"Metad<ataService: unexpected data format received: {data}")
             return []
         
         releases = []
@@ -160,7 +159,6 @@ class MetadataService:
                     tracks=[]
                 )
             )
-        # logger.debug(f"Parsed releases: {releases}")
         return releases
 
 
@@ -171,7 +169,7 @@ class MetadataService:
             content = await self.http_client.get_binary(url)
             with open(path, "wb") as f:
                 f.write(content)
-            logger.info(f"Cover art saved to {path}")
+            logger.debug(f"Cover art saved to {path}")
             return True
         except Exception as e:
             logger.error(f"Error downloading cover art for {release_id}: {e}")

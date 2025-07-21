@@ -31,7 +31,7 @@ class DownloaderController:
         release_id: str, 
         track_count: Optional[int] = None
     ) -> None:
-        logger.debug(f"Starting download and tagging for release_id: {release_id}")
+        logger.debug(f"Starting download_and_tag for release_id: {release_id}")
 
         cached_release: Optional[Dict[str, Any]] = self.redis_cache.get_release(release_id)
         if cached_release is None:
@@ -41,10 +41,8 @@ class DownloaderController:
         date: Optional[str] = cached_release.get("date")
 
         with self.downloader.create_temp_folder() as tmpdir:
-            self.downloader.download_playlist(playlist_url, tmpdir, total=track_count)
-
+            await self.downloader.download_playlist(playlist_url, tmpdir, total=track_count)
             cover_path: Optional[str] = await self.metadata_service.get_cover_art(release_id)
-
 
             self.organizer.tag_and_rename(tmpdir, artist, album, tracks, cover_path, date)
             self.organizer.move_to_library(tmpdir, artist, album)

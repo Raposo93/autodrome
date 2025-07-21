@@ -23,7 +23,6 @@ class Organizer:
         cover_path: Optional[str] = None,
         date: Optional[str] = None
     ) -> None:
-        logger.debug(f"Tagging and renaming in folder: {folder_path}")
 
         files = sorted(f for f in os.listdir(folder_path) if f.lower().endswith(".mp3"))
 
@@ -57,7 +56,6 @@ class Organizer:
 
         try:
             os.makedirs(album_folder, exist_ok=True)
-
             for item in os.listdir(temp_folder):
                 src = os.path.join(temp_folder, item)
                 dst = os.path.join(album_folder, item)
@@ -67,7 +65,7 @@ class Organizer:
                 os.rmdir(temp_folder)
                 logger.debug(f"Deleted empty temporary folder '{temp_folder}'")
 
-            logger.info("Moved album to library successfully.")
+            logger.info("Moved album to library successfully to: {album_folder}")
         except Exception as e:
             logger.error(f"Error moving files to library: {e}")
             raise

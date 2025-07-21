@@ -14,7 +14,6 @@ class Tagger:
         tracks: List[Track],
         date: Optional[str] = None
     ) -> None:
-        logger.debug(f"Tagging files in {folder_path}")
         files = sorted(f for f in os.listdir(folder_path) if f.lower().endswith(".mp3"))
         
         for file, track in zip(files, tracks):
@@ -27,4 +26,3 @@ class Tagger:
             if date:
                 audio["date"] = date
             audio.save()
-            logger.debug(f"Tagged '{file_path}'")

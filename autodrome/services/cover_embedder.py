@@ -26,4 +26,3 @@ class CoverEmbedder:
                 )
             )
         audio.save()
-        logger.debug(f"Embedded cover in '{mp3_file_path}'")

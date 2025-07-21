@@ -29,7 +29,6 @@ class YTApi:
         for playlist, count in zip(playlists, counts):
             playlist.track_count = count
         
-        # logger.debug(f"playlists: {playlists}")
         return playlists
     
     async def _fetch_search_results(self, query: str) -> dict:
@@ -43,7 +42,6 @@ class YTApi:
         }
         try:
             data = await self.http_client.get(url, params=params)
-            logger.debug(f"Fetched search results: {data}")
             return data
         except Exception as e:
             logger.error(f"Error searching playlists: {e}")
@@ -53,7 +51,6 @@ class YTApi:
         results = []
         for item in data.get("items", []):
             playlist_id = self._extract_playlist_id(item)
-            logger.debug(f"IIIIIIIIplaylist_id: {playlist_id}")
             if not playlist_id:
                 continue
 
@@ -90,9 +87,7 @@ class YTApi:
                 logger.error(f"No items found in response for playlist {playlist_id}")
                 return None
             item = items[0]
-            logger.debug(f"Fetched track count for playlist {playlist_id}: {item}")
             count = item.get("contentDetails", {}).get("itemCount")
-            logger.debug(f"!!!!!!!!!!!!!!Track count for playlist {playlist_id}: {count}")
             return count
         except Exception as e:
             logger.warning(f"Could not fetch track count for playlist {playlist_id}: {e}")
