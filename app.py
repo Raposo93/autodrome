@@ -6,10 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.search import search_router
 from api.download import download_router
+from api.websocket import websocket_router
 
 from autodrome.http_client_async import AsyncHttpClient
 from autodrome.controllers.search_controller import SearchController
 from autodrome.controllers.downloader_controller import DownloaderController
+from autodrome.services import websocket_manager
 from autodrome.services.download_queue import DownloadQueueManager
 from autodrome.metadata_service import MetadataService
 from autodrome.services.organizer import Organizer
@@ -31,7 +33,8 @@ async def lifespan(app: FastAPI):
         metadata_service=MetadataService(http_client=http_client),
         http_client=http_client,
     )
-    queue_manager = DownloadQueueManager(downloader_controller)
+    ws_manager = websocket_manager.WebSocketManager()
+    queue_manager = DownloadQueueManager(downloader_controller, ws_manager)
 
     # Guardar en estado de la app
     app.state.http_client = http_client
@@ -61,3 +64,4 @@ app.add_middleware(
 
 app.include_router(search_router, prefix="/api/search")
 app.include_router(download_router, prefix="/api/download")
+app.include_router(websocket_router)

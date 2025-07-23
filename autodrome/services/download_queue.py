@@ -10,20 +10,26 @@ from autodrome.logger import logger
 class DownloadQueueManager:
     REQUIRED_KEYS = {"playlist_url", "artist", "album", "release_id"}
 
-    def __init__(self, downloader: DownloaderController):
-        self.queue = asyncio.Queue()
+    def __init__(self, downloader: DownloaderController, websocket_manager):
+        self.queue: asyncio.Queue[Dict] = asyncio.Queue()
+        self._queue_snapshot: list[Dict] = []
         self.downloader = downloader
         self._worker_running = False
         self.worker_task = None
+        self.websocket_manager = websocket_manager
 
 
     async def enqueue(self, payload: Dict):
-        missing = self.REQUIRED_KEYS - payload.keys()
-        if missing:
+        
+        if missing:= self.REQUIRED_KEYS - payload.keys():
             logger.error(f"Payload is missing required keys: {missing}")
             return
-
+        
         await self.queue.put(payload)
+        self._queue_snapshot.append(payload)
+        
+        queue_list = list(self._queue_snapshot)
+        await self.websocket_manager.broadcast(queue_list)
         logger.info(f"Playlist enqueued: {payload.get('album')}")
         if not self._worker_running:
             asyncio.create_task(self._worker())
@@ -41,13 +47,7 @@ class DownloadQueueManager:
                 album = item["album"]
                 release_id = item["release_id"]
                 track_count = item.get("track_count")
-
-                logger.info(f"playlist_url: {playlist_url}")
-                logger.info(f"artist: {artist}")
-                logger.info(f"album: {album}")
-                logger.info(f"release_id: {release_id}")
-                logger.info(f"track_count: {track_count}")
-
+                
                 await self.downloader.download_and_tag(
                     playlist_url=playlist_url,
                     artist=artist,
@@ -56,6 +56,9 @@ class DownloadQueueManager:
                     track_count=track_count
                 )
                 logger.info(f"Completed playlist: {album}")
+                self._queue_snapshot = [q for q in self._queue_snapshot if q != item]
+                queue_list = list(self._queue_snapshot)
+                await self.websocket_manager.broadcast(queue_list)
             except Exception as e:
                 logger.error(f"Error processing playlist: {e}")
             finally:

@@ -13,6 +13,12 @@ export default defineConfig({
         target: process.env.VITE_IP_HOST || 'http://localhost:5000',
         changeOrigin: true,
         secure: false
+      },
+      '/ws': {
+        target: process.env.VITE_IP_HOST || 'http://localhost:5000',
+        ws: true,
+        changeOrigin: true,
+        secure: false
       }
     }
   }

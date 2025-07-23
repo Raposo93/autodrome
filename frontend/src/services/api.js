@@ -13,3 +13,32 @@ export default {
     return apiClient.post('/download', payload)
   },
 }
+
+export function connectWebSocket(onMessage) {
+  const socket = new WebSocket(`ws://${window.location.host}/ws`);
+
+  socket.onopen = () => {
+    console.log('WebSocket connected');
+  };
+
+  socket.onmessage = (event) => {
+    const message = event.data;
+    try {
+      const parsed = JSON.parse(message);
+      onMessage(parsed);
+    } catch (e) {
+      console.warn('WebSocket message not JSON:', message);
+      onMessage(message);
+    }
+  };
+
+  socket.onclose = () => {
+    console.log('WebSocket disconnected');
+  };
+
+  socket.onerror = (error) => {
+    console.error('WebSocket error:', error);
+  };
+
+  return socket;
+}

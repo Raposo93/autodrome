@@ -25,6 +25,7 @@
         :default-img="defaultReleaseImg"
         @select="selectRelease"
       />
+      <Queue />
     </div>
 
     <button 
@@ -43,11 +44,13 @@
 import api from '../services/api.js'
 import PlaylistsList from './PlaylistsList.vue'
 import ReleasesList from './ReleasesList.vue'
+import Queue from './Queue.vue'
 
 export default {
   components: {
     PlaylistsList,
-    ReleasesList
+    ReleasesList,
+    Queue
   },
   data() {
     return {
