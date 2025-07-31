@@ -1,18 +1,15 @@
 #!/bin/bash
 
-# Parar backend
-if [ -f /tmp/autodrome_backend.pid ]; then
-  kill "$(cat /tmp/autodrome_backend.pid)" && echo "Backend detenido"
-  rm /tmp/autodrome_backend.pid
-else
-  echo "PID del backend no encontrado"
-fi
+# Stop backend
+pkill -f 'uvicorn app:app' && echo "Backend stopped"
 
-# Parar frontend
-if [ -f /tmp/autodrome_frontend.pid ]; then
-  kill "$(cat /tmp/autodrome_frontend.pid)" && echo "Frontend detenido"
-  rm /tmp/autodrome_frontend.pid
-else
-  echo "PID del frontend no encontrado"
-fi
+# Stop frontend (node process on port 5173)
+frontend_pids=$(lsof -ti :5173)
 
+if [ -n "$frontend_pids" ]; then
+  for pid in $frontend_pids; do
+    kill "$pid" && echo "Frontend process $pid killed"
+  done
+else
+  echo "Frontend not running on port 5173"
+fi
