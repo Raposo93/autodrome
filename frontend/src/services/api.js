@@ -6,11 +6,11 @@ const apiClient = axios.create({
 
 export default {
   combinedSearch(artist, album) {
-    return apiClient.get('/search', { params: { artist, album } })
+    return apiClient.get('/search/', { params: { artist, album } })
   },
 
   download(payload) {
-    return apiClient.post('/download', payload)
+    return apiClient.post('/download/', payload)
   },
 }
 

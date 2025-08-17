@@ -20,11 +20,9 @@ from autodrome.yt_downloader import YTDownloader
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Crear sesión HTTP reutilizable
     aiohttp_session = aiohttp.ClientSession()
     app.state.aiohttp_session = aiohttp_session
 
-    # Crear cliente y controlador con esa sesión
     http_client = AsyncHttpClient(session=aiohttp_session)
     search_controller = SearchController(http_client=http_client)
     downloader_controller = DownloaderController(
@@ -36,19 +34,16 @@ async def lifespan(app: FastAPI):
     ws_manager = websocket_manager.WebSocketManager()
     queue_manager = DownloadQueueManager(downloader_controller, ws_manager)
 
-    # Guardar en estado de la app
     app.state.http_client = http_client
     app.state.search_controller = search_controller
     app.state.downloader_controller = downloader_controller
     app.state.queue_manager = queue_manager
 
-    # Iniciar el worker de la cola
     if not queue_manager._worker_running:
-        asyncio.create_task(queue_manager._worker())  # enqueue vacío solo para lanzar el worker
+        asyncio.create_task(queue_manager._worker())
 
     yield
 
-    # Al cerrar, cerrar la sesión http
     await aiohttp_session.close()
 
 
@@ -56,7 +51,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Ajustar esto en producción
+    allow_origins=["*"],  # Adjust this in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

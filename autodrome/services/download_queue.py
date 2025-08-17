@@ -1,5 +1,3 @@
-# autodrome/services/download_queue.py
-
 import asyncio
 from typing import Dict, Optional
 
