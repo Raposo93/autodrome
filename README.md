@@ -1,131 +1,151 @@
 # Autodrome
 
-Autodrome es una herramienta CLI para descargar discos completos desde YouTube y etiquetar automáticamente sus pistas utilizando metadatos reales de MusicBrainz. La aplicación está escrita en Python y sigue buenas prácticas de diseño modular, preparación para logging, testing y futura expansión a interfaz web.
+Autodrome es una aplicación web autoalojada para buscar playlists de álbumes en
+YouTube, descargar su audio, obtener metadatos de MusicBrainz y Cover Art
+Archive, etiquetar los MP3 y publicarlos de forma segura en una biblioteca.
 
-## Funcionalidades actuales (MVP)
+La interfaz soportada es **FastAPI + Vue/Vite**. La antigua CLI no forma parte
+del producto y `start_autodrome.sh` es la única ruta de inicio recomendada.
 
-- Búsqueda de playlists en YouTube relacionadas con un artista y álbum.
-- Selección manual de playlist y release.
-- Descarga de playlist en formato MP3 usando `yt-dlp`.
-- Consulta de metadatos reales en MusicBrainz (release y lista de tracks).
-- Etiquetado automático de los archivos MP3:
-  - Título
-  - Número de pista
-  - Álbum
-  - Artista
-  - Portada embebida en cada archivo (si está disponible)
-- Organización de los archivos descargados en una carpeta temporal (aún sin mover a biblioteca definitiva).
+## Funcionalidad
+
+- Búsqueda conjunta de playlists de YouTube y releases de MusicBrainz.
+- Cola persistente con estados visibles por WebSocket.
+- Descarga secuencial por pista, con reintentos y errores individualizados.
+- Metadatos y nombres correctos para releases de uno o varios discos.
+- Validación, optimización y MIME real de las portadas embebidas.
+- Preparación en staging y publicación atómica sin sobrescribir álbumes.
+- Redis opcional como caché; nunca se necesita para completar una descarga.
 
 ## Requisitos
 
-- Python 3.8+
-- yt-dlp
-- ffmpeg
-- Entorno virtual recomendado (`venv`)
-- `.env` con:
-  - `GOOGLE_API_KEY`
-  - `CONTACT_EMAIL`
-  - `VERSION`
-  - `LOG_LEVEL` (opcional, por defecto `INFO`)
+- Linux o un entorno Unix con Bash 5 o posterior.
+- Python 3.14 y soporte para `venv`.
+- Node.js 22 y npm.
+- `ffmpeg` disponible en `PATH`.
+- Una clave de YouTube Data API v3.
+- Redis en `127.0.0.1:6379` es opcional. Sin Redis, Autodrome consulta los
+  proveedores originales y conserva igualmente el estado de la cola en disco.
 
-## Instalación
+## Instalación desde un clon limpio
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-Uso
-bash
-Copy
-Edit
-```
-
-## Uso
+Desde la raíz del repositorio:
 
 ```bash
-python autodrome.py
+python3.14 -m venv .venv
+.venv/bin/python -m pip install -r requirements.lock
+npm ci --prefix frontend
+cp .env.example .env
 ```
 
-El sistema te pedirá el nombre del artista y del álbum. Luego mostrará posibles playlists y releases para que elijas.
+Edita `.env` y completa como mínimo `GOOGLE_API_KEY` y `CONTACT_EMAIL`. Revisa
+también `LIBRARY_PATH`; se recomienda una ruta absoluta hacia la biblioteca de
+música. No uses `sudo` para instalar dependencias dentro de `.venv` ni para
+ejecutar la aplicación.
 
-## Staging y publicación de la biblioteca
+## Arranque y parada
 
-Los álbumes se preparan por completo en un directorio de staging y se publican
-con un único rename en el mismo sistema de archivos. Por defecto, un álbum ya
-existente nunca se sobrescribe y los restos de un trabajo fallido se conservan
-para poder diagnosticarlos o reintentarlos.
+La ruta recomendada es:
 
-La política se configura mediante estas variables de entorno:
+```bash
+./start_autodrome.sh
+```
 
-- `LIBRARY_PATH`: raíz de la biblioteca.
-- `STAGING_PATH`: staging; por defecto, `LIBRARY_PATH/.autodrome-staging`.
-- `MIN_STAGING_FREE_BYTES`: espacio libre mínimo antes de descargar; por defecto,
-  1 GiB.
-- `PRESERVE_FAILED_STAGING`: `true` conserva fallos y `false` los elimina; por
-  defecto, `true`.
-- `MAX_EMBEDDED_COVER_BYTES`: tamaño máximo de la portada que se incrusta; por
-  defecto, 1 MiB.
-- `OPTIMIZE_OVERSIZED_COVERS`: `true` redimensiona y recomprime portadas que no
-  cumplen los límites; `false` las rechaza para permitir su edición manual. Por
-  defecto, `true`.
-- `MAX_EMBEDDED_COVER_WIDTH` y `MAX_EMBEDDED_COVER_HEIGHT`: dimensiones máximas
-  de la portada embebida; ambas usan 1600 píxeles por defecto.
-- `MAX_COVER_SOURCE_PIXELS`: máximo absoluto de píxeles que se permite
-  decodificar; por defecto, 40 millones. Las imágenes que lo superan se rechazan
-  incluso si están muy comprimidas.
-- `QUEUE_STATE_PATH`: archivo JSON con el estado durable de la cola; por defecto,
+El script valida herramientas, dependencias y configuración antes de arrancar.
+Después inicia FastAPI en `http://127.0.0.1:5000` y Vue en
+`http://127.0.0.1:5173`, mostrando los logs de ambos procesos en la terminal.
+Abre la dirección de Vue en el navegador. Pulsa `Ctrl+C` para detener exactamente
+los dos procesos de esa instancia.
+
+No existe un comando CLI soportado para buscar o descargar álbumes.
+
+## Configuración
+
+La configuración principal vive en `.env`:
+
+- `GOOGLE_API_KEY`: clave de YouTube Data API v3; obligatoria.
+- `CONTACT_EMAIL`: contacto incluido en el User-Agent de MusicBrainz;
+  obligatorio.
+- `VERSION`: identificador del User-Agent; por defecto se propone
+  `autodrome/dev` en el ejemplo.
+- `LIBRARY_PATH`: raíz de la biblioteca; usa preferiblemente una ruta absoluta.
+- `STAGING_PATH`: staging; por defecto,
+  `LIBRARY_PATH/.autodrome-staging`.
+- `QUEUE_STATE_PATH`: estado durable de la cola; por defecto,
   `LIBRARY_PATH/.autodrome-queue.json`.
-- `DOWNLOAD_CONCURRENCY`: contrato de concurrencia por álbum. Actualmente debe
-  ser `1`; cada pista ya usa una operación async aislada, pero la descarga sigue
-  siendo secuencial hasta que exista una política segura de publicación paralela.
-- `API_HOST`: interfaz de escucha; por defecto, `127.0.0.1`. Usa una interfaz no
-  loopback solo de forma deliberada.
-- `API_PORT`: puerto HTTP; por defecto, `5000`.
-- `CORS_ORIGINS`: lista separada por comas de orígenes `http`/`https` permitidos;
-  por defecto no se permite ningún origen cruzado.
-- `API_TOKEN`: token de al menos 32 caracteres, obligatorio si `API_HOST` no es
-  loopback. Los clientes HTTP lo envían como Bearer y el WebSocket como parámetro
-  `token`.
+- `MIN_STAGING_FREE_BYTES`: espacio mínimo antes de descargar; 1 GiB por
+  defecto.
+- `PRESERVE_FAILED_STAGING`: conserva (`true`) o elimina (`false`) los trabajos
+  fallidos; por defecto, `true`.
+- `DOWNLOAD_CONCURRENCY`: actualmente debe ser `1`; las descargas de un álbum
+  siguen siendo secuenciales.
+- `LOG_LEVEL`: nivel de log; por defecto, `INFO`.
 
-Cuando el frontend deba usar autenticación, configura el mismo valor como
-`VITE_API_TOKEN`. Su servidor de desarrollo escucha solo en `127.0.0.1` salvo
-que se configure `VITE_HOST` explícitamente.
+Portadas:
 
-Al reiniciar, los jobs que seguían en `queued` se reanudan en orden. Los que
-estaban en `running` pasan a `interrupted` y no se ejecutan de nuevo a ciegas;
-los estados terminales y su último error se conservan para diagnóstico.
+- `MAX_EMBEDDED_COVER_BYTES`: máximo embebido; 1 MiB por defecto.
+- `OPTIMIZE_OVERSIZED_COVERS`: optimiza (`true`) o rechaza (`false`) imágenes
+  que exceden los límites.
+- `MAX_EMBEDDED_COVER_WIDTH` y `MAX_EMBEDDED_COVER_HEIGHT`: 1600 píxeles por
+  defecto.
+- `MAX_COVER_SOURCE_PIXELS`: límite duro de decodificación; 40 millones por
+  defecto.
 
-La portada descargada original se conserva en `covers/<release-id>.jpg`. Si una
-portada se rechaza, sustituye manualmente ese archivo por una imagen JPEG, PNG o
-WebP válida que cumpla los límites y vuelve a solicitar la descarga del álbum.
-La versión optimizada solo se mantiene en memoria durante el trabajo y se
-reutiliza para todas las pistas, por lo que nunca modifica el original.
+Red y frontend:
 
-## Desarrollo y dependencias
+- `API_HOST` y `API_PORT`: escucha de FastAPI; `127.0.0.1:5000` por defecto.
+- `API_TOKEN`: token de al menos 32 caracteres, obligatorio cuando `API_HOST`
+  no es loopback. `start_autodrome.sh` lo entrega al frontend sin duplicarlo.
+- `CORS_ORIGINS`: orígenes `http`/`https` permitidos, separados por comas; vacío
+  por defecto.
+- `VITE_HOST` y `VITE_PORT`: escucha de Vue; `127.0.0.1:5173` por defecto.
+- `VITE_API_TOKEN`: anulación opcional del token usado por el frontend.
+- `VITE_IP_HOST`: destino opcional del proxy de Vite. El script lo calcula desde
+  `API_HOST` y `API_PORT` si no se configura.
 
-El backend se instala de forma reproducible desde `requirements.lock`:
+Para exponer la aplicación fuera del equipo, configura deliberadamente
+`API_HOST`, `VITE_HOST`, `API_TOKEN` y la red/firewall. No expongas el servidor
+de desarrollo directamente a Internet; sitúalo detrás de un proxy HTTPS.
+
+## Integridad y recuperación
+
+Cada álbum se construye completamente dentro del staging de la biblioteca. Se
+validan cantidad, duración, tags y tamaño de portadas antes de publicar con un
+rename atómico. Un álbum existente no se sobrescribe.
+
+Al reiniciar, los trabajos `queued` se reanudan en orden. Un trabajo que estaba
+`running` pasa a `interrupted` y conserva el último error; no se repite a ciegas.
+
+La portada original queda en `covers/<release-id>.jpg`. Si se rechaza, sustituye
+ese archivo por una imagen JPEG, PNG o WebP válida y vuelve a solicitar el álbum.
+La versión optimizada solo vive en memoria y no modifica el original.
+
+## Desarrollo
+
+Ejecuta la validación completa antes de cada commit:
 
 ```bash
-python -m pip install -r requirements.lock
+./check.sh
 ```
 
-Cuando cambien `requirements.txt` o `requirements-dev.txt`, regenera el lock en
-un entorno limpio y revisa el diff antes de hacer commit:
+El comando ejecuta comprobaciones Git, la suite backend, las pruebas del frontend
+y el build de Vite. Un resultado correcto termina con `All checks passed.`
+
+Las dependencias Python están fijadas en `requirements.lock`. Si cambian
+`requirements.txt` o `requirements-dev.txt`, regenera el lock con:
 
 ```bash
-python -m pip install pip-tools
-python -m piptools compile requirements.txt requirements-dev.txt --strip-extras --allow-unsafe --output-file requirements.lock
+.venv/bin/python -m piptools compile requirements.txt requirements-dev.txt \
+  --strip-extras --allow-unsafe --output-file requirements.lock
 ```
 
-Para actualizar el frontend de forma intencionada, ejecuta `npm install` dentro
-de `frontend/` y conserva el cambio correspondiente de `package-lock.json`.
-`./check.sh` instala el lock de npm, ejecuta toda la suite backend y compila el
-frontend. GitHub Actions repite estas comprobaciones en cada push a `main` y en
-cada pull request; otro workflow semanal o manual informa de dependencias
-vulnerables sin actualizarlas automáticamente.
+Para actualizar dependencias frontend de forma intencionada, ejecuta
+`npm install --prefix frontend` y revisa `frontend/package-lock.json`. CI repite
+las pruebas y builds; la auditoría de dependencias informa vulnerabilidades sin
+aplicar actualizaciones automáticas.
 
-## Descargo de responsabilidad legal
+## Uso responsable
 
-Este proyecto se proporciona únicamente con fines educativos y personales.
-
-No se autoriza ni se fomenta el uso de Autodrome para descargar, distribuir o almacenar contenido protegido por derechos de autor sin el consentimiento de los titulares correspondientes. El autor de este software no se responsabiliza del uso indebido que otros puedan hacer del mismo. Cada usuario es responsable de cumplir con las leyes de propiedad intelectual de su país.
+Autodrome se proporciona únicamente con fines educativos y personales. Cada
+usuario debe contar con permiso para descargar, distribuir o almacenar el
+contenido y cumplir la legislación de propiedad intelectual aplicable.

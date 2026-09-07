@@ -25,6 +25,7 @@ echo
 echo "Running Git checks..."
 
 git --no-pager diff --check
+bash -n start_autodrome.sh
 
 if git --no-pager grep -nE '^(<<<<<<< .+|=======|>>>>>>> .+)$'; then
   echo "Error: unresolved merge conflict markers found."

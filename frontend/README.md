@@ -1,5 +1,8 @@
-# Vue 3 + Vite
+# Autodrome frontend
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Este directorio contiene el cliente Vue/Vite de Autodrome. No es una
+aplicación independiente ni una ruta de arranque alternativa.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+Sigue la instalación y el comando `./start_autodrome.sh` documentados en el
+[README principal](../README.md). El script configura el proxy hacia FastAPI y
+detiene conjuntamente backend y frontend.
