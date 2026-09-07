@@ -40,6 +40,10 @@ echo "Installing locked frontend dependencies..."
 npm ci --prefix frontend
 
 echo
+echo "Running frontend tests..."
+npm test --prefix frontend
+
+echo
 echo "Building frontend..."
 npm run build --prefix frontend
 

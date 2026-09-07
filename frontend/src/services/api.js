@@ -1,4 +1,8 @@
 import axios from 'axios'
+import {
+  buildWebSocketUrl,
+  createReconnectingWebSocket,
+} from './websocket'
 
 const apiToken = import.meta.env.VITE_API_TOKEN
 const apiClient = axios.create({
@@ -17,35 +21,10 @@ export default {
 }
 
 export function connectWebSocket(onMessage) {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const socketUrl = new URL(`${protocol}//${window.location.host}/ws`)
-  if (apiToken) {
-    socketUrl.searchParams.set('token', apiToken)
-  }
-  const socket = new WebSocket(socketUrl)
-
-  socket.onopen = () => {
-    console.log('WebSocket connected');
-  };
-
-  socket.onmessage = (event) => {
-    const message = event.data;
-    try {
-      const parsed = JSON.parse(message);
-      onMessage(parsed);
-    } catch (e) {
-      console.warn('WebSocket message not JSON:', message);
-      onMessage(message);
-    }
-  };
-
-  socket.onclose = () => {
-    console.log('WebSocket disconnected');
-  };
-
-  socket.onerror = (error) => {
-    console.error('WebSocket error:', error);
-  };
-
-  return socket;
+  return createReconnectingWebSocket({
+    onMessage,
+    urlFactory() {
+      return buildWebSocketUrl(window.location, apiToken)
+    },
+  })
 }
