@@ -43,6 +43,7 @@ class DownloaderController:
             cover_path: Optional[str] = await self.metadata_service.get_cover_art(release_id)
 
             self.organizer.tag_and_rename(tmpdir, artist, album, tracks, cover_path, date)
+            self.organizer.validate_album(tmpdir, artist, album, tracks)
             self.organizer.move_to_library(tmpdir, artist, album)
 
         logger.info(f"Download and tagging completed for release_id: {release_id}")

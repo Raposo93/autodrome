@@ -46,6 +46,7 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
             "https://example.test/playlist", "/tmp/autodrome-download", total=1
         )
         self.organizer.tag_and_rename.assert_called_once()
+        self.organizer.validate_album.assert_called_once()
         self.organizer.move_to_library.assert_called_once()
 
     async def test_cache_miss_fetches_release_from_musicbrainz(self):
@@ -122,6 +123,25 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
 
         self.downloader.download_playlist.assert_not_awaited()
         self.organizer.tag_and_rename.assert_not_called()
+
+    async def test_validation_failure_prevents_publication(self):
+        self.redis_cache.get_release.return_value = {
+            "date": "2020-01-01",
+            "tracks": [{"number": 1, "title": "First"}],
+        }
+        self.organizer.validate_album.side_effect = ValueError("invalid MP3")
+
+        with self.assertRaisesRegex(ValueError, "invalid MP3"):
+            await self.controller.download_and_tag(
+                "https://example.test/playlist",
+                "Artist",
+                "Album",
+                "release-1",
+            )
+
+        self.organizer.tag_and_rename.assert_called_once()
+        self.organizer.validate_album.assert_called_once()
+        self.organizer.move_to_library.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -72,6 +72,109 @@ def test_tag_and_rename_rejects_extra_download_before_changes(monkeypatch):
         organizer.tagger.tag_files.assert_not_called()
         organizer.cover_embedder.embed_cover.assert_not_called()
 
+def test_tag_and_rename_rejects_sanitized_filename_collision(monkeypatch):
+    organizer = Organizer()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_dummy_mp3(tmpdir, "track1.mp3")
+        create_dummy_mp3(tmpdir, "track2.mp3")
+        tracks = [Track(1, "Song?"), Track(1, "Song*")]
+
+        monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
+
+        with pytest.raises(
+            ValueError,
+            match="Track filename collision after sanitization: 01 - Song_.mp3",
+        ):
+            organizer.tag_and_rename(tmpdir, "Artist", "Album", tracks)
+
+        assert sorted(os.listdir(tmpdir)) == ["track1.mp3", "track2.mp3"]
+        organizer.tagger.tag_files.assert_not_called()
+
+def test_validate_album_accepts_readable_tagged_mp3s(monkeypatch):
+    organizer = Organizer()
+    tracks = [Track(1, "Song A"), Track(2, "Song B")]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        files = ["01 - Song A.mp3", "02 - Song B.mp3"]
+        for file in files:
+            create_dummy_mp3(tmpdir, file)
+
+        audio_files = []
+        for track in tracks:
+            audio = mock.MagicMock()
+            audio.info.length = 180
+            audio.get.side_effect = {
+                "artist": ["Artist"],
+                "album": ["Album"],
+                "title": [track.title],
+                "tracknumber": [str(track.number)],
+            }.get
+            audio_files.append(audio)
+
+        monkeypatch.setattr(
+            "autodrome.services.organizer.MP3", mock.MagicMock(side_effect=audio_files)
+        )
+        id3 = mock.MagicMock()
+        id3.getall.return_value = [mock.MagicMock(data=b"cover")]
+        monkeypatch.setattr(
+            "autodrome.services.organizer.ID3", mock.MagicMock(return_value=id3)
+        )
+        monkeypatch.setattr(
+            "autodrome.services.organizer.conf.max_embedded_cover_bytes", 1024
+        )
+
+        organizer.validate_album(tmpdir, "Artist", "Album", tracks)
+
+def test_validate_album_rejects_zero_duration(monkeypatch):
+    organizer = Organizer()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_dummy_mp3(tmpdir, "01 - Song A.mp3")
+        audio = mock.MagicMock()
+        audio.info.length = 0
+        monkeypatch.setattr(
+            "autodrome.services.organizer.MP3", mock.MagicMock(return_value=audio)
+        )
+
+        with pytest.raises(ValueError, match="has no positive duration"):
+            organizer.validate_album(
+                tmpdir, "Artist", "Album", [Track(1, "Song A")]
+            )
+
+def test_validate_album_rejects_oversized_embedded_cover(monkeypatch):
+    organizer = Organizer()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_dummy_mp3(tmpdir, "01 - Song A.mp3")
+        audio = mock.MagicMock()
+        audio.info.length = 180
+        audio.get.side_effect = {
+            "artist": ["Artist"],
+            "album": ["Album"],
+            "title": ["Song A"],
+            "tracknumber": ["1"],
+        }.get
+        monkeypatch.setattr(
+            "autodrome.services.organizer.MP3", mock.MagicMock(return_value=audio)
+        )
+        id3 = mock.MagicMock()
+        id3.getall.return_value = [mock.MagicMock(data=b"oversized")]
+        monkeypatch.setattr(
+            "autodrome.services.organizer.ID3", mock.MagicMock(return_value=id3)
+        )
+        monkeypatch.setattr(
+            "autodrome.services.organizer.conf.max_embedded_cover_bytes", 4
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r"size 9 bytes, limit 4 bytes",
+        ):
+            organizer.validate_album(
+                tmpdir, "Artist", "Album", [Track(1, "Song A")]
+            )
+
 def test_move_to_library_basic(monkeypatch):
     organizer = Organizer()
 
