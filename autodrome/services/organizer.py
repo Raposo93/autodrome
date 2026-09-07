@@ -13,6 +13,7 @@ from autodrome.logger import logger
 from autodrome import config
 from autodrome.services.tagger import Tagger
 from autodrome.services.cover_embedder import CoverEmbedder
+from autodrome.path_safety import resolve_album_path, validate_path_component
 
 conf = config.Config()
 
@@ -191,8 +192,11 @@ class Organizer:
 
     def _get_album_folder(self, artist: str, album: str) -> str:
         destination = os.path.abspath(conf.library_path)
-        artist_folder = os.path.join(destination, self._sanitize_filename(artist))
-        return os.path.join(artist_folder, self._sanitize_filename(album))
+        safe_artist = self._sanitize_filename(validate_path_component(artist))
+        safe_album = self._sanitize_filename(validate_path_component(album))
+        validate_path_component(safe_artist)
+        validate_path_component(safe_album)
+        return str(resolve_album_path(destination, safe_artist, safe_album))
 
     def _build_rename_plan(
         self,
