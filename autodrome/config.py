@@ -32,6 +32,18 @@ class Config:
         self.max_embedded_cover_bytes = self._read_int(
             "MAX_EMBEDDED_COVER_BYTES", 1024 * 1024, minimum=1
         )
+        self.optimize_oversized_covers = self._read_bool(
+            "OPTIMIZE_OVERSIZED_COVERS", True
+        )
+        self.max_embedded_cover_width = self._read_int(
+            "MAX_EMBEDDED_COVER_WIDTH", 1600, minimum=1
+        )
+        self.max_embedded_cover_height = self._read_int(
+            "MAX_EMBEDDED_COVER_HEIGHT", 1600, minimum=1
+        )
+        self.max_cover_source_pixels = self._read_int(
+            "MAX_COVER_SOURCE_PIXELS", 40_000_000, minimum=1
+        )
         self.queue_state_path = os.getenv(
             "QUEUE_STATE_PATH",
             os.path.join(self.library_path, ".autodrome-queue.json"),

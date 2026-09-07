@@ -63,8 +63,16 @@ La política se configura mediante estas variables de entorno:
   1 GiB.
 - `PRESERVE_FAILED_STAGING`: `true` conserva fallos y `false` los elimina; por
   defecto, `true`.
-- `MAX_EMBEDDED_COVER_BYTES`: tamaño máximo permitido al validar una portada
-  incrustada; por defecto, 1 MiB.
+- `MAX_EMBEDDED_COVER_BYTES`: tamaño máximo de la portada que se incrusta; por
+  defecto, 1 MiB.
+- `OPTIMIZE_OVERSIZED_COVERS`: `true` redimensiona y recomprime portadas que no
+  cumplen los límites; `false` las rechaza para permitir su edición manual. Por
+  defecto, `true`.
+- `MAX_EMBEDDED_COVER_WIDTH` y `MAX_EMBEDDED_COVER_HEIGHT`: dimensiones máximas
+  de la portada embebida; ambas usan 1600 píxeles por defecto.
+- `MAX_COVER_SOURCE_PIXELS`: máximo absoluto de píxeles que se permite
+  decodificar; por defecto, 40 millones. Las imágenes que lo superan se rechazan
+  incluso si están muy comprimidas.
 - `QUEUE_STATE_PATH`: archivo JSON con el estado durable de la cola; por defecto,
   `LIBRARY_PATH/.autodrome-queue.json`.
 - `API_HOST`: interfaz de escucha; por defecto, `127.0.0.1`. Usa una interfaz no
@@ -83,6 +91,12 @@ que se configure `VITE_HOST` explícitamente.
 Al reiniciar, los jobs que seguían en `queued` se reanudan en orden. Los que
 estaban en `running` pasan a `interrupted` y no se ejecutan de nuevo a ciegas;
 los estados terminales y su último error se conservan para diagnóstico.
+
+La portada descargada original se conserva en `covers/<release-id>.jpg`. Si una
+portada se rechaza, sustituye manualmente ese archivo por una imagen JPEG, PNG o
+WebP válida que cumpla los límites y vuelve a solicitar la descarga del álbum.
+La versión optimizada solo se mantiene en memoria durante el trabajo y se
+reutiliza para todas las pistas, por lo que nunca modifica el original.
 
 ## Desarrollo y dependencias
 

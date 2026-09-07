@@ -83,6 +83,12 @@ class Organizer:
             )
 
         rename_plan = self._build_rename_plan(folder_path, files, tracks)
+        prepared_cover = None
+        if cover_path:
+            if not os.path.isfile(cover_path):
+                raise FileNotFoundError(f"Cover image not found: {cover_path}")
+            prepared_cover = self.cover_embedder.prepare_cover(cover_path)
+
         staged_renames = []
         for original_path, new_path in rename_plan:
             intermediate_path = os.path.join(
@@ -96,10 +102,10 @@ class Organizer:
 
         self.tagger.tag_files(folder_path, artist, album, tracks, date)
 
-        if cover_path and os.path.isfile(cover_path):
+        if prepared_cover:
             for file in sorted(f for f in os.listdir(folder_path) if f.lower().endswith(".mp3")):
                 mp3_path = os.path.join(folder_path, file)
-                self.cover_embedder.embed_cover(mp3_path, cover_path)
+                self.cover_embedder.embed_cover(mp3_path, prepared_cover)
         else:
             logger.debug(f"No valid cover art found to embed (path: {cover_path})")
 

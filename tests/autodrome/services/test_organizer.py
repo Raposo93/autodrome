@@ -111,6 +111,78 @@ def test_tag_and_rename_uses_unambiguous_multidisc_names(monkeypatch):
         ]
 
 
+def test_tag_and_rename_prepares_cover_once_before_modifying_tracks(monkeypatch):
+    organizer = Organizer()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_dummy_mp3(tmpdir, "track1.mp3")
+        create_dummy_mp3(tmpdir, "track2.mp3")
+        cover_path = os.path.join(tmpdir, "cover.png")
+        with open(cover_path, "wb") as cover_file:
+            cover_file.write(b"cover")
+        tracks = [Track(1, "Song A"), Track(2, "Song B")]
+        prepared_cover = object()
+
+        monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
+        monkeypatch.setattr(organizer.cover_embedder, "embed_cover", mock.MagicMock())
+
+        def prepare_before_changes(path):
+            assert path == cover_path
+            assert sorted(os.listdir(tmpdir)) == [
+                "cover.png",
+                "track1.mp3",
+                "track2.mp3",
+            ]
+            organizer.tagger.tag_files.assert_not_called()
+            return prepared_cover
+
+        monkeypatch.setattr(
+            organizer.cover_embedder,
+            "prepare_cover",
+            mock.MagicMock(side_effect=prepare_before_changes),
+        )
+
+        organizer.tag_and_rename(
+            tmpdir, "Artist", "Album", tracks, cover_path=cover_path
+        )
+
+        organizer.cover_embedder.prepare_cover.assert_called_once_with(cover_path)
+        assert organizer.cover_embedder.embed_cover.call_args_list == [
+            mock.call(os.path.join(tmpdir, "01 - Song A.mp3"), prepared_cover),
+            mock.call(os.path.join(tmpdir, "02 - Song B.mp3"), prepared_cover),
+        ]
+
+
+def test_tag_and_rename_rejects_cover_before_modifying_tracks(monkeypatch):
+    organizer = Organizer()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_dummy_mp3(tmpdir, "track1.mp3")
+        cover_path = os.path.join(tmpdir, "cover.jpg")
+        with open(cover_path, "wb") as cover_file:
+            cover_file.write(b"damaged")
+        monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
+        monkeypatch.setattr(
+            organizer.cover_embedder,
+            "prepare_cover",
+            mock.MagicMock(side_effect=ValueError("invalid cover")),
+        )
+        monkeypatch.setattr(organizer.cover_embedder, "embed_cover", mock.MagicMock())
+
+        with pytest.raises(ValueError, match="invalid cover"):
+            organizer.tag_and_rename(
+                tmpdir,
+                "Artist",
+                "Album",
+                [Track(1, "Song A")],
+                cover_path=cover_path,
+            )
+
+        assert sorted(os.listdir(tmpdir)) == ["cover.jpg", "track1.mp3"]
+        organizer.tagger.tag_files.assert_not_called()
+        organizer.cover_embedder.embed_cover.assert_not_called()
+
+
 def test_validate_album_accepts_readable_tagged_mp3s(monkeypatch):
     organizer = Organizer()
     tracks = [Track(1, "Song A"), Track(2, "Song B")]
