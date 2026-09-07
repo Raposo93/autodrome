@@ -28,6 +28,8 @@ class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
         http_client.get.assert_awaited_once_with(
             "https://musicbrainz.org/ws/2/release/release-1",
             params={"inc": "recordings artist-credits", "fmt": "json"},
+            provider="MusicBrainz",
+            context="loading release release-1",
         )
         self.assertEqual(release.id, "release-1")
         self.assertEqual(release.title, "Album")

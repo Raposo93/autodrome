@@ -1,4 +1,3 @@
-import asyncio
 import time
 from autodrome.logger import logger
 from autodrome.metadata_service import MetadataService
@@ -30,10 +29,6 @@ class SearchController:
             releases_results = await self.metadata_service.search_releases(artist, album)
             logger.debug(f"SearchController: releases fetched in {time.monotonic() - t2:.2f}s")
 
-            to_download = [r.id for r in releases_results if self.metadata_service.should_download_cover(r.id)]
-            
-            if to_download:
-                await asyncio.gather(*(self.metadata_service.get_cover_art(rid) for rid in to_download))
             releases = [
                 {
                     "id": r.id,

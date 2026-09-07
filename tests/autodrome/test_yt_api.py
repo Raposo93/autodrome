@@ -69,12 +69,11 @@ class TestYTApi(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(results, [])
 
-    async def test_get_track_count_handles_error(self):
+    async def test_get_track_count_propagates_upstream_error(self):
         self.http_client.get.side_effect = Exception("API error")
 
-        count = await self.api._get_track_count("any_id")
-
-        self.assertIsNone(count)
+        with self.assertRaisesRegex(Exception, "API error"):
+            await self.api._get_track_count("any_id")
 
 
 if __name__ == "__main__":

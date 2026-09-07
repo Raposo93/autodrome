@@ -2,7 +2,7 @@ import asyncio
 from functools import cached_property
 from typing import List, Optional
 from autodrome import config
-from autodrome.http_client_async import AsyncHttpClient
+from autodrome.http_client_async import AsyncHttpClient, UpstreamServiceError
 from autodrome.models.playlist import Playlist
 from autodrome.logger import logger
 
@@ -40,12 +40,19 @@ class YTApi:
             "maxResults": 10,
             "key": self.api_key,
         }
-        try:
-            data = await self.http_client.get(url, params=params)
-            return data
-        except Exception as e:
-            logger.error(f"Error searching playlists: {e}")
-            return {}
+        data = await self.http_client.get(
+            url,
+            params=params,
+            provider="YouTube",
+            context="searching playlists",
+        )
+        if not isinstance(data, dict) or not isinstance(data.get("items", []), list):
+            raise UpstreamServiceError(
+                provider="YouTube",
+                context="searching playlists",
+                reason="invalid response",
+            )
+        return data
 
     def _parse_playlists(self, data: dict) -> List[Playlist]:
         results = []
@@ -80,15 +87,21 @@ class YTApi:
             "id": playlist_id,
             "key": self.api_key,
         }
-        try:
-            data = await self.http_client.get(url, params=params)
-            items = data.get("items", [])
-            if not items:
-                logger.error(f"No items found in response for playlist {playlist_id}")
-                return None
-            item = items[0]
-            count = item.get("contentDetails", {}).get("itemCount")
-            return count
-        except Exception as e:
-            logger.warning(f"Could not fetch track count for playlist {playlist_id}: {e}")
+        data = await self.http_client.get(
+            url,
+            params=params,
+            provider="YouTube",
+            context=f"loading playlist {playlist_id} details",
+        )
+        if not isinstance(data, dict) or not isinstance(data.get("items", []), list):
+            raise UpstreamServiceError(
+                provider="YouTube",
+                context=f"loading playlist {playlist_id} details",
+                reason="invalid response",
+            )
+        items = data.get("items", [])
+        if not items:
+            logger.warning(f"No details found for playlist {playlist_id}")
             return None
+        item = items[0]
+        return item.get("contentDetails", {}).get("itemCount")

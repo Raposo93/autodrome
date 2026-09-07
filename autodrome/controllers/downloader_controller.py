@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional
-from autodrome.http_client_async import AsyncHttpClient
+from autodrome.http_client_async import AsyncHttpClient, UpstreamServiceError
 from autodrome.logger import logger
 from autodrome.models.track import Track
 from autodrome.services.redis_cache import RedisCache
@@ -63,6 +63,8 @@ class DownloaderController:
         )
         try:
             release = await self.metadata_service.get_release(release_id)
+        except UpstreamServiceError:
+            raise
         except Exception as e:
             raise RuntimeError(
                 f"Could not load release {release_id}: cache miss and "

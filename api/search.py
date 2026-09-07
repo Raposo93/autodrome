@@ -4,6 +4,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from autodrome.logger import logger
+from autodrome.http_client_async import UpstreamServiceError
 from autodrome.models.requests import SearchRequest
 
 search_router = APIRouter()
@@ -17,6 +18,15 @@ async def combined_search(
         controller = request.app.state.search_controller
         results = await controller.search(search.artist or "", search.album or "")
         return JSONResponse(content=results)
-    except Exception as e:
-        logger.error(f"Error in combined search: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    except UpstreamServiceError as e:
+        logger.warning(f"Search upstream failure: {e}")
+        return JSONResponse(
+            status_code=502,
+            content={"error": str(e), "provider": e.provider},
+        )
+    except Exception:
+        logger.exception("Unexpected error in combined search")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Unexpected search failure"},
+        )
