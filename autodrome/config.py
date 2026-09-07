@@ -24,6 +24,10 @@ class Config:
         self.max_embedded_cover_bytes = int(
             os.getenv("MAX_EMBEDDED_COVER_BYTES", str(1024 * 1024))
         )
+        self.queue_state_path = os.getenv(
+            "QUEUE_STATE_PATH",
+            os.path.join(self.library_path, ".autodrome-queue.json"),
+        )
 
 
         log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()

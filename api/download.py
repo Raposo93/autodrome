@@ -1,15 +1,9 @@
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
-from autodrome.metadata_service import MetadataService
-from autodrome.yt_downloader import YTDownloader
-from autodrome.services.organizer import Organizer
-from autodrome.logger import logger
-from autodrome.controllers.downloader_controller import DownloaderController
+from fastapi import APIRouter, Request, status
 
 download_router = APIRouter()
 
 
-@download_router.post("/")
+@download_router.post("/", status_code=status.HTTP_202_ACCEPTED)
 async def download(request: Request):
     body = await request.json()
     playlist_url = body["playlist_url"]
@@ -26,5 +20,5 @@ async def download(request: Request):
         "track_count": track_count,
     }
 
-    await request.app.state.queue_manager.enqueue(payload)
-    return {"status": "queued"}
+    job_id = await request.app.state.queue_manager.enqueue(payload)
+    return {"status": "queued", "job_id": job_id}

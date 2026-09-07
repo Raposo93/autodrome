@@ -2,7 +2,7 @@
   <div>
     <h3>Download Queue</h3>
     <ul>
-      <li v-for="(msg, index) in queueMessages" :key="index">
+      <li v-for="msg in queueMessages" :key="msg.job_id">
         {{ formatItem(msg) }}
       </li>
     </ul>
@@ -36,7 +36,8 @@ export default {
   methods: {
     formatItem(item) {
       if (typeof item === 'object') {
-        return `${item.artist || 'Unknown'} - ${item.album || 'Unknown'} [${item.status || 'queued'}]`
+        const error = item.error ? `: ${item.error}` : ''
+        return `${item.artist || 'Unknown'} - ${item.album || 'Unknown'} [${item.status || 'queued'}${error}]`
       }
       return item
     }

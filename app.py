@@ -1,4 +1,3 @@
-import asyncio
 import aiohttp
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -16,6 +15,10 @@ from autodrome.services.download_queue import DownloadQueueManager
 from autodrome.metadata_service import MetadataService
 from autodrome.services.organizer import Organizer
 from autodrome.yt_downloader import YTDownloader
+from autodrome import config
+
+
+conf = config.Config()
 
 
 @asynccontextmanager
@@ -32,19 +35,24 @@ async def lifespan(app: FastAPI):
         http_client=http_client,
     )
     ws_manager = websocket_manager.WebSocketManager()
-    queue_manager = DownloadQueueManager(downloader_controller, ws_manager)
+    queue_manager = DownloadQueueManager(
+        downloader_controller,
+        ws_manager,
+        state_path=conf.queue_state_path,
+    )
 
     app.state.http_client = http_client
     app.state.search_controller = search_controller
     app.state.downloader_controller = downloader_controller
     app.state.queue_manager = queue_manager
 
-    if not queue_manager._worker_running:
-        asyncio.create_task(queue_manager._worker())
+    queue_manager.start()
 
-    yield
-
-    await aiohttp_session.close()
+    try:
+        yield
+    finally:
+        await queue_manager.stop()
+        await aiohttp_session.close()
 
 
 app = FastAPI(lifespan=lifespan)

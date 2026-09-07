@@ -36,7 +36,7 @@
     </button>
 
     <div v-if="downloadError" class="error">{{ downloadError }}</div>
-    <div v-if="downloadSuccess" class="success">Download complete!</div>
+    <div v-if="downloadSuccess" class="success">Download queued!</div>
   </div>
 </template>
 

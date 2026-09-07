@@ -65,6 +65,12 @@ La política se configura mediante estas variables de entorno:
   defecto, `true`.
 - `MAX_EMBEDDED_COVER_BYTES`: tamaño máximo permitido al validar una portada
   incrustada; por defecto, 1 MiB.
+- `QUEUE_STATE_PATH`: archivo JSON con el estado durable de la cola; por defecto,
+  `LIBRARY_PATH/.autodrome-queue.json`.
+
+Al reiniciar, los jobs que seguían en `queued` se reanudan en orden. Los que
+estaban en `running` pasan a `interrupted` y no se ejecutan de nuevo a ciegas;
+los estados terminales y su último error se conservan para diagnóstico.
 
 ## Descargo de responsabilidad legal
 
