@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from autodrome.yt_downloader import YTDownloader
+from autodrome.yt_downloader import PlaylistDownloadError, YTDownloader
 
 
 class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
@@ -87,6 +87,66 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
                 await self.downloader.download_playlist(
                     "https://youtube.com/playlist?list=empty", destination
                 )
+
+    async def test_track_failure_does_not_stop_later_downloads(self):
+        self.downloader = YTDownloader(track_download_attempts=1)
+        self.downloader.get_playlist_track_urls = AsyncMock(
+            return_value=[
+                "https://youtube.test/unavailable",
+                "https://youtube.test/available",
+            ]
+        )
+        self.downloader._download_track_blocking = MagicMock(
+            side_effect=[RuntimeError("video unavailable"), None]
+        )
+        self.downloader._check_downloaded_files = AsyncMock()
+
+        with patch(
+            "autodrome.yt_downloader.asyncio.to_thread", new_callable=AsyncMock
+        ) as to_thread, tempfile.TemporaryDirectory() as destination:
+            to_thread.side_effect = lambda function, *args: function(*args)
+
+            with self.assertRaises(PlaylistDownloadError) as context:
+                await self.downloader.download_playlist(
+                    "https://youtube.com/playlist?list=123", destination
+                )
+
+        calls = self.downloader._download_track_blocking.call_args_list
+        self.assertEqual(
+            [call.args[0] for call in calls],
+            [
+                "https://youtube.test/unavailable",
+                "https://youtube.test/available",
+            ],
+        )
+        self.assertEqual(
+            context.exception.failures,
+            [(1, "https://youtube.test/unavailable", "video unavailable")],
+        )
+        self.assertIn("track 1", str(context.exception))
+        self.downloader._check_downloaded_files.assert_not_awaited()
+
+    async def test_transient_track_failure_is_retried(self):
+        self.downloader = YTDownloader(track_download_attempts=2)
+        self.downloader.get_playlist_track_urls = AsyncMock(
+            return_value=["https://youtube.test/transient"]
+        )
+        self.downloader._download_track_blocking = MagicMock(
+            side_effect=[RuntimeError("temporary failure"), None]
+        )
+        self.downloader._check_downloaded_files = AsyncMock()
+
+        with patch(
+            "autodrome.yt_downloader.asyncio.to_thread", new_callable=AsyncMock
+        ) as to_thread, tempfile.TemporaryDirectory() as destination:
+            to_thread.side_effect = lambda function, *args: function(*args)
+
+            await self.downloader.download_playlist(
+                "https://youtube.com/playlist?list=123", destination
+            )
+
+        self.assertEqual(self.downloader._download_track_blocking.call_count, 2)
+        self.downloader._check_downloaded_files.assert_awaited_once_with(destination)
 
 
 if __name__ == "__main__":

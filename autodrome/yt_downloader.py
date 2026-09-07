@@ -3,11 +3,23 @@ import os
 from yt_dlp import YoutubeDL
 from autodrome.logger import logger
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
+
+
+class PlaylistDownloadError(RuntimeError):
+    def __init__(self, failures: List[Tuple[int, str, str]]) -> None:
+        self.failures = failures
+        details = "; ".join(
+            f"track {index} ({url}): {error}"
+            for index, url, error in failures
+        )
+        super().__init__(f"Failed to download {len(failures)} playlist track(s): {details}")
 
 class YTDownloader:
-    def __init__(self):
-        pass
+    def __init__(self, track_download_attempts: int = 2):
+        if track_download_attempts < 1:
+            raise ValueError("track_download_attempts must be at least 1")
+        self.track_download_attempts = track_download_attempts
 
     async def download_playlist(self, url: str, dest: str, total: Optional[int] = None) -> None:
         logger.debug(f"[YTDownloader] Starting download_playlist: {url} to {dest}")
@@ -20,14 +32,28 @@ class YTDownloader:
             )
 
         hook = self._build_progress_hook(total or len(track_urls))
+        failures = []
         for index, track_url in enumerate(track_urls, start=1):
-            await asyncio.to_thread(
-                self._download_track_blocking,
-                track_url,
-                dest,
-                index,
-                hook,
-            )
+            for attempt in range(1, self.track_download_attempts + 1):
+                try:
+                    await asyncio.to_thread(
+                        self._download_track_blocking,
+                        track_url,
+                        dest,
+                        index,
+                        hook,
+                    )
+                    break
+                except Exception as e:
+                    logger.warning(
+                        f"[YTDownloader] Track {index} attempt {attempt} of "
+                        f"{self.track_download_attempts} failed: {e}"
+                    )
+                    if attempt == self.track_download_attempts:
+                        failures.append((index, track_url, str(e)))
+
+        if failures:
+            raise PlaylistDownloadError(failures)
 
         await self._check_downloaded_files(dest)
 
