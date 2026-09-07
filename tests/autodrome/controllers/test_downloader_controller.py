@@ -9,12 +9,12 @@ from autodrome.models.track import Track
 class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.downloader = MagicMock()
-        self.downloader.create_temp_folder.return_value.__enter__.return_value = (
-            "/tmp/autodrome-download"
-        )
         self.downloader.download_playlist = AsyncMock()
 
         self.organizer = MagicMock()
+        self.organizer.create_staging_folder.return_value.__enter__.return_value = (
+            "/tmp/autodrome-download"
+        )
         self.metadata_service = MagicMock()
         self.metadata_service.get_release = AsyncMock()
         self.metadata_service.get_cover_art = AsyncMock(return_value=None)

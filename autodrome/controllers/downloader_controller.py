@@ -38,7 +38,7 @@ class DownloaderController:
         tracks: List[Track] = [Track(**t) for t in release_data.get("tracks", [])]
         date: Optional[str] = release_data.get("date")
 
-        with self.downloader.create_temp_folder() as tmpdir:
+        with self.organizer.create_staging_folder(artist, album) as tmpdir:
             await self.downloader.download_playlist(playlist_url, tmpdir, total=track_count)
             cover_path: Optional[str] = await self.metadata_service.get_cover_art(release_id)
 

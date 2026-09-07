@@ -48,6 +48,24 @@ python autodrome.py
 
 El sistema te pedirá el nombre del artista y del álbum. Luego mostrará posibles playlists y releases para que elijas.
 
+## Staging y publicación de la biblioteca
+
+Los álbumes se preparan por completo en un directorio de staging y se publican
+con un único rename en el mismo sistema de archivos. Por defecto, un álbum ya
+existente nunca se sobrescribe y los restos de un trabajo fallido se conservan
+para poder diagnosticarlos o reintentarlos.
+
+La política se configura mediante estas variables de entorno:
+
+- `LIBRARY_PATH`: raíz de la biblioteca.
+- `STAGING_PATH`: staging; por defecto, `LIBRARY_PATH/.autodrome-staging`.
+- `MIN_STAGING_FREE_BYTES`: espacio libre mínimo antes de descargar; por defecto,
+  1 GiB.
+- `PRESERVE_FAILED_STAGING`: `true` conserva fallos y `false` los elimina; por
+  defecto, `true`.
+- `MAX_EMBEDDED_COVER_BYTES`: tamaño máximo permitido al validar una portada
+  incrustada; por defecto, 1 MiB.
+
 ## Descargo de responsabilidad legal
 
 Este proyecto se proporciona únicamente con fines educativos y personales.
