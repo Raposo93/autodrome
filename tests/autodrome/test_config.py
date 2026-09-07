@@ -34,6 +34,12 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.max_embedded_cover_height, 1600)
         self.assertEqual(settings.max_cover_source_pixels, 40_000_000)
         self.assertEqual(settings.download_concurrency, 1)
+        self.assertFalse(settings.redis_enabled)
+
+    def test_redis_can_be_enabled_explicitly(self):
+        settings = self.build_config({**REQUIRED_ENV, "REDIS_ENABLED": "true"})
+
+        self.assertTrue(settings.redis_enabled)
 
     def test_cover_optimization_can_be_disabled(self):
         settings = self.build_config(

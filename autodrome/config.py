@@ -51,6 +51,7 @@ class Config:
         self.download_concurrency = self._read_int(
             "DOWNLOAD_CONCURRENCY", 1, minimum=1, maximum=1
         )
+        self.redis_enabled = self._read_bool("REDIS_ENABLED", False)
         self.api_host = os.getenv("API_HOST", "127.0.0.1").strip()
         self.api_port = self._read_int("API_PORT", 5000, minimum=1, maximum=65535)
         self.api_token = os.getenv("API_TOKEN")

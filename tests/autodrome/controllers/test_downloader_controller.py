@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from autodrome.controllers.downloader_controller import DownloaderController
 from autodrome.models.release import Release
 from autodrome.models.track import Track
+from autodrome.services.redis_cache import RedisCache
 
 
 class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
@@ -90,8 +91,10 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
         self.downloader.download_playlist.assert_awaited_once()
 
     async def test_redis_failure_does_not_block_download(self):
-        self.redis_cache.get_release.side_effect = ConnectionError("Redis is down")
-        self.redis_cache.set_release.side_effect = ConnectionError("Redis is down")
+        redis_client = MagicMock()
+        redis_client.get.side_effect = ConnectionError("Redis is down")
+        redis_client.set.side_effect = ConnectionError("Redis is down")
+        self.controller.redis_cache = RedisCache(client=redis_client)
         self.metadata_service.get_release.return_value = Release(
             release_id="release-1",
             title="Album",

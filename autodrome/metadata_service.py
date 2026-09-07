@@ -3,15 +3,19 @@ import os
 import tempfile
 from typing import Any, Dict, List, Optional
 from autodrome.logger import logger
-from autodrome.services.redis_cache import RedisCache
+from autodrome.services.redis_cache import NullCache, ReleaseCache
 from autodrome.models.track import Track
 from autodrome.models.release import Release
 from autodrome.http_client_async import AsyncHttpClient, UpstreamServiceError
 
 class MetadataService:
-    def __init__(self, http_client: AsyncHttpClient):
+    def __init__(
+        self,
+        http_client: AsyncHttpClient,
+        redis_cache: Optional[ReleaseCache] = None,
+    ):
         self.http_client = http_client
-        self.redis_cache = RedisCache()
+        self.redis_cache = redis_cache if redis_cache is not None else NullCache()
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.cover_dir = os.path.abspath(os.path.join(self.base_dir, '..', 'covers'))
 
@@ -25,11 +29,7 @@ class MetadataService:
         return releases
 
     async def _enrich_release(self, release: Release) -> None:
-        try:
-            cached = self.redis_cache.get_release(release.id)
-        except Exception as e:
-            logger.warning(f"Could not read release {release.id} from cache: {e}")
-            cached = None
+        cached = self.redis_cache.get_release(release.id)
 
         if cached:
             logger.debug(f"Cache hit for release {release.id}")
@@ -58,10 +58,7 @@ class MetadataService:
             "cover_url_kind": "thumbnail",
             "tracks": [track.to_dict() for track in release.tracks],
         }
-        try:
-            self.redis_cache.set_release(release.id, cache_data)
-        except Exception as e:
-            logger.warning(f"Could not cache release {release.id}: {e}")
+        self.redis_cache.set_release(release.id, cache_data)
 
     async def get_release(self, release_id: str) -> Release:
         """Fetch the metadata required to download a release by its ID."""

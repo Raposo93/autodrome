@@ -13,6 +13,7 @@ from autodrome.controllers.search_controller import SearchController
 from autodrome.controllers.downloader_controller import DownloaderController
 from autodrome.services import websocket_manager
 from autodrome.services.download_queue import DownloadQueueManager
+from autodrome.services.redis_cache import NullCache, RedisCache
 from autodrome.metadata_service import MetadataService
 from autodrome.services.organizer import Organizer
 from autodrome.yt_downloader import YTDownloader
@@ -30,11 +31,20 @@ async def lifespan(app: FastAPI):
     app.state.aiohttp_session = aiohttp_session
 
     http_client = AsyncHttpClient(session=aiohttp_session)
-    search_controller = SearchController(http_client=http_client)
+    redis_cache = RedisCache() if conf.redis_enabled else NullCache()
+    metadata_service = MetadataService(
+        http_client=http_client,
+        redis_cache=redis_cache,
+    )
+    search_controller = SearchController(
+        http_client=http_client,
+        metadata_service=metadata_service,
+    )
     downloader_controller = DownloaderController(
         downloader=YTDownloader(download_concurrency=conf.download_concurrency),
         organizer=Organizer(),
-        metadata_service=MetadataService(http_client=http_client),
+        metadata_service=metadata_service,
+        redis_cache=redis_cache,
         http_client=http_client,
     )
     ws_manager = websocket_manager.WebSocketManager()

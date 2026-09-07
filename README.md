@@ -24,7 +24,8 @@ del producto y `start_autodrome.sh` es la única ruta de inicio recomendada.
 - Node.js 22 y npm.
 - `ffmpeg` disponible en `PATH`.
 - Una clave de YouTube Data API v3.
-- Redis en `127.0.0.1:6379` es opcional. Sin Redis, Autodrome consulta los
+- Redis en `127.0.0.1:6379` es opcional y está desactivado por defecto. Para
+  usarlo, configura `REDIS_ENABLED=true`. Sin Redis, Autodrome consulta los
   proveedores originales y conserva igualmente el estado de la cola en disco.
 
 ## Instalación desde un clon limpio
@@ -80,6 +81,8 @@ La configuración principal vive en `.env`:
 - `DOWNLOAD_CONCURRENCY`: actualmente debe ser `1`; las descargas de un álbum
   siguen siendo secuenciales.
 - `LOG_LEVEL`: nivel de log; por defecto, `INFO`.
+- `REDIS_ENABLED`: activa la caché Redis local; por defecto, `false`. Cuando
+  está desactivada no se crea ningún cliente ni se intenta conectar a Redis.
 
 Portadas:
 

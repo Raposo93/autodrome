@@ -5,9 +5,13 @@ from autodrome.yt_api import YTApi
 from autodrome.http_client_async import AsyncHttpClient
 
 class SearchController:
-    def __init__(self, http_client=None):
+    def __init__(self, http_client=None, metadata_service=None):
         self.http_client = http_client or AsyncHttpClient()
-        self.metadata_service = MetadataService(http_client=self.http_client)
+        self.metadata_service = (
+            metadata_service
+            if metadata_service is not None
+            else MetadataService(http_client=self.http_client)
+        )
         self.yt_api = YTApi(http_client=self.http_client)
 
 
