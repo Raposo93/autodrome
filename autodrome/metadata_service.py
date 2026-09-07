@@ -1,4 +1,3 @@
-import asyncio
 import os
 import tempfile
 from typing import Any, Dict, List, Optional
@@ -22,31 +21,7 @@ class MetadataService:
     async def search_releases(self, artist: Optional[str], album: Optional[str]) -> List[Release]:
         query = self._build_mb_query(artist, album)
         data = await self._fetch_releases_data(query)
-        releases = self._parse_releases(data, artist)
-
-        await asyncio.gather(*(self._enrich_release(release) for release in releases))
-
-        return releases
-
-    async def _enrich_release(self, release: Release) -> None:
-        cached = self.redis_cache.get_release(release.id)
-
-        if cached:
-            logger.debug(f"Cache hit for release {release.id}")
-            release.tracks = [Track(**track) for track in cached.get("tracks", [])]
-            if cached.get("cover_url_kind") == "thumbnail":
-                release.cover_url = cached.get("cover_url")
-                return
-            release.cover_url = await self._get_cover_url(release.id)
-            self._cache_release(release)
-            return
-
-        logger.debug(f"Cache miss for release {release.id}")
-        release.tracks, release.cover_url = await asyncio.gather(
-            self._get_tracks(release.id),
-            self._get_cover_url(release.id),
-        )
-        self._cache_release(release)
+        return self._parse_releases(data, artist)
 
     def _cache_release(self, release: Release) -> None:
         cache_data = {
@@ -62,6 +37,17 @@ class MetadataService:
 
     async def get_release(self, release_id: str) -> Release:
         """Fetch the metadata required to download a release by its ID."""
+        cached = self.redis_cache.get_release(release_id)
+        release = self._release_from_cache(release_id, cached)
+        if release is not None:
+            logger.debug(f"Cache hit for release {release_id}")
+            if cached.get("cover_url_kind") == "thumbnail":
+                return release
+            release.cover_url = await self._get_cover_url(release_id)
+            self._cache_release(release)
+            return release
+
+        logger.debug(f"Cache miss for release {release_id}")
         url = f"https://musicbrainz.org/ws/2/release/{release_id}"
         params = {"inc": "recordings artist-credits", "fmt": "json"}
 
@@ -90,17 +76,58 @@ class MetadataService:
                 reason="invalid response",
             )
 
-        artist_credit = data.get("artist-credit") or [{}]
+        artist_credit = data.get("artist-credit") or []
+        if (
+            not isinstance(artist_credit, list)
+            or not artist_credit
+            or not isinstance(artist_credit[0], dict)
+        ):
+            raise UpstreamServiceError(
+                provider="MusicBrainz",
+                context=f"loading release {release_id}",
+                reason="invalid response",
+            )
+        tracks = self._parse_tracks(
+            data,
+            context=f"loading release {release_id}",
+        )
+        release = Release(
+            release_id=release_id,
+            title=data.get("title") or "Unknown",
+            date=data.get("date") or "Unknown",
+            artist=artist_credit[0].get("name") or "Unknown",
+            cover_url=await self._get_cover_url(release_id),
+            tracks=tracks,
+        )
+        self._cache_release(release)
+        return release
+
+    @staticmethod
+    def _release_from_cache(
+        release_id: str,
+        cached: Optional[Dict[str, Any]],
+    ) -> Optional[Release]:
+        if not isinstance(cached, dict) or cached.get("id") != release_id:
+            return None
+        if not all(
+            isinstance(cached.get(field), str)
+            for field in ("title", "date", "artist")
+        ) or not isinstance(cached.get("tracks"), list):
+            return None
+        cover_url = cached.get("cover_url")
+        if cover_url is not None and not isinstance(cover_url, str):
+            return None
+        try:
+            tracks = [Track(**track) for track in cached["tracks"]]
+        except (TypeError, ValueError):
+            return None
         return Release(
             release_id=release_id,
-            title=data.get("title", "Unknown"),
-            date=data.get("date", "Unknown"),
-            artist=artist_credit[0].get("name", "Unknown"),
-            cover_url=None,
-            tracks=self._parse_tracks(
-                data,
-                context=f"loading release {release_id}",
-            ),
+            title=cached["title"],
+            date=cached["date"],
+            artist=cached["artist"],
+            cover_url=cover_url,
+            tracks=tracks,
         )
 
     async def get_cover_art(self, release_id: str) -> Optional[str]:
@@ -282,13 +309,30 @@ class MetadataService:
                     reason="invalid response",
                 )
             release_id = r["id"]
+            artist_credit = r.get("artist-credit") or []
+            if (
+                not isinstance(artist_credit, list)
+                or not artist_credit
+                or not isinstance(artist_credit[0], dict)
+            ):
+                raise UpstreamServiceError(
+                    provider="MusicBrainz",
+                    context="searching releases",
+                    reason="invalid response",
+                )
+            cover_art = r.get("cover-art-archive")
+            cover_url = None
+            if isinstance(cover_art, dict) and cover_art.get("front") is True:
+                cover_url = (
+                    f"https://coverartarchive.org/release/{release_id}/front-250"
+                )
             releases.append(
                 Release(
                     release_id=release_id,
-                    title=r.get("title", "Unknown"),
-                    date=r.get("date", "Unknown"),
-                    cover_url=None,
-                    artist=r.get("artist-credit", [{}])[0].get("name", artist),
+                    title=r.get("title") or "Unknown",
+                    date=r.get("date") or "Unknown",
+                    cover_url=cover_url,
+                    artist=artist_credit[0].get("name") or artist or "Unknown",
                     tracks=[]
                 )
             )

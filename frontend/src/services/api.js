@@ -15,6 +15,10 @@ export default {
     return apiClient.get('/search/', { params: { artist, album } })
   },
 
+  releaseDetails(releaseId) {
+    return apiClient.get(`/search/releases/${releaseId}`)
+  },
+
   download(payload) {
     return apiClient.post('/download/', payload)
   },

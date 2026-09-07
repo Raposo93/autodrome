@@ -2,7 +2,6 @@ from typing import Any, Dict, List, Optional
 from autodrome.http_client_async import AsyncHttpClient, UpstreamServiceError
 from autodrome.logger import logger
 from autodrome.models.track import Track
-from autodrome.services.redis_cache import NullCache, ReleaseCache
 from autodrome.services.organizer import Organizer
 from autodrome.metadata_service import MetadataService
 from autodrome.yt_downloader import YTDownloader
@@ -13,13 +12,11 @@ class DownloaderController:
         downloader: YTDownloader, 
         organizer: Organizer, 
         metadata_service: MetadataService,
-        redis_cache: Optional[ReleaseCache] = None,
         http_client: Optional[AsyncHttpClient] = None
     ) -> None:
         self.downloader = downloader
         self.organizer = organizer
         self.metadata_service = metadata_service
-        self.redis_cache = redis_cache if redis_cache is not None else NullCache()
         self.http_client = http_client
 
 
@@ -49,25 +46,16 @@ class DownloaderController:
         logger.info(f"Download and tagging completed for release_id: {release_id}")
 
     async def _get_release_data(self, release_id: str) -> Dict[str, Any]:
-        cached_release = self.redis_cache.get_release(release_id)
-
-        if cached_release is not None:
-            return cached_release
-
-        logger.info(
-            f"Release {release_id} was not available in cache; fetching MusicBrainz"
-        )
         try:
             release = await self.metadata_service.get_release(release_id)
         except UpstreamServiceError:
             raise
         except Exception as e:
             raise RuntimeError(
-                f"Could not load release {release_id}: cache miss and "
-                "MusicBrainz lookup failed"
+                f"Could not load release {release_id} from MusicBrainz"
             ) from e
 
-        release_data = {
+        return {
             "id": release.id,
             "title": release.title,
             "date": release.date,
@@ -75,7 +63,3 @@ class DownloaderController:
             "cover_url": release.cover_url,
             "tracks": [track.to_dict() for track in release.tracks],
         }
-
-        self.redis_cache.set_release(release_id, release_data)
-
-        return release_data

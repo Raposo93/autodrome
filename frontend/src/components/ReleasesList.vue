@@ -11,11 +11,13 @@
         @click="$emit('select', rel)"
       >
         <img 
-          :src="rel.cover_url" 
+          :src="rel.cover_url || defaultImg"
           @error="handleImageError"
           alt="Release cover" 
           width="70"
-        />        {{ rel.title }} by {{ rel.artist }} ({{ rel.date || '?' }}, {{ rel.tracks?.length || '?' }} tracks)
+        />
+        {{ rel.title }} by {{ rel.artist }}
+        ({{ rel.date || '?' }}, {{ Array.isArray(rel.tracks) ? `${rel.tracks.length} tracks` : 'select for details' }})
       </li>
     </ul>
     <div v-if="!loading && releases.length === 0">No releases found.</div>
@@ -29,11 +31,14 @@ export default {
     selected: Object,
     loading: Boolean,
     error: String,
-    defaultImg: String,
+    defaultImg: {
+      type: String,
+      default: '/default__no_cover.jpg'
+    },
   },
   methods: {
     handleImageError(event) {
-      event.target.src = '/default__no_cover.jpg'
+      event.target.src = this.defaultImg
     }
   }
 }
@@ -63,4 +68,3 @@ li.selected {
   color: red;
 }
 </style>
-

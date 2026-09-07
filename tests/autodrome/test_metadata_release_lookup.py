@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 from autodrome.metadata_service import MetadataService
 
@@ -7,7 +7,7 @@ from autodrome.metadata_service import MetadataService
 class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
     async def test_get_release_fetches_and_parses_musicbrainz_metadata(self):
         http_client = AsyncMock()
-        http_client.get.return_value = {
+        release_data = {
             "id": "release-1",
             "title": "Album",
             "date": "2020-01-01",
@@ -21,20 +21,41 @@ class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         }
+        http_client.get.side_effect = [
+            release_data,
+            {
+                "images": [
+                    {
+                        "front": True,
+                        "thumbnails": {"small": "https://archive.test/small.jpg"},
+                    }
+                ]
+            },
+        ]
         service = MetadataService(http_client=http_client)
 
         release = await service.get_release("release-1")
 
-        http_client.get.assert_awaited_once_with(
-            "https://musicbrainz.org/ws/2/release/release-1",
-            params={"inc": "recordings artist-credits", "fmt": "json"},
-            provider="MusicBrainz",
-            context="loading release release-1",
+        http_client.get.assert_has_awaits(
+            [
+                call(
+                    "https://musicbrainz.org/ws/2/release/release-1",
+                    params={"inc": "recordings artist-credits", "fmt": "json"},
+                    provider="MusicBrainz",
+                    context="loading release release-1",
+                ),
+                call(
+                    "https://coverartarchive.org/release/release-1",
+                    provider="Cover Art Archive",
+                    context="loading cover metadata for release release-1",
+                ),
+            ]
         )
         self.assertEqual(release.id, "release-1")
         self.assertEqual(release.title, "Album")
         self.assertEqual(release.date, "2020-01-01")
         self.assertEqual(release.artist, "Artist")
+        self.assertEqual(release.cover_url, "https://archive.test/small.jpg")
         self.assertEqual(
             [track.to_dict() for track in release.tracks],
             [
@@ -57,7 +78,7 @@ class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_release_preserves_multidisc_order(self):
         http_client = AsyncMock()
-        http_client.get.return_value = {
+        release_data = {
             "id": "release-1",
             "title": "Double Album",
             "artist-credit": [{"name": "Artist"}],
@@ -77,6 +98,7 @@ class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
                 },
             ],
         }
+        http_client.get.side_effect = [release_data, {"images": []}]
         service = MetadataService(http_client=http_client)
 
         release = await service.get_release("release-1")

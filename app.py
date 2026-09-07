@@ -44,7 +44,6 @@ async def lifespan(app: FastAPI):
         downloader=YTDownloader(download_concurrency=conf.download_concurrency),
         organizer=Organizer(),
         metadata_service=metadata_service,
-        redis_cache=redis_cache,
         http_client=http_client,
     )
     ws_manager = websocket_manager.WebSocketManager()

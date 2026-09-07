@@ -28,11 +28,19 @@
       <Queue />
     </div>
 
-    <button 
-      :disabled="!selectedPlaylist || !selectedRelease || downloading" 
+    <button
+      :disabled="
+        !selectedPlaylist ||
+        !releaseDetailsReady ||
+        releaseDetailsLoading ||
+        downloading
+      "
       @click="downloadSelected"
     >
-      {{ downloading ? 'Downloading...' : 'Download & Tag' }}
+      {{ releaseDetailsLoading
+        ? 'Loading release details...'
+        : (downloading ? 'Downloading...' : 'Download & Tag')
+      }}
     </button>
 
     <div v-if="downloadError" class="error">{{ downloadError }}</div>
@@ -64,11 +72,13 @@ export default {
       errorReleases: null,
       selectedPlaylist: null,
       selectedRelease: null,
+      releaseDetailsLoading: false,
+      releaseDetailsReady: false,
       downloading: false,
       downloadError: null,
       downloadSuccess: false,
       defaultPlaylistImg: '/default_playlist.png',
-      defaultReleaseImg: '/default_release.png'
+      defaultReleaseImg: '/default__no_cover.jpg'
     }
   },
   methods: {
@@ -78,6 +88,8 @@ export default {
       this.downloadSuccess = false
       this.selectedPlaylist = null
       this.selectedRelease = null
+      this.releaseDetailsLoading = false
+      this.releaseDetailsReady = false
 
       if (!this.artist && !this.album) return
 
@@ -103,8 +115,36 @@ export default {
     selectPlaylist(pl) {
       this.selectedPlaylist = pl
     },
-    selectRelease(rel) {
+    async selectRelease(rel) {
       this.selectedRelease = rel
+      this.releaseDetailsReady = Array.isArray(rel.tracks)
+      this.releaseDetailsLoading = false
+      this.errorReleases = null
+
+      if (this.releaseDetailsReady) return
+
+      const releaseId = rel.id
+      this.releaseDetailsLoading = true
+      try {
+        const response = await api.releaseDetails(releaseId)
+        if (this.selectedRelease?.id !== releaseId) return
+
+        this.selectedRelease = response.data
+        this.releaseDetailsReady = true
+        const index = this.releases.findIndex(item => item.id === releaseId)
+        if (index !== -1) this.releases.splice(index, 1, response.data)
+      } catch (error) {
+        if (this.selectedRelease?.id !== releaseId) return
+
+        this.releaseDetailsReady = false
+        this.errorReleases = (
+          error.response?.data?.error || 'Error loading release details'
+        )
+      } finally {
+        if (this.selectedRelease?.id === releaseId) {
+          this.releaseDetailsLoading = false
+        }
+      }
     },
     async downloadSelected() {
       this.downloading = true

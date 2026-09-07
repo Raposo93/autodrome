@@ -31,7 +31,10 @@ class SearchController:
         if artist or album:
             t2 = time.monotonic()
             releases_results = await self.metadata_service.search_releases(artist, album)
-            logger.debug(f"SearchController: releases fetched in {time.monotonic() - t2:.2f}s")
+            logger.info(
+                "SearchController: release candidates fetched in "
+                f"{time.monotonic() - t2:.2f}s"
+            )
 
             releases = [
                 {
@@ -40,7 +43,6 @@ class SearchController:
                     "date": r.date,
                     "artist": r.artist,
                     "cover_url": r.cover_url,
-                    "tracks": [t.to_dict() for t in r.tracks]
                 }
                 for r in releases_results
             ]
@@ -49,5 +51,28 @@ class SearchController:
         return {
             "playlists": playlists,
             "releases": releases
+        }
+
+    async def get_release_details(self, release_id: str):
+        start = time.monotonic()
+        try:
+            release = await self.metadata_service.get_release(release_id)
+        except Exception:
+            logger.info(
+                f"SearchController: release {release_id} details failed after "
+                f"{time.monotonic() - start:.2f}s"
+            )
+            raise
+        logger.info(
+            f"SearchController: release {release_id} details fetched in "
+            f"{time.monotonic() - start:.2f}s"
+        )
+        return {
+            "id": release.id,
+            "title": release.title,
+            "date": release.date,
+            "artist": release.artist,
+            "cover_url": release.cover_url,
+            "tracks": [track.to_dict() for track in release.tracks],
         }
         
