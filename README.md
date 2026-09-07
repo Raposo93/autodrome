@@ -72,6 +72,29 @@ Al reiniciar, los jobs que seguían en `queued` se reanudan en orden. Los que
 estaban en `running` pasan a `interrupted` y no se ejecutan de nuevo a ciegas;
 los estados terminales y su último error se conservan para diagnóstico.
 
+## Desarrollo y dependencias
+
+El backend se instala de forma reproducible desde `requirements.lock`:
+
+```bash
+python -m pip install -r requirements.lock
+```
+
+Cuando cambien `requirements.txt` o `requirements-dev.txt`, regenera el lock en
+un entorno limpio y revisa el diff antes de hacer commit:
+
+```bash
+python -m pip install pip-tools
+python -m piptools compile requirements.txt requirements-dev.txt --strip-extras --allow-unsafe --output-file requirements.lock
+```
+
+Para actualizar el frontend de forma intencionada, ejecuta `npm install` dentro
+de `frontend/` y conserva el cambio correspondiente de `package-lock.json`.
+`./check.sh` instala el lock de npm, ejecuta toda la suite backend y compila el
+frontend. GitHub Actions repite estas comprobaciones en cada push a `main` y en
+cada pull request; otro workflow semanal o manual informa de dependencias
+vulnerables sin actualizarlas automáticamente.
+
 ## Descargo de responsabilidad legal
 
 Este proyecto se proporciona únicamente con fines educativos y personales.

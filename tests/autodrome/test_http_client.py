@@ -1,52 +1,75 @@
 import unittest
-from unittest.mock import patch, Mock
-from autodrome.http_client import HttpClient  # Ajusta la ruta según tu proyecto
-import requests
+from unittest.mock import AsyncMock, MagicMock
 
-class TestHttpClient(unittest.TestCase):
+import aiohttp
 
+from autodrome.http_client_async import AsyncHttpClient
+
+
+def async_response_context(response):
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=response)
+    context.__aexit__ = AsyncMock(return_value=None)
+    return context
+
+
+class TestAsyncHttpClient(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.client = HttpClient()
+        self.session = MagicMock()
+        self.client = AsyncHttpClient(session=self.session)
 
-    @patch('requests.get')
-    def test_get_success(self, mock_get):
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.json.return_value = {'status': 'ok'}
-        mock_get.return_value = mock_response
+    async def test_get_returns_json_response(self):
+        response = MagicMock()
+        response.json = AsyncMock(return_value={"status": "ok"})
+        self.session.get.return_value = async_response_context(response)
 
-        result = self.client.get("https://example.com/api")
-        self.assertEqual(result, {'status': 'ok'})
-        mock_get.assert_called_once()
+        result = await self.client.get("https://example.test/api")
 
-    @patch('requests.get')
-    def test_get_raises_exception(self, mock_get):
-        mock_get.side_effect = requests.exceptions.ConnectionError("Connection failed")
-
-        with self.assertRaises(requests.exceptions.RequestException):
-            self.client.get("https://example.com/api")
-
-    @patch('requests.get')
-    def test_get_binary_success(self, mock_get):
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        response = self.client.get_binary("https://example.com/image.png")
-        self.assertEqual(response, mock_response)
-        mock_get.assert_called_once_with(
-            "https://example.com/image.png",
+        self.assertEqual(result, {"status": "ok"})
+        self.session.get.assert_called_once_with(
+            "https://example.test/api",
             headers=self.client.headers,
-            stream=True,
-            timeout=10
+            params=None,
+            timeout=10,
+        )
+        response.raise_for_status.assert_called_once_with()
+
+    async def test_get_propagates_http_error(self):
+        response = MagicMock()
+        response.raise_for_status.side_effect = aiohttp.ClientError("failed")
+        self.session.get.return_value = async_response_context(response)
+
+        with self.assertRaisesRegex(aiohttp.ClientError, "failed"):
+            await self.client.get("https://example.test/api")
+
+    async def test_post_returns_json_response(self):
+        response = MagicMock()
+        response.json = AsyncMock(return_value={"created": True})
+        self.session.post.return_value = async_response_context(response)
+
+        result = await self.client.post(
+            "https://example.test/api", json={"name": "Album"}
         )
 
-    @patch('requests.get')
-    def test_get_binary_raises_exception(self, mock_get):
-        mock_get.side_effect = requests.exceptions.Timeout("Request timed out")
+        self.assertEqual(result, {"created": True})
+        self.session.post.assert_called_once_with(
+            "https://example.test/api",
+            headers=self.client.headers,
+            data=None,
+            json={"name": "Album"},
+            timeout=10,
+        )
 
-        with self.assertRaises(requests.exceptions.RequestException):
-            self.client.get_binary("https://example.com/image.png")
+    async def test_get_binary_returns_response_bytes(self):
+        response = MagicMock()
+        response.read = AsyncMock(return_value=b"image")
+        self.session.get.return_value = async_response_context(response)
 
-if __name__ == '__main__':
+        result = await self.client.get_binary("https://example.test/image.jpg")
+
+        self.assertEqual(result, b"image")
+        response.raise_for_status.assert_called_once_with()
+
+
+if __name__ == "__main__":
     unittest.main()
