@@ -36,9 +36,59 @@ class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [track.to_dict() for track in release.tracks],
             [
-                {"number": 1, "title": "First"},
-                {"number": 2, "title": "Second"},
+                {
+                    "number": 1,
+                    "title": "First",
+                    "disc_number": 1,
+                    "position": 1,
+                    "global_position": 1,
+                },
+                {
+                    "number": 2,
+                    "title": "Second",
+                    "disc_number": 1,
+                    "position": 2,
+                    "global_position": 2,
+                },
             ],
+        )
+
+    async def test_get_release_preserves_multidisc_order(self):
+        http_client = AsyncMock()
+        http_client.get.return_value = {
+            "id": "release-1",
+            "title": "Double Album",
+            "artist-credit": [{"name": "Artist"}],
+            "media": [
+                {
+                    "position": 2,
+                    "tracks": [
+                        {"number": "1", "position": 1, "title": "Disc 2 First"}
+                    ],
+                },
+                {
+                    "position": 1,
+                    "tracks": [
+                        {"number": "2", "position": 2, "title": "Disc 1 Second"},
+                        {"number": "1", "position": 1, "title": "Disc 1 First"},
+                    ],
+                },
+            ],
+        }
+        service = MetadataService(http_client=http_client)
+
+        release = await service.get_release("release-1")
+
+        self.assertEqual(
+            [track.title for track in release.tracks],
+            ["Disc 1 First", "Disc 1 Second", "Disc 2 First"],
+        )
+        self.assertEqual(
+            [track.disc_number for track in release.tracks], [1, 1, 2]
+        )
+        self.assertEqual([track.position for track in release.tracks], [1, 2, 1])
+        self.assertEqual(
+            [track.global_position for track in release.tracks], [1, 2, 3]
         )
 
     async def test_get_release_propagates_musicbrainz_failure_with_context(self):

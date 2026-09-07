@@ -85,3 +85,21 @@ class TestTagger(unittest.TestCase):
             )
 
         mock_mp3.assert_not_called()
+
+    @patch("os.listdir", return_value=["01-01.mp3", "02-01.mp3"])
+    @patch("autodrome.services.tagger.MP3")
+    def test_tag_files_sets_discnumber_for_multidisc_release(
+        self, mock_mp3, mock_listdir
+    ):
+        first_audio = MagicMock()
+        second_audio = MagicMock()
+        mock_mp3.side_effect = [first_audio, second_audio]
+        tracks = [
+            Track(1, "First", disc_number=1, position=1, global_position=1),
+            Track(1, "Second", disc_number=2, position=1, global_position=2),
+        ]
+
+        self.tagger.tag_files(self.folder, "Artist", "Album", tracks)
+
+        self.assertIn(call("discnumber", "1"), first_audio.__setitem__.call_args_list)
+        self.assertIn(call("discnumber", "2"), second_audio.__setitem__.call_args_list)

@@ -137,6 +137,8 @@ class Organizer:
                 "title": track.title,
                 "tracknumber": str(track.number),
             }
+            if self._is_multi_disc(tracks):
+                expected_tags["discnumber"] = str(track.disc_number)
             for tag_name, expected_value in expected_tags.items():
                 if expected_value not in audio.get(tag_name, []):
                     raise ValueError(
@@ -206,11 +208,16 @@ class Organizer:
     ) -> List[Tuple[str, str]]:
         rename_plan = []
         final_names = set()
+        multi_disc = self._is_multi_disc(tracks)
 
         for index, file in enumerate(files):
             track = tracks[index]
             sanitized_title = self._sanitize_filename(track.title)
-            new_filename = f"{track.number:02d} - {sanitized_title}.mp3"
+            if multi_disc:
+                prefix = f"{track.disc_number:02d}-{track.position:02d}"
+            else:
+                prefix = f"{track.number:02d}"
+            new_filename = f"{prefix} - {sanitized_title}.mp3"
             collision_key = new_filename.casefold()
             if collision_key in final_names:
                 raise ValueError(
@@ -225,6 +232,11 @@ class Organizer:
             )
 
         return rename_plan
+
+    @staticmethod
+    def _is_multi_disc(tracks: List[Track]) -> bool:
+        disc_numbers = {track.disc_number for track in tracks}
+        return len(disc_numbers) > 1 or any(number != 1 for number in disc_numbers)
 
     def _sanitize_filename(self, name: str) -> str:
         invalid_chars = '<>:"/\\|?¿*!¡'

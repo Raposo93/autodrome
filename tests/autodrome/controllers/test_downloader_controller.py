@@ -76,7 +76,15 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
                 "date": "2020-01-01",
                 "artist": "Artist",
                 "cover_url": None,
-                "tracks": [{"number": 1, "title": "First"}],
+                "tracks": [
+                    {
+                        "number": 1,
+                        "title": "First",
+                        "disc_number": 1,
+                        "position": 1,
+                        "global_position": 1,
+                    }
+                ],
             },
         )
         self.downloader.download_playlist.assert_awaited_once()

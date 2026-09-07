@@ -146,25 +146,40 @@ class MetadataService:
     def _parse_tracks(self, data: Dict[str, Any]) -> List[Track]:
         tracks = []
 
-        def get_track_sort_key(t):
-            number_str = t.get("number", "")
-            number_main = number_str.split(".")[0] if number_str else ""
-            position = t.get("position", 0)
-
-            if number_main.isdigit():
-                return int(number_main)
+        def positive_int(value, fallback):
             try:
-                return int(position)
+                parsed = int(value)
             except (ValueError, TypeError):
-                return 0
+                return fallback
+            return parsed if parsed > 0 else fallback
 
-        for medium in data.get("media", []):
-            for t in medium.get("tracks", []):
-                sort_key = get_track_sort_key(t)
-                title = t.get("title", "Unknown")
-                tracks.append(Track(sort_key, title))
+        indexed_media = list(enumerate(data.get("media", []), start=1))
+        indexed_media.sort(
+            key=lambda item: positive_int(item[1].get("position"), item[0])
+        )
 
-        tracks.sort(key=lambda tr: tr.number)
+        global_position = 0
+        for medium_index, medium in indexed_media:
+            disc_number = positive_int(medium.get("position"), medium_index)
+            indexed_tracks = list(enumerate(medium.get("tracks", []), start=1))
+            indexed_tracks.sort(
+                key=lambda item: positive_int(item[1].get("position"), item[0])
+            )
+            for track_index, track_data in indexed_tracks:
+                position = positive_int(track_data.get("position"), track_index)
+                number_value = str(track_data.get("number", "")).split(".")[0]
+                number = positive_int(number_value, position)
+                global_position += 1
+                tracks.append(
+                    Track(
+                        number=number,
+                        title=track_data.get("title", "Unknown"),
+                        disc_number=disc_number,
+                        position=position,
+                        global_position=global_position,
+                    )
+                )
+
         return tracks
 
     def _parse_releases(self, data: Dict[str, Any], artist: Optional[str]) -> List[Release]:

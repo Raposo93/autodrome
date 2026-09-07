@@ -91,6 +91,26 @@ def test_tag_and_rename_rejects_sanitized_filename_collision(monkeypatch):
         assert sorted(os.listdir(tmpdir)) == ["track1.mp3", "track2.mp3"]
         organizer.tagger.tag_files.assert_not_called()
 
+def test_tag_and_rename_uses_unambiguous_multidisc_names(monkeypatch):
+    organizer = Organizer()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_dummy_mp3(tmpdir, "track1.mp3")
+        create_dummy_mp3(tmpdir, "track2.mp3")
+        tracks = [
+            Track(1, "First", disc_number=1, position=1, global_position=1),
+            Track(1, "First", disc_number=2, position=1, global_position=2),
+        ]
+        monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
+
+        organizer.tag_and_rename(tmpdir, "Artist", "Album", tracks)
+
+        assert sorted(os.listdir(tmpdir)) == [
+            "01-01 - First.mp3",
+            "02-01 - First.mp3",
+        ]
+
+
 def test_validate_album_accepts_readable_tagged_mp3s(monkeypatch):
     organizer = Organizer()
     tracks = [Track(1, "Song A"), Track(2, "Song B")]
