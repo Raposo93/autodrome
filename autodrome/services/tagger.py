@@ -15,8 +15,16 @@ class Tagger:
         date: Optional[str] = None
     ) -> None:
         files = sorted(f for f in os.listdir(folder_path) if f.lower().endswith(".mp3"))
-        
-        for file, track in zip(files, tracks):
+        expected_count = len(tracks)
+        downloaded_count = len(files)
+        if downloaded_count != expected_count:
+            raise ValueError(
+                "Downloaded track count mismatch before tagging: "
+                f"expected {expected_count}, got {downloaded_count}"
+            )
+
+        for index, file in enumerate(files):
+            track = tracks[index]
             file_path = os.path.join(folder_path, file)
             audio = MP3(file_path, ID3=EasyID3)
             audio["artist"] = artist

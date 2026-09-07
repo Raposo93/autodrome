@@ -25,8 +25,16 @@ class Organizer:
     ) -> None:
 
         files = sorted(f for f in os.listdir(folder_path) if f.lower().endswith(".mp3"))
+        expected_count = len(tracks)
+        downloaded_count = len(files)
+        if downloaded_count != expected_count:
+            raise ValueError(
+                "Downloaded track count mismatch: "
+                f"expected {expected_count}, got {downloaded_count}"
+            )
 
-        for file, track in zip(files, tracks):
+        for index, file in enumerate(files):
+            track = tracks[index]
             original_path = os.path.join(folder_path, file)
             sanitized_title = self._sanitize_filename(track.title)
             new_filename = f"{track.number:02d} - {sanitized_title}.mp3"

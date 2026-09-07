@@ -1,3 +1,5 @@
+import os
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
@@ -7,10 +9,25 @@ class TestYTDownloader(unittest.TestCase):
     def setUp(self):
         self.downloader = YTDownloader()
 
-    def test_create_temp_folder_returns_tempdir(self):
-        folder = self.downloader.create_temp_folder()
-        self.assertTrue(isinstance(folder, tempfile.TemporaryDirectory))
-        folder.cleanup()
+    def test_create_temp_folder_removes_folder_after_success(self):
+        with self.downloader.create_temp_folder() as folder:
+            self.assertTrue(os.path.isdir(folder))
+
+        self.assertFalse(os.path.exists(folder))
+
+    def test_create_temp_folder_preserves_files_after_failure(self):
+        folder = None
+        try:
+            with self.assertRaisesRegex(RuntimeError, "tagging failed"):
+                with self.downloader.create_temp_folder() as folder:
+                    with open(os.path.join(folder, "downloaded.mp3"), "wb") as file:
+                        file.write(b"ID3")
+                    raise RuntimeError("tagging failed")
+
+            self.assertTrue(os.path.isfile(os.path.join(folder, "downloaded.mp3")))
+        finally:
+            if folder and os.path.exists(folder):
+                shutil.rmtree(folder)
 
     @patch("autodrome.yt_downloader.YoutubeDL")
     def test_download_playlist_calls_yt_dlp_with_url(self, mock_yt_dlp):

@@ -68,3 +68,20 @@ class TestTagger(unittest.TestCase):
                 tracks=[Track(number=1, title="T")],
             )
 
+    @patch("os.listdir", return_value=["01.mp3"])
+    @patch("autodrome.services.tagger.MP3")
+    def test_tag_files_rejects_count_mismatch_before_loading_audio(
+        self, mock_mp3, mock_listdir
+    ):
+        with self.assertRaisesRegex(
+            ValueError,
+            "Downloaded track count mismatch before tagging: expected 2, got 1",
+        ):
+            self.tagger.tag_files(
+                folder_path=self.folder,
+                artist="X",
+                album="Y",
+                tracks=self.tracks,
+            )
+
+        mock_mp3.assert_not_called()

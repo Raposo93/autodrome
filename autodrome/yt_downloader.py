@@ -1,17 +1,30 @@
 import asyncio
 import os
+import shutil
+import tempfile
+from contextlib import contextmanager
 from yt_dlp import YoutubeDL
 from autodrome.logger import logger
-from tempfile import TemporaryDirectory
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterator, Optional
 
 class YTDownloader:
     def __init__(self):
         pass
 
-    def create_temp_folder(self) -> TemporaryDirectory:
-        return TemporaryDirectory()
+    @contextmanager
+    def create_temp_folder(self) -> Iterator[str]:
+        temp_folder = tempfile.mkdtemp(prefix="autodrome-")
+        try:
+            yield temp_folder
+        except Exception:
+            logger.error(
+                f"Download failed; preserving temporary files in {temp_folder}"
+            )
+            raise
+        else:
+            if os.path.exists(temp_folder):
+                shutil.rmtree(temp_folder)
 
     async def download_playlist(self, url: str, dest: str, total: Optional[int] = None) -> None:
         logger.debug(f"[YTDownloader] Starting download_playlist: {url} to {dest}")
