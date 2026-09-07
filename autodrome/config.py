@@ -48,6 +48,9 @@ class Config:
             "QUEUE_STATE_PATH",
             os.path.join(self.library_path, ".autodrome-queue.json"),
         )
+        self.download_concurrency = self._read_int(
+            "DOWNLOAD_CONCURRENCY", 1, minimum=1, maximum=1
+        )
         self.api_host = os.getenv("API_HOST", "127.0.0.1").strip()
         self.api_port = self._read_int("API_PORT", 5000, minimum=1, maximum=65535)
         self.api_token = os.getenv("API_TOKEN")

@@ -75,6 +75,9 @@ La política se configura mediante estas variables de entorno:
   incluso si están muy comprimidas.
 - `QUEUE_STATE_PATH`: archivo JSON con el estado durable de la cola; por defecto,
   `LIBRARY_PATH/.autodrome-queue.json`.
+- `DOWNLOAD_CONCURRENCY`: contrato de concurrencia por álbum. Actualmente debe
+  ser `1`; cada pista ya usa una operación async aislada, pero la descarga sigue
+  siendo secuencial hasta que exista una política segura de publicación paralela.
 - `API_HOST`: interfaz de escucha; por defecto, `127.0.0.1`. Usa una interfaz no
   loopback solo de forma deliberada.
 - `API_PORT`: puerto HTTP; por defecto, `5000`.

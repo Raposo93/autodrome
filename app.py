@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
     http_client = AsyncHttpClient(session=aiohttp_session)
     search_controller = SearchController(http_client=http_client)
     downloader_controller = DownloaderController(
-        downloader=YTDownloader(),
+        downloader=YTDownloader(download_concurrency=conf.download_concurrency),
         organizer=Organizer(),
         metadata_service=MetadataService(http_client=http_client),
         http_client=http_client,

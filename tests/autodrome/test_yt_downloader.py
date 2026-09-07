@@ -2,7 +2,11 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from autodrome.yt_downloader import PlaylistDownloadError, YTDownloader
+from autodrome.yt_downloader import (
+    PlaylistDownloadError,
+    TrackDownloadError,
+    YTDownloader,
+)
 
 
 class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
@@ -29,12 +33,61 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
 
         self.downloader.get_playlist_track_urls.assert_awaited_once_with(playlist_url)
         calls = self.downloader._download_track_blocking.call_args_list
-        self.assertEqual([call.args[0] for call in calls], [
-            "https://youtube.test/watch?v=first",
-            "https://youtube.test/watch?v=second",
-        ])
+        self.assertEqual(
+            [call.args[0] for call in calls],
+            [
+                "https://youtube.test/watch?v=first",
+                "https://youtube.test/watch?v=second",
+            ],
+        )
         self.assertEqual([call.args[2] for call in calls], [1, 2])
         self.downloader._check_downloaded_files.assert_awaited_once()
+
+    async def test_download_track_is_reusable_and_owns_its_retries(self):
+        downloader = YTDownloader(track_download_attempts=2)
+        downloader._download_track_blocking = MagicMock(
+            side_effect=[RuntimeError("temporary"), None]
+        )
+        hook = MagicMock()
+
+        with patch(
+            "autodrome.yt_downloader.asyncio.to_thread", new_callable=AsyncMock
+        ) as to_thread, tempfile.TemporaryDirectory() as destination:
+            to_thread.side_effect = lambda function, *args: function(*args)
+
+            await downloader.download_track(
+                "https://youtube.test/track", destination, 7, hook
+            )
+
+        self.assertEqual(downloader._download_track_blocking.call_count, 2)
+        self.assertEqual(
+            downloader._download_track_blocking.call_args.args[2],
+            7,
+        )
+
+    async def test_download_track_reports_stable_failure_context(self):
+        downloader = YTDownloader(track_download_attempts=1)
+        downloader._download_track_blocking = MagicMock(
+            side_effect=RuntimeError("unavailable")
+        )
+
+        with patch(
+            "autodrome.yt_downloader.asyncio.to_thread", new_callable=AsyncMock
+        ) as to_thread, tempfile.TemporaryDirectory() as destination:
+            to_thread.side_effect = lambda function, *args: function(*args)
+
+            with self.assertRaises(TrackDownloadError) as raised:
+                await downloader.download_track(
+                    "https://youtube.test/track", destination, 7, MagicMock()
+                )
+
+        self.assertEqual(raised.exception.index, 7)
+        self.assertEqual(raised.exception.url, "https://youtube.test/track")
+        self.assertEqual(raised.exception.reason, "unavailable")
+
+    def test_parallel_downloads_are_not_enabled_by_configuration_stub(self):
+        with self.assertRaisesRegex(ValueError, "must remain 1"):
+            YTDownloader(download_concurrency=2)
 
     @patch("autodrome.yt_downloader.YoutubeDL")
     def test_extract_track_urls_uses_playlist_metadata(self, youtube_dl):

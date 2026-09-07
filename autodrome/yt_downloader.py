@@ -1,9 +1,12 @@
 import asyncio
 import os
-from yt_dlp import YoutubeDL
-from autodrome.logger import logger
+import threading
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
+
+from yt_dlp import YoutubeDL
+
+from autodrome.logger import logger
 
 
 class PlaylistDownloadError(RuntimeError):
@@ -13,15 +16,41 @@ class PlaylistDownloadError(RuntimeError):
             f"track {index} ({url}): {error}"
             for index, url, error in failures
         )
-        super().__init__(f"Failed to download {len(failures)} playlist track(s): {details}")
+        super().__init__(
+            f"Failed to download {len(failures)} playlist track(s): {details}"
+        )
+
+
+class TrackDownloadError(RuntimeError):
+    def __init__(self, index: int, url: str, reason: str) -> None:
+        self.index = index
+        self.url = url
+        self.reason = reason
+        super().__init__(f"Track {index} failed: {reason}")
+
 
 class YTDownloader:
-    def __init__(self, track_download_attempts: int = 2):
+    def __init__(
+        self,
+        track_download_attempts: int = 2,
+        download_concurrency: int = 1,
+    ):
         if track_download_attempts < 1:
             raise ValueError("track_download_attempts must be at least 1")
+        if download_concurrency != 1:
+            raise ValueError(
+                "download_concurrency must remain 1 until parallel publication "
+                "is supported"
+            )
         self.track_download_attempts = track_download_attempts
+        self.download_concurrency = download_concurrency
 
-    async def download_playlist(self, url: str, dest: str, total: Optional[int] = None) -> None:
+    async def download_playlist(
+        self,
+        url: str,
+        dest: str,
+        total: Optional[int] = None,
+    ) -> None:
         logger.debug(f"[YTDownloader] Starting download_playlist: {url} to {dest}")
         print(f"[YTDownloader] Descargando: {url} en {dest}")
 
@@ -34,23 +63,10 @@ class YTDownloader:
         hook = self._build_progress_hook(total or len(track_urls))
         failures = []
         for index, track_url in enumerate(track_urls, start=1):
-            for attempt in range(1, self.track_download_attempts + 1):
-                try:
-                    await asyncio.to_thread(
-                        self._download_track_blocking,
-                        track_url,
-                        dest,
-                        index,
-                        hook,
-                    )
-                    break
-                except Exception as e:
-                    logger.warning(
-                        f"[YTDownloader] Track {index} attempt {attempt} of "
-                        f"{self.track_download_attempts} failed: {e}"
-                    )
-                    if attempt == self.track_download_attempts:
-                        failures.append((index, track_url, str(e)))
+            try:
+                await self.download_track(track_url, dest, index, hook)
+            except TrackDownloadError as e:
+                failures.append((e.index, e.url, e.reason))
 
         if failures:
             raise PlaylistDownloadError(failures)
@@ -59,6 +75,31 @@ class YTDownloader:
 
     async def get_playlist_track_urls(self, url: str) -> List[str]:
         return await asyncio.to_thread(self._extract_track_urls, url)
+
+    async def download_track(
+        self,
+        url: str,
+        dest: str,
+        index: int,
+        hook: Callable,
+    ) -> None:
+        for attempt in range(1, self.track_download_attempts + 1):
+            try:
+                await asyncio.to_thread(
+                    self._download_track_blocking,
+                    url,
+                    dest,
+                    index,
+                    hook,
+                )
+                return
+            except Exception as e:
+                logger.warning(
+                    f"[YTDownloader] Track {index} attempt {attempt} of "
+                    f"{self.track_download_attempts} failed: {e}"
+                )
+                if attempt == self.track_download_attempts:
+                    raise TrackDownloadError(index, url, str(e)) from e
 
     def _extract_track_urls(self, url: str) -> List[str]:
         options = {
@@ -111,11 +152,18 @@ class YTDownloader:
 
         files = os.listdir(folder)
 
-        downloaded = [f for f in files if f.lower().endswith((".mp3", ".m4a", ".opus"))]
+        downloaded = [
+            file
+            for file in files
+            if file.lower().endswith((".mp3", ".m4a", ".opus"))
+        ]
         logger.info(f"[YTDownloader] Archivos de audio descargados: {downloaded}")
 
         if not downloaded:
-            raise RuntimeError("[YTDownloader] No se han descargado archivos de audio. Revisa la URL o la configuración.")
+            raise RuntimeError(
+                "[YTDownloader] No se han descargado archivos de audio. "
+                "Revisa la URL o la configuración."
+            )
 
     def _build_ydl_opts(self, dest: Path, hook: Callable, index: int) -> dict:
         return {
@@ -136,18 +184,27 @@ class YTDownloader:
     def _build_progress_hook(self, total: Optional[int]) -> Callable:
         completed = 0
         last_log_msg = None
+        progress_lock = threading.Lock()
 
         def hook(d):
             nonlocal completed, last_log_msg
-            if d.get('status') == 'finished':
-                completed += 1
-                msg = f"[YTDownloader] Downloaded {completed} of {total}" if total else f"[YTDownloader] Downloaded {completed}"
-                logger.info(msg)
-                print(msg)
-            elif d.get('status') == 'downloading' and last_log_msg != "beginning download":
-                logger.info("[YTDownloader] Beginning download")
-                print("[YTDownloader] Comenzando descarga")
-                last_log_msg = "beginning download"
+            with progress_lock:
+                if d.get("status") == "finished":
+                    completed += 1
+                    msg = (
+                        f"[YTDownloader] Downloaded {completed} of {total}"
+                        if total
+                        else f"[YTDownloader] Downloaded {completed}"
+                    )
+                    logger.info(msg)
+                    print(msg)
+                elif (
+                    d.get("status") == "downloading"
+                    and last_log_msg != "beginning download"
+                ):
+                    logger.info("[YTDownloader] Beginning download")
+                    print("[YTDownloader] Comenzando descarga")
+                    last_log_msg = "beginning download"
 
         return hook
 
