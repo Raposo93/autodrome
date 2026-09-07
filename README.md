@@ -67,6 +67,18 @@ La política se configura mediante estas variables de entorno:
   incrustada; por defecto, 1 MiB.
 - `QUEUE_STATE_PATH`: archivo JSON con el estado durable de la cola; por defecto,
   `LIBRARY_PATH/.autodrome-queue.json`.
+- `API_HOST`: interfaz de escucha; por defecto, `127.0.0.1`. Usa una interfaz no
+  loopback solo de forma deliberada.
+- `API_PORT`: puerto HTTP; por defecto, `5000`.
+- `CORS_ORIGINS`: lista separada por comas de orígenes `http`/`https` permitidos;
+  por defecto no se permite ningún origen cruzado.
+- `API_TOKEN`: token de al menos 32 caracteres, obligatorio si `API_HOST` no es
+  loopback. Los clientes HTTP lo envían como Bearer y el WebSocket como parámetro
+  `token`.
+
+Cuando el frontend deba usar autenticación, configura el mismo valor como
+`VITE_API_TOKEN`. Su servidor de desarrollo escucha solo en `127.0.0.1` salvo
+que se configure `VITE_HOST` explícitamente.
 
 Al reiniciar, los jobs que seguían en `queued` se reanudan en orden. Los que
 estaban en `running` pasan a `interrupted` y no se ejecutan de nuevo a ciegas;

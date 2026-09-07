@@ -1,7 +1,15 @@
 import os
 import logging
+from urllib.parse import urlsplit
+from typing import Optional
+
 from dotenv import load_dotenv
 from autodrome.logger import logger
+
+
+class ConfigurationError(RuntimeError):
+    pass
+
 
 class Config:
     def __init__(self):
@@ -15,20 +23,27 @@ class Config:
             "STAGING_PATH",
             os.path.join(self.library_path, ".autodrome-staging"),
         )
-        self.minimum_staging_free_bytes = int(
-            os.getenv("MIN_STAGING_FREE_BYTES", str(1024 * 1024 * 1024))
+        self.minimum_staging_free_bytes = self._read_int(
+            "MIN_STAGING_FREE_BYTES", 1024 * 1024 * 1024, minimum=0
         )
-        self.preserve_failed_staging = os.getenv(
-            "PRESERVE_FAILED_STAGING", "true"
-        ).lower() in {"1", "true", "yes", "on"}
-        self.max_embedded_cover_bytes = int(
-            os.getenv("MAX_EMBEDDED_COVER_BYTES", str(1024 * 1024))
+        self.preserve_failed_staging = self._read_bool(
+            "PRESERVE_FAILED_STAGING", True
+        )
+        self.max_embedded_cover_bytes = self._read_int(
+            "MAX_EMBEDDED_COVER_BYTES", 1024 * 1024, minimum=1
         )
         self.queue_state_path = os.getenv(
             "QUEUE_STATE_PATH",
             os.path.join(self.library_path, ".autodrome-queue.json"),
         )
-
+        self.api_host = os.getenv("API_HOST", "127.0.0.1").strip()
+        self.api_port = self._read_int("API_PORT", 5000, minimum=1, maximum=65535)
+        self.api_token = os.getenv("API_TOKEN")
+        self.cors_origins = [
+            origin.strip()
+            for origin in os.getenv("CORS_ORIGINS", "").split(",")
+            if origin.strip()
+        ]
 
         log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
         log_level = getattr(logging, log_level_str, logging.INFO)
@@ -36,3 +51,86 @@ class Config:
         logger.setLevel(log_level)
         # logger.info(f"Config loaded. User-Agent: {self.user_agent}")
         # logger.info(f"Library path: {self.library_path}")
+
+    @property
+    def requires_api_token(self) -> bool:
+        return self.api_host.lower() not in {"127.0.0.1", "::1", "localhost"}
+
+    def validate(self) -> None:
+        required_values = {
+            "GOOGLE_API_KEY": self.google_api_key,
+            "CONTACT_EMAIL": self.contact_email,
+            "VERSION": self.version,
+            "LIBRARY_PATH": self.library_path,
+        }
+        missing = [name for name, value in required_values.items() if not value]
+        if missing:
+            raise ConfigurationError(
+                f"Missing required configuration: {', '.join(missing)}"
+            )
+
+        if (
+            not self.api_host
+            or any(character.isspace() for character in self.api_host)
+            or "/" in self.api_host
+        ):
+            raise ConfigurationError("API_HOST must be a hostname or IP address")
+
+        if self.requires_api_token and (
+            self.api_token is None
+            or self.api_token.strip() != self.api_token
+            or len(self.api_token) < 32
+        ):
+            raise ConfigurationError(
+                "API_TOKEN must contain at least 32 characters when API_HOST "
+                "is not loopback"
+            )
+
+        for origin in self.cors_origins:
+            try:
+                parsed = urlsplit(origin)
+                hostname = parsed.hostname
+                parsed.port
+            except ValueError as e:
+                raise ConfigurationError(f"Invalid CORS origin: {origin}") from e
+            if (
+                origin == "*"
+                or parsed.scheme not in {"http", "https"}
+                or not hostname
+                or parsed.username
+                or parsed.password
+                or parsed.path not in {"", "/"}
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ConfigurationError(f"Invalid CORS origin: {origin}")
+
+    @staticmethod
+    def _read_int(
+        name: str,
+        default: int,
+        minimum: int,
+        maximum: Optional[int] = None,
+    ) -> int:
+        raw_value = os.getenv(name, str(default))
+        try:
+            value = int(raw_value)
+        except ValueError as e:
+            raise ConfigurationError(f"{name} must be an integer") from e
+        if value < minimum or (maximum is not None and value > maximum):
+            expected = (
+                f"between {minimum} and {maximum}"
+                if maximum is not None
+                else f"at least {minimum}"
+            )
+            raise ConfigurationError(f"{name} must be {expected}")
+        return value
+
+    @staticmethod
+    def _read_bool(name: str, default: bool) -> bool:
+        raw_value = os.getenv(name, str(default)).lower()
+        if raw_value in {"1", "true", "yes", "on"}:
+            return True
+        if raw_value in {"0", "false", "no", "off"}:
+            return False
+        raise ConfigurationError(f"{name} must be true or false")

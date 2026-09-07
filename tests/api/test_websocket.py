@@ -22,6 +22,7 @@ class TestWebSocketEndpoint(unittest.IsolatedAsyncioTestCase):
         ]
         websocket.scope = {"app": MagicMock()}
         websocket.scope["app"].state.queue_manager = queue_manager
+        websocket.scope["app"].state.config.requires_api_token = False
 
         await websocket_endpoint(websocket)
 
@@ -30,6 +31,20 @@ class TestWebSocketEndpoint(unittest.IsolatedAsyncioTestCase):
             [{"job_id": "job-1", "status": "interrupted"}]
         )
         websocket_manager.disconnect.assert_called_once_with(websocket)
+
+    async def test_external_connection_rejects_invalid_token(self):
+        websocket = MagicMock()
+        websocket.close = AsyncMock()
+        websocket.query_params = {}
+        websocket.scope = {"app": MagicMock()}
+        websocket.scope["app"].state.config.requires_api_token = True
+        websocket.scope["app"].state.config.api_token = "a" * 32
+
+        await websocket_endpoint(websocket)
+
+        websocket.close.assert_awaited_once_with(
+            code=1008, reason="A valid API token is required"
+        )
 
 
 if __name__ == "__main__":

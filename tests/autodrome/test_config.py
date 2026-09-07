@@ -1,0 +1,85 @@
+import os
+import unittest
+from unittest.mock import patch
+
+from autodrome.config import Config, ConfigurationError
+
+
+REQUIRED_ENV = {
+    "GOOGLE_API_KEY": "test-key",
+    "CONTACT_EMAIL": "admin@example.test",
+    "VERSION": "autodrome/test",
+    "LIBRARY_PATH": "/tmp/autodrome-library",
+}
+
+
+class TestConfig(unittest.TestCase):
+    def build_config(self, values):
+        with patch("autodrome.config.load_dotenv"), patch.dict(
+            os.environ, values, clear=True
+        ):
+            return Config()
+
+    def test_loopback_and_closed_cors_are_defaults(self):
+        settings = self.build_config(REQUIRED_ENV)
+
+        settings.validate()
+
+        self.assertEqual(settings.api_host, "127.0.0.1")
+        self.assertFalse(settings.requires_api_token)
+        self.assertEqual(settings.cors_origins, [])
+
+    def test_missing_critical_configuration_is_actionable(self):
+        settings = self.build_config({})
+
+        with self.assertRaisesRegex(
+            ConfigurationError,
+            "GOOGLE_API_KEY, CONTACT_EMAIL, VERSION",
+        ):
+            settings.validate()
+
+    def test_external_host_requires_long_token(self):
+        settings = self.build_config({**REQUIRED_ENV, "API_HOST": "0.0.0.0"})
+
+        with self.assertRaisesRegex(ConfigurationError, "API_TOKEN"):
+            settings.validate()
+
+        settings = self.build_config(
+            {
+                **REQUIRED_ENV,
+                "API_HOST": "0.0.0.0",
+                "API_TOKEN": "a" * 32,
+            }
+        )
+        settings.validate()
+
+    def test_api_host_rejects_urls(self):
+        settings = self.build_config(
+            {**REQUIRED_ENV, "API_HOST": "https://example.test"}
+        )
+
+        with self.assertRaisesRegex(ConfigurationError, "API_HOST"):
+            settings.validate()
+
+    def test_cors_origins_are_explicit_and_validated(self):
+        settings = self.build_config(
+            {
+                **REQUIRED_ENV,
+                "CORS_ORIGINS": "http://localhost:5173,https://music.example.test",
+            }
+        )
+
+        settings.validate()
+
+        self.assertEqual(
+            settings.cors_origins,
+            ["http://localhost:5173", "https://music.example.test"],
+        )
+
+        wildcard = self.build_config({**REQUIRED_ENV, "CORS_ORIGINS": "*"})
+        with self.assertRaisesRegex(ConfigurationError, "Invalid CORS origin"):
+            wildcard.validate()
+
+
+if __name__ == "__main__":
+    unittest.main()

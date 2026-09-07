@@ -7,7 +7,7 @@ dotenv.config()
 export default defineConfig({
   plugins: [vue()],
   server: {
-    host: true,
+    host: process.env.VITE_HOST || '127.0.0.1',
     proxy: {
       '/api': {
         target: process.env.VITE_IP_HOST || 'http://localhost:5000',
