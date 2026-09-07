@@ -55,6 +55,33 @@ class MetadataService:
 
         return releases
 
+    async def get_release(self, release_id: str) -> Release:
+        """Fetch the metadata required to download a release by its ID."""
+        url = f"https://musicbrainz.org/ws/2/release/{release_id}"
+        params = {"inc": "recordings artist-credits", "fmt": "json"}
+
+        try:
+            data = await self.http_client.get(url, params=params)
+        except Exception as e:
+            raise RuntimeError(
+                f"Could not retrieve release {release_id} from MusicBrainz"
+            ) from e
+
+        if not isinstance(data, dict) or data.get("id") != release_id:
+            raise ValueError(
+                f"MusicBrainz returned invalid metadata for release {release_id}"
+            )
+
+        artist_credit = data.get("artist-credit") or [{}]
+        return Release(
+            release_id=release_id,
+            title=data.get("title", "Unknown"),
+            date=data.get("date", "Unknown"),
+            artist=artist_credit[0].get("name", "Unknown"),
+            cover_url=None,
+            tracks=self._parse_tracks(data),
+        )
+
     async def get_cover_art(self, release_id: str) -> Optional[str]:
         path = self.get_cover_path(release_id)
         if os.path.exists(path):

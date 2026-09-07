@@ -33,12 +33,10 @@ class DownloaderController:
     ) -> None:
         logger.debug(f"Starting download_and_tag for release_id: {release_id}")
 
-        cached_release: Optional[Dict[str, Any]] = self.redis_cache.get_release(release_id)
-        if cached_release is None:
-            raise ValueError(f"Release {release_id} not found in cache")
+        release_data = await self._get_release_data(release_id)
 
-        tracks: List[Track] = [Track(**t) for t in cached_release.get("tracks", [])]
-        date: Optional[str] = cached_release.get("date")
+        tracks: List[Track] = [Track(**t) for t in release_data.get("tracks", [])]
+        date: Optional[str] = release_data.get("date")
 
         with self.downloader.create_temp_folder() as tmpdir:
             await self.downloader.download_playlist(playlist_url, tmpdir, total=track_count)
@@ -48,3 +46,40 @@ class DownloaderController:
             self.organizer.move_to_library(tmpdir, artist, album)
 
         logger.info(f"Download and tagging completed for release_id: {release_id}")
+
+    async def _get_release_data(self, release_id: str) -> Dict[str, Any]:
+        try:
+            cached_release = self.redis_cache.get_release(release_id)
+        except Exception as e:
+            logger.warning(f"Could not read release {release_id} from cache: {e}")
+            cached_release = None
+
+        if cached_release is not None:
+            return cached_release
+
+        logger.info(
+            f"Release {release_id} was not available in cache; fetching MusicBrainz"
+        )
+        try:
+            release = await self.metadata_service.get_release(release_id)
+        except Exception as e:
+            raise RuntimeError(
+                f"Could not load release {release_id}: cache miss and "
+                "MusicBrainz lookup failed"
+            ) from e
+
+        release_data = {
+            "id": release.id,
+            "title": release.title,
+            "date": release.date,
+            "artist": release.artist,
+            "cover_url": release.cover_url,
+            "tracks": [track.to_dict() for track in release.tracks],
+        }
+
+        try:
+            self.redis_cache.set_release(release_id, release_data)
+        except Exception as e:
+            logger.warning(f"Could not cache release {release_id}: {e}")
+
+        return release_data
