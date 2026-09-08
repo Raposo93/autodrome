@@ -23,7 +23,9 @@ class SearchController:
         if query:
             t1 = time.monotonic()
             playlists_results = await self.yt_api.search_playlist(query)
-            playlists = [p.__dict__ for p in playlists_results]
+            playlists = self._sort_by_track_count(
+                [p.__dict__ for p in playlists_results]
+            )
             logger.debug(f"SearchController: playlists:{playlists} playlists")
             logger.debug(f"SearchController: playlists fetched in {time.monotonic() - t1:.2f}s")
 
@@ -36,23 +38,39 @@ class SearchController:
                 f"{time.monotonic() - t2:.2f}s"
             )
 
-            releases = [
-                {
-                    "id": r.id,
-                    "title": r.title,
-                    "date": r.date,
-                    "artist": r.artist,
-                    "cover_url": r.cover_url,
-                    "track_count": r.track_count,
-                }
-                for r in releases_results
-            ]
+            releases = self._sort_by_track_count(
+                [
+                    {
+                        "id": r.id,
+                        "title": r.title,
+                        "date": r.date,
+                        "artist": r.artist,
+                        "cover_url": r.cover_url,
+                        "track_count": r.track_count,
+                    }
+                    for r in releases_results
+                ]
+            )
         elapsed = time.monotonic() - start
         logger.info(f"SearchController: completed search for '{query}' in {elapsed:.2f} seconds")
         return {
             "playlists": playlists,
             "releases": releases
         }
+
+    @staticmethod
+    def _sort_by_track_count(items):
+        def sort_key(item):
+            count = item.get("track_count")
+            if (
+                isinstance(count, int)
+                and not isinstance(count, bool)
+                and count >= 0
+            ):
+                return (0, -count)
+            return (1, 0)
+
+        return sorted(items, key=sort_key)
 
     async def get_release_details(self, release_id: str):
         start = time.monotonic()

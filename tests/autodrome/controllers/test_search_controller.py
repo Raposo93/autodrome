@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock
 
 from autodrome.controllers.search_controller import SearchController
+from autodrome.models.playlist import Playlist
 from autodrome.models.release import Release
 
 
@@ -32,6 +33,36 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["releases"][0]["track_count"], 11)
         self.assertNotIn("tracks", result["releases"][0])
         controller.metadata_service.get_cover_art.assert_not_awaited()
+
+    async def test_search_sorts_playlists_and_releases_by_track_count(self):
+        controller = SearchController(http_client=MagicMock())
+        controller.yt_api.search_playlist = AsyncMock(
+            return_value=[
+                Playlist("playlist-1", "One", "Channel", "url-1", None, 5),
+                Playlist("playlist-2", "Two", "Channel", "url-2", None, None),
+                Playlist("playlist-3", "Three", "Channel", "url-3", None, 12),
+                Playlist("playlist-4", "Four", "Channel", "url-4", None, 5),
+            ]
+        )
+        controller.metadata_service.search_releases = AsyncMock(
+            return_value=[
+                Release("release-1", "One", "2020", "Artist", None, track_count=8),
+                Release("release-2", "Two", "2020", "Artist", None, track_count=None),
+                Release("release-3", "Three", "2020", "Artist", None, track_count=10),
+                Release("release-4", "Four", "2020", "Artist", None, track_count=8),
+            ]
+        )
+
+        result = await controller.search("Artist", "Album")
+
+        self.assertEqual(
+            [playlist["id"] for playlist in result["playlists"]],
+            ["playlist-3", "playlist-1", "playlist-4", "playlist-2"],
+        )
+        self.assertEqual(
+            [release["id"] for release in result["releases"]],
+            ["release-3", "release-1", "release-4", "release-2"],
+        )
 
     async def test_selected_release_returns_full_details(self):
         metadata_service = MagicMock()
