@@ -55,6 +55,12 @@ class YTDownloader:
         print(f"[YTDownloader] Descargando: {url} en {dest}")
 
         track_urls = await self.get_playlist_track_urls(url)
+        if total is not None and len(track_urls) != total:
+            raise RuntimeError(
+                f"[YTDownloader] Playlist manifest mismatch: expected {total} "
+                f"tracks, extractable {len(track_urls)}. The current manifest "
+                "does not match the known count; entries may be unavailable."
+            )
         if not track_urls:
             raise RuntimeError(
                 "[YTDownloader] The playlist does not contain downloadable tracks"

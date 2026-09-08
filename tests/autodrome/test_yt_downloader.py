@@ -65,6 +65,27 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
             7,
         )
 
+    async def test_manifest_mismatch_aborts_before_any_download(self):
+        for urls, total in [(["first"], 2), (["first", "second"], 1), ([], 2)]:
+            with self.subTest(urls=urls, total=total):
+                self.downloader.get_playlist_track_urls = AsyncMock(return_value=urls)
+                self.downloader.download_track = AsyncMock()
+                self.downloader._check_downloaded_files = AsyncMock()
+                with self.assertRaisesRegex(
+                    RuntimeError, f"expected {total} tracks, extractable {len(urls)}"
+                ):
+                    await self.downloader.download_playlist("playlist", "unused", total)
+                self.downloader.download_track.assert_not_awaited()
+                self.downloader._check_downloaded_files.assert_not_awaited()
+
+    async def test_unknown_total_downloads_extracted_manifest(self):
+        self.downloader.get_playlist_track_urls = AsyncMock(return_value=["first"])
+        self.downloader.download_track = AsyncMock()
+        self.downloader._check_downloaded_files = AsyncMock()
+        await self.downloader.download_playlist("playlist", "unused")
+        self.downloader.download_track.assert_awaited_once()
+        self.downloader._check_downloaded_files.assert_awaited_once_with("unused")
+
     async def test_download_track_reports_stable_failure_context(self):
         downloader = YTDownloader(track_download_attempts=1)
         downloader._download_track_blocking = MagicMock(
