@@ -1,4 +1,6 @@
 import asyncio
+import html
+import re
 from functools import cached_property
 from typing import List, Optional
 from autodrome import config
@@ -64,8 +66,8 @@ class YTApi:
             snippet = item.get("snippet", {})
             playlist = Playlist(
                 playlist_id=playlist_id,
-                title=snippet.get("title", "Untitled"),
-                channel=snippet.get("channelTitle", "Unknown"),
+                title=self._normalize_text(snippet.get("title", "Untitled")),
+                channel=self._normalize_text(snippet.get("channelTitle", "Unknown")),
                 url=f"https://www.youtube.com/playlist?list={playlist_id}",
                 thumbnail=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
                 track_count=None
@@ -73,6 +75,20 @@ class YTApi:
             results.append(playlist)
         logger.info(f"Parsed {len(results)} playlists")
         return results
+
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        # Decode once, at the provider boundary. Require a semicolon so plain
+        # text such as "&notebook" is not interpreted as a partial HTML entity.
+        return re.sub(
+            r"&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);",
+            lambda match: (
+                html.unescape(match.group())
+                if match.group().startswith("&#") or match.group()[1:] in html.entities.html5
+                else match.group()
+            ),
+            value,
+        )
 
     def _extract_playlist_id(self, item: dict) -> Optional[str]:
         if item.get("id", {}).get("kind") != "youtube#playlist":

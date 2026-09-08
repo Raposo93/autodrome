@@ -48,6 +48,27 @@ class TestYTApi(unittest.IsolatedAsyncioTestCase):
             playlist.url, "https://www.youtube.com/playlist?list=PL123"
         )
 
+    async def test_text_is_decoded_once_at_provider_boundary(self):
+        cases = [
+            ('A &quot;live&quot; &amp; B', 'A "live" & B'),
+            ("L&#39;été &apos;26 &#x1F3B5;", "L'été '26 🎵"),
+            ("Björk — 日本語 🎵 & café", "Björk — 日本語 🎵 & café"),
+            ("Literal &amp;quot; and &amp;amp;", "Literal &quot; and &amp;"),
+            ("Notes &notebook &notit; &unknown;", "Notes &notebook &notit; &unknown;"),
+        ]
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                self.http_client.get.side_effect = [
+                    {"items": [{
+                        "id": {"kind": "youtube#playlist", "playlistId": "PL123"},
+                        "snippet": {"title": raw, "channelTitle": raw},
+                    }]},
+                    {"items": [{"contentDetails": {"itemCount": 1}}]},
+                ]
+                playlist, = await self.api.search_playlist("query")
+                self.assertEqual(playlist.title, expected)
+                self.assertEqual(playlist.channel, expected)
+
     async def test_search_playlist_handles_empty_response(self):
         self.http_client.get.return_value = {}
 

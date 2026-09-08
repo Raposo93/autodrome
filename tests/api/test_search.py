@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from api.search import search_router
 from autodrome.http_client_async import UpstreamServiceError
+from autodrome.controllers.search_controller import SearchController
 
 
 class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
@@ -38,6 +39,30 @@ class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"playlists": [], "releases": []})
         self.app.state.search_controller.search.assert_awaited_once_with("Artist", "")
+
+    async def test_youtube_text_reaches_ui_normalized_once(self):
+        http_client = MagicMock()
+        http_client.get = AsyncMock(side_effect=[
+            {"items": [{
+                "id": {"kind": "youtube#playlist", "playlistId": "PL1234567890"},
+                "snippet": {
+                    "title": "Björk &amp; &quot;Live&quot; &amp;quot;",
+                    "channelTitle": "L&#39;été 🎵",
+                },
+            }]},
+            {"items": [{"contentDetails": {"itemCount": 1}}]},
+        ])
+        metadata = MagicMock()
+        metadata.search_releases = AsyncMock(return_value=[])
+        self.app.state.search_controller = SearchController(http_client, metadata)
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/search/", params={"artist": "Björk"})
+        self.assertEqual(response.status_code, 200)
+        playlist, = response.json()["playlists"]
+        self.assertEqual(playlist["title"], 'Björk & "Live" &quot;')
+        self.assertEqual(playlist["channel"], "L'été 🎵")
 
     async def test_empty_query_returns_4xx_without_searching(self):
         async with AsyncClient(
