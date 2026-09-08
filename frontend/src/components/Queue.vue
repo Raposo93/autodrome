@@ -9,6 +9,13 @@
     </header>
 
     <div class="panel-body">
+      <div class="queue-toolbar">
+        <button type="button" :disabled="busy || !hasFinishedJobs" @click="clearHistory">
+          Clear finished jobs
+        </button>
+        <span v-if="busy" role="status">Saving queue changes…</span>
+      </div>
+      <p v-if="actionError" class="queue-error" role="alert">{{ actionError }}</p>
       <ul v-if="queueMessages.length" class="queue-list">
         <li
           v-for="(item, index) in queueMessages"
@@ -25,6 +32,14 @@
             <span class="queue-status">{{ statusLabel(item) }}</span>
             <span v-if="item.error" class="queue-error">{{ item.error }}</span>
           </span>
+          <div class="queue-actions">
+            <button type="button" :disabled="busy || !canRetry(item)" @click="retryJob(item)">
+              Retry
+            </button>
+            <button type="button" :disabled="busy || !canDelete(item)" @click="deleteJob(item)">
+              Remove
+            </button>
+          </div>
         </li>
       </ul>
 
@@ -38,13 +53,16 @@
 </template>
 
 <script>
-import { connectWebSocket } from '../services/api'
+import api, { connectWebSocket } from '../services/api'
+import { canDeleteJob, canRetryJob } from '../services/queueHistory.js'
 
 export default {
   data() {
     return {
       queueMessages: [],
-      socket: null
+      socket: null,
+      busy: false,
+      actionError: null
     }
   },
   mounted() {
@@ -62,12 +80,43 @@ export default {
     }
   },
   computed: {
+    hasFinishedJobs() {
+      return this.queueMessages.some(canDeleteJob)
+    },
     queueCount() {
       const count = this.queueMessages.length
       return `${count} ${count === 1 ? 'job' : 'jobs'}`
     }
   },
   methods: {
+    canDelete: canDeleteJob,
+    canRetry(item) {
+      return canRetryJob(item, this.queueMessages)
+    },
+    async runAction(action) {
+      if (this.busy) return
+      this.busy = true
+      this.actionError = null
+      try {
+        await action()
+      } catch (error) {
+        this.actionError = error.response?.data?.detail || 'Could not update the queue. Please try again.'
+      } finally {
+        this.busy = false
+      }
+    },
+    clearHistory() {
+      if (!this.hasFinishedJobs) return
+      return this.runAction(() => api.clearQueueHistory())
+    },
+    deleteJob(item) {
+      if (!this.canDelete(item)) return
+      return this.runAction(() => api.deleteJob(item.job_id))
+    },
+    retryJob(item) {
+      if (!this.canRetry(item)) return
+      return this.runAction(() => api.retryJob(item.job_id))
+    },
     itemTitle(item) {
       if (typeof item !== 'object') return item
       return `${item.artist || 'Unknown artist'} — ${item.album || 'Unknown album'}`
@@ -85,3 +134,29 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.queue-toolbar, .queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.queue-toolbar {
+  margin-bottom: 1rem;
+  align-items: center;
+}
+.queue-actions {
+  grid-column: 2;
+}
+button {
+  padding: 0.4rem 0.65rem;
+  font-size: 0.75rem;
+  color: var(--brand-dark);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+button:disabled {
+  opacity: 0.45;
+}
+</style>

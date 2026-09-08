@@ -19,6 +19,18 @@ export default {
     return apiClient.get(`/search/releases/${releaseId}`)
   },
 
+  clearQueueHistory() {
+    return apiClient.delete('/download/history')
+  },
+
+  deleteJob(jobId) {
+    return apiClient.delete(`/download/jobs/${encodeURIComponent(jobId)}`)
+  },
+
+  retryJob(jobId) {
+    return apiClient.post(`/download/jobs/${encodeURIComponent(jobId)}/retry`)
+  },
+
   download(payload) {
     return apiClient.post('/download/', payload)
   },

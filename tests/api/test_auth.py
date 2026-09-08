@@ -19,6 +19,21 @@ class TestApiAuthentication(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.headers["www-authenticate"], "Bearer")
 
+    async def test_history_mutations_require_token_on_external_host(self):
+        app.state.queue_manager = AsyncMock()
+        with patch.object(conf, "api_host", "0.0.0.0"), patch.object(conf, "api_token", "a" * 32):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                for method, path in (
+                    ("delete", "/api/download/history"),
+                    ("delete", "/api/download/jobs/job"),
+                    ("post", "/api/download/jobs/job/retry"),
+                ):
+                    response = await getattr(client, method)(path)
+                    self.assertEqual(response.status_code, 401)
+        app.state.queue_manager.clear_history.assert_not_awaited()
+        app.state.queue_manager.delete_job.assert_not_awaited()
+        app.state.queue_manager.retry_job.assert_not_awaited()
+
     async def test_external_api_accepts_valid_bearer_token(self):
         app.state.search_controller = AsyncMock()
         app.state.search_controller.search.return_value = {

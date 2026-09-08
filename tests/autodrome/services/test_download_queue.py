@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from autodrome.models.download_job import DownloadJob
 from autodrome.services.download_queue import DownloadQueueManager
@@ -171,6 +171,138 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
             restarted_downloader.download_and_tag.assert_not_awaited()
         finally:
             await restarted_manager.stop()
+
+    def seed_history(self):
+        jobs = {}
+        for status in ("queued", "running", "succeeded", "failed", "interrupted"):
+            job = DownloadJob.create(PAYLOAD)
+            job.transition(status, "original failure" if status == "failed" else None)
+            self.manager._jobs[job.job_id] = job
+            jobs[status] = job
+        self.manager._persist_state()
+        return jobs
+
+    def persisted_jobs(self):
+        with open(self.state_path, encoding="utf-8") as state_file:
+            return json.load(state_file)["jobs"]
+
+    async def test_clear_removes_only_terminal_jobs_and_persists_snapshot(self):
+        jobs = self.seed_history()
+        removed = await self.manager.clear_history()
+        self.assertEqual(removed, 3)
+        self.assertEqual(
+            [job["job_id"] for job in self.manager.snapshot()],
+            [jobs["queued"].job_id, jobs["running"].job_id],
+        )
+        self.assertEqual([job["status"] for job in self.persisted_jobs()], ["queued", "running"])
+        self.websocket_manager.broadcast.assert_awaited_once_with(self.manager.snapshot())
+        self.assertEqual(await self.manager.clear_history(), 0)
+
+    async def test_delete_each_terminal_status_persists_and_survives_restart(self):
+        jobs = self.seed_history()
+        for status in ("succeeded", "failed", "interrupted"):
+            job_id = jobs[status].job_id
+            await self.manager.delete_job(job_id)
+            self.assertNotIn(job_id, [j["job_id"] for j in self.persisted_jobs()])
+            self.websocket_manager.broadcast.assert_awaited_with(self.manager.snapshot())
+        restored = DownloadQueueManager(AsyncMock(), AsyncMock(), self.state_path)
+        self.assertEqual(len(restored.snapshot()), 2)
+        self.assertEqual([j["status"] for j in restored.snapshot()], ["queued", "interrupted"])
+
+    async def test_retry_retains_original_and_reuses_payload_in_new_job(self):
+        jobs = self.seed_history()
+        for status in ("failed", "interrupted"):
+            source = jobs[status]
+            original = source.to_storage_dict()
+            retry_id = await self.manager.retry_job(source.job_id)
+            retry = self.manager._jobs[retry_id]
+            self.assertNotEqual(retry_id, source.job_id)
+            self.assertEqual(retry.payload, source.payload)
+            self.assertIsNot(retry.payload, source.payload)
+            self.assertEqual(retry.status, "queued")
+            self.assertEqual(retry.retry_of, source.job_id)
+            self.assertEqual(source.to_storage_dict(), original)
+            self.assertIn(retry.to_storage_dict(), self.persisted_jobs())
+            self.websocket_manager.broadcast.assert_awaited_with(self.manager.snapshot())
+            with self.assertRaisesRegex(ValueError, "active retry"):
+                await self.manager.retry_job(source.job_id)
+        self.assertEqual(self.manager.queue.qsize(), 2)
+
+    async def test_retried_payload_is_executed_once_after_restart(self):
+        original = DownloadJob.create(PAYLOAD)
+        original.transition("failed", "original failure")
+        self.manager._jobs[original.job_id] = original
+        self.manager._persist_state()
+        retry_id = await self.manager.retry_job(original.job_id)
+        restored = DownloadQueueManager(self.downloader, AsyncMock(), self.state_path)
+        try:
+            with self.assertRaisesRegex(ValueError, "active retry"):
+                await restored.retry_job(original.job_id)
+            restored.start()
+            await asyncio.wait_for(restored.queue.join(), timeout=1)
+            self.downloader.download_and_tag.assert_awaited_once_with(**PAYLOAD)
+            self.assertEqual(restored._jobs[retry_id].status, "succeeded")
+            self.assertEqual(restored._jobs[retry_id].retry_of, original.job_id)
+            self.assertEqual(restored._jobs[original.job_id].error, "original failure")
+        finally:
+            await restored.stop()
+
+    async def test_active_jobs_reject_delete_and_retry_without_changes(self):
+        jobs = self.seed_history()
+        before = self.persisted_jobs()
+        for status in ("queued", "running"):
+            with self.assertRaisesRegex(ValueError, "finished jobs"):
+                await self.manager.delete_job(jobs[status].job_id)
+            with self.assertRaisesRegex(ValueError, "failed or interrupted"):
+                await self.manager.retry_job(jobs[status].job_id)
+        with self.assertRaises(ValueError):
+            await self.manager.retry_job(jobs["succeeded"].job_id)
+        for action in (self.manager.delete_job, self.manager.retry_job):
+            with self.assertRaises(KeyError):
+                await action("missing")
+        self.assertEqual(before, self.persisted_jobs())
+        self.websocket_manager.broadcast.assert_not_awaited()
+
+    async def test_persistence_failure_rolls_back_history_operations(self):
+        jobs = self.seed_history()
+        before = self.manager.snapshot()
+        stored_before = self.persisted_jobs()
+        actions = [
+            lambda: self.manager.clear_history(),
+            lambda: self.manager.delete_job(jobs["failed"].job_id),
+            lambda: self.manager.retry_job(jobs["failed"].job_id),
+        ]
+        for action in actions:
+            with patch("autodrome.services.download_queue.os.replace", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    await action()
+            self.assertEqual(self.manager.snapshot(), before)
+            self.assertEqual(self.persisted_jobs(), stored_before)
+            self.assertTrue(self.manager.queue.empty())
+            self.websocket_manager.broadcast.assert_not_awaited()
+            self.assertEqual(os.listdir(self.temp_directory.name), ["queue.json"])
+
+    async def test_clearing_history_during_download_preserves_active_work(self):
+        started = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def download(**kwargs):
+            started.set()
+            await finish.wait()
+
+        finished = DownloadJob.create(PAYLOAD)
+        finished.transition("failed", "old failure")
+        self.manager._jobs[finished.job_id] = finished
+        self.downloader.download_and_tag.side_effect = download
+        self.manager.start()
+        active_id = await self.manager.enqueue(PAYLOAD)
+        await asyncio.wait_for(started.wait(), timeout=1)
+        queued_id = await self.manager.enqueue(PAYLOAD)
+        self.assertEqual(await self.manager.clear_history(), 1)
+        self.assertEqual([j["job_id"] for j in self.manager.snapshot()], [active_id, queued_id])
+        finish.set()
+        await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+        self.assertEqual([j["status"] for j in self.manager.snapshot()], ["succeeded", "succeeded"])
 
     async def test_stop_marks_active_job_interrupted(self):
         download_started = asyncio.Event()

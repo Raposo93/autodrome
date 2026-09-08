@@ -119,6 +119,17 @@ rename atómico. Un álbum existente no se sobrescribe.
 Al reiniciar, los trabajos `queued` se reanudan en orden. Un trabajo que estaba
 `running` pasa a `interrupted` y conserva el último error; no se repite a ciegas.
 
+Desde la cola, **Clear finished jobs** limpia el historial de trabajos `succeeded`,
+`failed` e `interrupted`; **Remove** elimina uno de ellos. Los trabajos `queued` y
+`running` permanecen intactos. Estas acciones solo borran entradas del historial,
+no archivos de audio, álbumes publicados ni staging conservado.
+
+**Retry** crea un nuevo trabajo con el payload original de un fallo o interrupción.
+El original conserva su estado y error, y el nuevo guarda su identificador en
+`retry_of`. No se permite otro reintento del mismo original mientras tenga uno
+activo. Cada cambio se guarda antes de emitir el snapshot por WebSocket; si no se
+puede guardar, la operación se revierte y la UI muestra un error.
+
 La portada original queda en `covers/<release-id>.jpg`. Si se rechaza, sustituye
 ese archivo por una imagen JPEG, PNG o WebP válida y vuelve a solicitar el álbum.
 La versión optimizada solo vive en memoria y no modifica el original.

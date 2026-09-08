@@ -4,7 +4,9 @@ from typing import Any, Dict, Optional
 from uuid import uuid4
 
 
-JOB_STATUSES = {"queued", "running", "succeeded", "failed", "interrupted"}
+TERMINAL_STATUSES = {"succeeded", "failed", "interrupted"}
+RETRYABLE_STATUSES = {"failed", "interrupted"}
+JOB_STATUSES = {"queued", "running"} | TERMINAL_STATUSES
 
 
 def utc_now() -> str:
@@ -19,6 +21,7 @@ class DownloadJob:
     created_at: str
     updated_at: str
     error: Optional[str] = None
+    retry_of: Optional[str] = None
 
     @classmethod
     def create(cls, payload: Dict[str, Any]) -> "DownloadJob":
@@ -44,6 +47,7 @@ class DownloadJob:
             created_at=data["created_at"],
             updated_at=data["updated_at"],
             error=data.get("error"),
+            retry_of=data.get("retry_of"),
         )
 
     def transition(self, status: str, error: Optional[str] = None) -> None:
@@ -61,6 +65,7 @@ class DownloadJob:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "error": self.error,
+            "retry_of": self.retry_of,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -71,4 +76,5 @@ class DownloadJob:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "error": self.error,
+            "retry_of": self.retry_of,
         }

@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 from autodrome.controllers.downloader_controller import DownloaderController
 from autodrome.logger import logger
-from autodrome.models.download_job import DownloadJob
+from autodrome.models.download_job import DownloadJob, TERMINAL_STATUSES, RETRYABLE_STATUSES
 
 
 class DownloadQueueManager:
@@ -23,6 +23,7 @@ class DownloadQueueManager:
         self.websocket_manager = websocket_manager
         self.state_path = os.path.abspath(state_path)
         self.worker_task: Optional[asyncio.Task] = None
+        self._snapshot_lock = asyncio.Lock()
         self._jobs: Dict[str, DownloadJob] = {}
         self._load_state()
 
@@ -43,11 +44,12 @@ class DownloadQueueManager:
                 pass
         self.worker_task = None
 
-    async def enqueue(self, payload: Dict) -> str:
+    async def enqueue(self, payload: Dict, *, retry_of: Optional[str] = None) -> str:
         if missing := self.REQUIRED_KEYS - payload.keys():
             raise ValueError(f"Payload is missing required keys: {sorted(missing)}")
 
         job = DownloadJob.create(payload)
+        job.retry_of = retry_of
         self._jobs[job.job_id] = job
         try:
             self._persist_state()
@@ -59,6 +61,48 @@ class DownloadQueueManager:
         logger.info(f"Playlist enqueued as job {job.job_id}: {payload.get('album')}")
         return job.job_id
 
+    async def clear_history(self) -> int:
+        job_ids = {
+            job.job_id for job in self._jobs.values()
+            if job.status in TERMINAL_STATUSES
+        }
+        await self._remove_jobs(job_ids)
+        return len(job_ids)
+
+    async def delete_job(self, job_id: str) -> None:
+        job = self._get_job(job_id)
+        if job.status not in TERMINAL_STATUSES:
+            raise ValueError("Only finished jobs can be deleted")
+        await self._remove_jobs({job_id})
+
+    async def retry_job(self, job_id: str) -> str:
+        job = self._get_job(job_id)
+        if job.status not in RETRYABLE_STATUSES:
+            raise ValueError("Only failed or interrupted jobs can be retried")
+        if any(
+            candidate.retry_of == job_id and candidate.status in {"queued", "running"}
+            for candidate in self._jobs.values()
+        ):
+            raise ValueError("This job already has an active retry")
+        return await self.enqueue(job.payload, retry_of=job_id)
+
+    def _get_job(self, job_id: str) -> DownloadJob:
+        if job_id not in self._jobs:
+            raise KeyError("Download job not found")
+        return self._jobs[job_id]
+
+    async def _remove_jobs(self, job_ids: set[str]) -> None:
+        previous_jobs = self._jobs
+        self._jobs = {
+            job_id: job for job_id, job in previous_jobs.items() if job_id not in job_ids
+        }
+        try:
+            self._persist_state()
+        except Exception:
+            self._jobs = previous_jobs
+            raise
+        await self._broadcast_snapshot()
+
     def snapshot(self) -> List[Dict]:
         return [job.to_dict() for job in self._jobs.values()]
 
@@ -66,6 +110,7 @@ class DownloadQueueManager:
         logger.info("DownloadQueueManager: worker started")
         while True:
             job_id = None
+            job = None
             try:
                 job_id = await self.queue.get()
                 job = self._jobs[job_id]
@@ -82,8 +127,7 @@ class DownloadQueueManager:
                     track_count=payload.get("track_count"),
                 )
             except asyncio.CancelledError:
-                if job_id is not None:
-                    job = self._jobs[job_id]
+                if job is not None:
                     if job.status == "running":
                         await self._transition(
                             job,
@@ -118,7 +162,8 @@ class DownloadQueueManager:
         await self._broadcast_snapshot()
 
     async def _broadcast_snapshot(self) -> None:
-        await self.websocket_manager.broadcast(self.snapshot())
+        async with self._snapshot_lock:
+            await self.websocket_manager.broadcast(self.snapshot())
 
     def _load_state(self) -> None:
         if not os.path.exists(self.state_path):
