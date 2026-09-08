@@ -4,7 +4,7 @@
 
 Autodrome is a small self-hosted application for finding album playlists on YouTube, downloading audio, enriching it with MusicBrainz metadata and cover art, tagging the resulting MP3 files, and organizing them into a music library.
 
-The current application is primarily a FastAPI backend with a Vue/Vite frontend. Some older CLI code and documentation still exist and may be obsolete. Do not decide whether to keep or remove the CLI unless the relevant issue explicitly resolves that product decision.
+The supported product is the FastAPI backend with the Vue/Vite frontend. The old public CLI has been removed; auxiliary scripts are not a second supported user interface unless an explicit issue says otherwise.
 
 This project handles user files and external services. Prefer correctness, recoverability, and library integrity over cleverness or throughput.
 
@@ -30,7 +30,7 @@ Avoid:
 - unrelated cleanup;
 - hidden fallbacks that can produce incomplete or incorrectly tagged albums;
 - treating caches as authoritative storage;
-- introducing parallel playlist downloads before the sequential flow and queue lifecycle are reliable;
+- increasing playlist-track download concurrency without an explicit issue that changes the current sequential policy;
 - adding abstractions only to make future concurrency theoretically easier.
 
 Do not optimize for hypothetical scale. Autodrome should first be predictable when one album, one track, an external API, Redis, or a filesystem operation fails.
@@ -44,11 +44,12 @@ Keep the existing responsibility boundaries unless an issue requires changing th
 - `autodrome/controllers/` coordinates application workflows.
 - `autodrome/services/` contains focused services such as queue management, organization, tagging, cover embedding, Redis caching, and WebSocket state propagation.
 - `autodrome/metadata_service.py` handles MusicBrainz/release metadata concerns.
-- `autodrome/yt_api.py` and `autodrome/yt_downloader.py` contain YouTube lookup/download behavior.
+- `autodrome/yt_api.py` handles YouTube search and playlist metadata.
+- `autodrome/yt_downloader.py` handles playlist manifest extraction and sequential audio downloads.
 - `autodrome/models/` contains shared data models.
-- `frontend/` contains the Vue/Vite client.
-- `tests/` contains backend tests.
-- `scripts/` contains legacy or auxiliary command-line tooling; do not assume it is a supported public interface.
+- `frontend/` contains the supported Vue/Vite client.
+- `tests/` contains backend/API tests; frontend service tests live under `frontend/src/services/`.
+- `scripts/` contains auxiliary tooling only.
 
 Keep domain/application behavior out of FastAPI route handlers when it can reasonably live in controllers, services, or models.
 
@@ -58,26 +59,27 @@ These rules are important across issues:
 
 - Redis is a cache, not the source of truth required to finish a download.
 - Never silently pair tracks and files when their identity or counts are uncertain.
-- Validate an album completely before publishing it to the final library location when practical.
+- Validate known playlist/release counts before expensive work when practical, and keep the final staging validation as the authoritative guard before publication.
+- Validate an album completely before publishing it to the final library location.
 - Do not overwrite existing library content unless an explicit policy or issue requires it.
 - Keep paths inside the configured library/staging roots and validate path components before filesystem writes.
 - Preserve enough failure context to diagnose or retry a job without pretending it succeeded.
 - External API failures must not be confused with valid empty results when the distinction matters.
-- Keep playlist downloads sequential for now. Issue #3 is future work and must not be started until its dependencies and the queue are stable.
+- A failure from one external provider must not erase valid results from another provider when the product contract supports partial results.
+- MusicBrainz request starts must continue to respect the configured request policy and the one-request-per-second cadence.
+- Keep playlist-track downloads sequential unless an explicit issue deliberately changes that policy and preserves publication integrity.
 
-## Issue priority and dependencies
+## Current issue priority and dependencies
 
-When choosing work autonomously, first refresh the current open issues and their dependencies. Use issue #13 as the initial backlog ordering while it remains applicable, but prefer current issue state and explicit dependency information over a stale checklist.
+When choosing work autonomously, always refresh the current open issues before starting. Do not use old completed backlog issues as an ordering source.
 
-The current intended sequence is:
+At the time of this update, the active sequence is:
 
-1. P0 integrity/operation work: #4, #5, #15, #7.
-2. Repair the test/CI baseline in #6.
-3. Implement per-track download foundations in #2, then per-track failure handling in #1.
-4. Complete the remaining P1 work, including #8, #9, and #14.
-5. Complete P2 robustness/maintenance work such as #10 and #11.
-6. Issue #12 requires a product decision about CLI support; do not choose one side autonomously.
-7. Consider #3 only after #2, #1, and #7 are complete and stable.
+1. **#26** — validate the real yt-dlp manifest before downloading. This is the highest-priority integrity guard because it can reject a known incomplete playlist before any audio is downloaded.
+2. **#25** — reduce YouTube requests used to obtain playlist track counts. Keep the result contract and per-playlist unknown state intact.
+3. **#24** — run YouTube and MusicBrainz searches in parallel and support provider-specific partial failure. Preserve successful results from the provider that remains available.
+
+These issues are independently actionable, but prefer the order above unless newer issue state, dependencies, or explicit instructions supersede it.
 
 Do not start a dependent issue merely because it looks easy. Finish or verify its prerequisites first.
 
@@ -97,7 +99,7 @@ For each issue:
 8. Review the diff for unrelated changes, accidental complexity, and unsafe filesystem behavior.
 9. Commit the coherent change atomically.
 10. If the issue still has independent work remaining, continue with another atomic change and commit.
-11. When the issue is complete, move directly to the next actionable issue unless a stop condition below applies.
+11. When the issue is complete, verify the issue is actually closed, then move directly to the next actionable issue unless a stop condition below applies.
 
 Do not stop merely because several reasonable implementation techniques exist. Choose the simplest maintainable option consistent with the current architecture and acceptance criteria.
 
@@ -105,7 +107,7 @@ Do not stop merely because several reasonable implementation techniques exist. C
 
 A human decision is genuinely required, for example:
 
-- the issue explicitly presents unresolved product choices, as in #12;
+- an issue explicitly presents unresolved product choices;
 - acceptance criteria conflict with each other or with a newer explicit project decision;
 - intended user-visible behavior cannot be inferred safely from the issue, code, tests, or documentation;
 - required credentials, secrets, services, permissions, or external resources are unavailable and there is no local substitute;
@@ -121,25 +123,20 @@ Run the complete project checks with:
 
 Use focused tests during development when useful.
 
-Before each commit, run the checks relevant to that change. Before the final
-commit that completes an issue, run `./check.sh`.
+Before each commit, run the checks relevant to that change. Before the final commit that completes an issue, run `./check.sh`.
 
-The current test suite may contain failures caused by the pre-existing
-async/FastAPI migration described in #6. Until #6 is complete:
+The baseline test/CI repair is complete. Do not consider an implementation complete while `./check.sh` is failing. Do not hide, disable, or delete unrelated tests merely to obtain green output.
 
-- establish the relevant baseline when practical;
-- do not hide, disable, or delete unrelated failing tests just to obtain green output;
-- ensure the current change does not introduce additional relevant failures;
-- a known pre-existing failure must not block an otherwise independent issue;
-- keep #6-specific repair work inside #6 unless another issue genuinely depends
-  on the same small fix.
+Tests involving external APIs should use controlled fakes/mocks rather than depending on live YouTube, MusicBrainz, Cover Art Archive, or Redis availability unless an explicit integration test requires otherwise.
 
-Once #6 is complete, do not consider an implementation complete while
-`./check.sh` is failing.
+When changing provider orchestration, test the distinction between:
 
-Tests involving external APIs should use controlled fakes/mocks rather than
-depending on live YouTube, MusicBrainz, Cover Art Archive, or Redis availability
-unless an explicit integration test requires otherwise.
+- valid empty results;
+- provider-specific failures;
+- partial success where another provider still returned useful data;
+- total failure.
+
+When changing download integrity behavior, verify that failures occur before audio download or library mutation whenever the required mismatch is already knowable.
 
 ## Commits
 
@@ -181,7 +178,13 @@ For the final commit that completes an issue:
 
 `Close #12`
 
-Issue-closing keywords must be separated from the commit body by real newline characters. Never write literal escape sequences such as `\n\nClose #12` into the commit message: GitHub will treat them as text and will not close the issue automatically. Before finishing an issue, inspect the resulting commit message and verify the issue actually changed to `closed`; if it did not, fix the administrative state explicitly instead of assuming the keyword worked.
+Issue-closing keywords must be separated from the commit body by real newline characters. Never write literal escape sequences such as `\n\nClose #12` into the commit message: GitHub will treat them as text and will not close the issue automatically.
+
+Before finishing an issue:
+
+1. Inspect the resulting commit message and confirm the closing keyword is on its own real line.
+2. Verify on GitHub that the issue actually changed to `closed`.
+3. If it did not close, fix the administrative state explicitly instead of assuming the keyword worked.
 
 When one commit intentionally completes multiple tightly coupled issues, reference each explicitly, but prefer separate commits/issues whenever the work can be separated cleanly.
 
