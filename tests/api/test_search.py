@@ -7,6 +7,8 @@ from httpx import ASGITransport, AsyncClient
 from api.search import search_router
 from autodrome.http_client_async import UpstreamServiceError
 from autodrome.controllers.search_controller import SearchController
+from autodrome.models.playlist import Playlist
+from autodrome.models.release import Release
 
 
 class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
@@ -72,6 +74,31 @@ class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 422)
         self.app.state.search_controller.search.assert_not_awaited()
+
+    async def test_combined_search_contract_for_each_provider_outcome(self):
+        for failed in [set(), {"youtube"}, {"musicbrainz"}, {"youtube", "musicbrainz"}]:
+            with self.subTest(failed=failed):
+                controller = SearchController(http_client=MagicMock())
+                controller.yt_api.search_playlist = AsyncMock(
+                    return_value=[Playlist("p", "Album", "Channel", "url", None, 2)],
+                    side_effect=UpstreamServiceError("YouTube", "searching", "timeout") if "youtube" in failed else None,
+                )
+                controller.metadata_service.search_releases = AsyncMock(
+                    return_value=[Release("r", "Album", "2020", "Artist", None, track_count=2)],
+                    side_effect=UpstreamServiceError("MusicBrainz", "searching", "timeout") if "musicbrainz" in failed else None,
+                )
+                self.app.state.search_controller = controller
+                async with AsyncClient(
+                    transport=ASGITransport(app=self.app), base_url="http://test"
+                ) as client:
+                    response = await client.get("/api/search/", params={"artist": "Artist"})
+                self.assertEqual(response.status_code, 502 if len(failed) == 2 else 200)
+                data = response.json()
+                self.assertEqual(set(data["errors"]), failed)
+                self.assertEqual(bool(data["playlists"]), "youtube" not in failed)
+                self.assertEqual(bool(data["releases"]), "musicbrainz" not in failed)
+                if len(failed) == 2:
+                    self.assertEqual(data["error"], "Both search providers failed")
 
     async def test_upstream_failure_returns_provider_and_bad_gateway(self):
         self.app.state.search_controller.search.side_effect = UpstreamServiceError(

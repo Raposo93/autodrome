@@ -26,6 +26,11 @@ async def combined_search(
     try:
         controller = request.app.state.search_controller
         results = await controller.search(search.artist or "", search.album or "")
+        if len(results.get("errors", {})) == 2:
+            return JSONResponse(
+                status_code=502,
+                content={**results, "error": "Both search providers failed"},
+            )
         return JSONResponse(content=results)
     except UpstreamServiceError as e:
         return _upstream_error_response(e)

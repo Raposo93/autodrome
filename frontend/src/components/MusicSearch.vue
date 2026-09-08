@@ -202,6 +202,8 @@ export default {
       const artist = this.artist.trim()
       const album = this.album.trim()
 
+      this.playlists = []
+      this.releases = []
       this.loadingPlaylists = true
       this.loadingReleases = true
 
@@ -209,10 +211,12 @@ export default {
         const response = await api.combinedSearch(artist, album)
         this.playlists = response.data.playlists || []
         this.releases = response.data.releases || []
+        this.errorPlaylists = response.data.errors?.youtube || null
+        this.errorReleases = response.data.errors?.musicbrainz || null
 
       } catch (e) {
-        this.errorPlaylists = "Error fetching playlists"
-        this.errorReleases = "Error fetching releases"
+        this.errorPlaylists = e.response?.data?.errors?.youtube || "Error fetching playlists"
+        this.errorReleases = e.response?.data?.errors?.musicbrainz || "Error fetching releases"
       } finally {
         this.loadingPlaylists = false
         this.loadingReleases = false

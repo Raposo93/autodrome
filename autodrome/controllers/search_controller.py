@@ -1,8 +1,9 @@
+import asyncio
 import time
 from autodrome.logger import logger
 from autodrome.metadata_service import MetadataService
 from autodrome.yt_api import YTApi
-from autodrome.http_client_async import AsyncHttpClient
+from autodrome.http_client_async import AsyncHttpClient, UpstreamServiceError
 
 class SearchController:
     def __init__(self, http_client=None, metadata_service=None):
@@ -19,44 +20,53 @@ class SearchController:
         start = time.monotonic()
         query = f"{artist} {album}".strip()
 
-        playlists = []
+        errors = {}
+        playlists_results, releases_results = [], []
         if query:
-            t1 = time.monotonic()
-            playlists_results = await self.yt_api.search_playlist(query)
-            playlists = self._sort_by_track_count(
-                [p.__dict__ for p in playlists_results]
-            )
-            logger.debug(f"SearchController: playlists:{playlists} playlists")
-            logger.debug(f"SearchController: playlists fetched in {time.monotonic() - t1:.2f}s")
-
-        releases = []
-        if artist or album:
-            t2 = time.monotonic()
-            releases_results = await self.metadata_service.search_releases(artist, album)
-            logger.info(
-                "SearchController: release candidates fetched in "
-                f"{time.monotonic() - t2:.2f}s"
+            playlists_results, releases_results = await asyncio.gather(
+                self._search_provider(
+                    "youtube", self.yt_api.search_playlist(query), errors
+                ),
+                self._search_provider(
+                    "musicbrainz",
+                    self.metadata_service.search_releases(artist, album),
+                    errors,
+                ),
             )
 
-            releases = self._sort_by_track_count(
-                [
-                    {
-                        "id": r.id,
-                        "title": r.title,
-                        "date": r.date,
-                        "artist": r.artist,
-                        "cover_url": r.cover_url,
-                        "track_count": r.track_count,
-                    }
-                    for r in releases_results
-                ]
-            )
+        playlists = self._sort_by_track_count(
+            [p.__dict__ for p in playlists_results]
+        )
+        releases = self._sort_by_track_count([
+            {
+                "id": r.id,
+                "title": r.title,
+                "date": r.date,
+                "artist": r.artist,
+                "cover_url": r.cover_url,
+                "track_count": r.track_count,
+            }
+            for r in releases_results
+        ])
         elapsed = time.monotonic() - start
         logger.info(f"SearchController: completed search for '{query}' in {elapsed:.2f} seconds")
         return {
             "playlists": playlists,
-            "releases": releases
+            "releases": releases,
+            "errors": errors,
         }
+
+    @staticmethod
+    async def _search_provider(provider, search, errors):
+        try:
+            return await search
+        except UpstreamServiceError as error:
+            logger.warning(f"Search provider failure: {error}")
+            errors[provider] = str(error)
+        except Exception:
+            logger.exception(f"Unexpected {provider} search failure")
+            errors[provider] = f"Unexpected {provider} search failure"
+        return []
 
     @staticmethod
     def _sort_by_track_count(items):
