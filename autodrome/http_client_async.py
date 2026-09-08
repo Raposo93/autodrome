@@ -1,4 +1,5 @@
 import asyncio
+import time
 from typing import Awaitable, Callable, Dict, Optional, TypeVar
 from urllib.parse import urlsplit
 
@@ -48,7 +49,10 @@ class AsyncHttpClient:
         max_attempts: int = 3,
         retry_base_seconds: float = 0.25,
         sleep: Optional[Callable[[float], Awaitable[None]]] = None,
+        clock: Callable[[], float] = time.monotonic,
+        settings: Optional[config.Config] = None,
     ) -> None:
+        self.settings = settings if settings is not None else conf
         self.api_key = api_key
         self.session = session
         self._own_session = False
@@ -66,6 +70,9 @@ class AsyncHttpClient:
         self.max_attempts = max_attempts
         self.retry_base_seconds = retry_base_seconds
         self._sleep = sleep or asyncio.sleep
+        self._clock = clock
+        self._musicbrainz_rate_lock = asyncio.Lock()
+        self._musicbrainz_last_start: Optional[float] = None
         self._provider_semaphores: Dict[str, asyncio.Semaphore] = {}
 
     async def __aenter__(self):
@@ -82,7 +89,7 @@ class AsyncHttpClient:
         self,
         url: str,
         params: Optional[dict] = None,
-        timeout: int = 10,
+        timeout: Optional[float] = None,
         provider: Optional[str] = None,
         context: str = "performing a GET request",
     ) -> dict:
@@ -101,7 +108,7 @@ class AsyncHttpClient:
         url: str,
         data=None,
         json=None,
-        timeout: int = 10,
+        timeout: Optional[float] = None,
         provider: Optional[str] = None,
         context: str = "performing a POST request",
     ) -> dict:
@@ -119,7 +126,7 @@ class AsyncHttpClient:
     async def get_binary(
         self,
         url: str,
-        timeout: int = 10,
+        timeout: Optional[float] = None,
         provider: Optional[str] = None,
         context: str = "downloading binary content",
     ) -> bytes:
@@ -140,13 +147,23 @@ class AsyncHttpClient:
         *,
         provider: Optional[str],
         context: str,
-        timeout: int,
+        timeout: Optional[float],
         **request_kwargs,
     ) -> ResponseValue:
         if self.session is None:
             raise RuntimeError("AsyncHttpClient requires an active HTTP session")
 
         provider_name = provider or self._provider_for_url(url)
+        is_musicbrainz = provider_name == "MusicBrainz"
+        max_attempts = (
+            self.settings.musicbrainz_max_attempts if is_musicbrainz else self.max_attempts
+        )
+        retry_base = (
+            self.settings.musicbrainz_retry_base_seconds
+            if is_musicbrainz else self.retry_base_seconds
+        )
+        if timeout is None:
+            timeout = self.settings.musicbrainz_timeout_seconds if is_musicbrainz else 10
         semaphore = self._provider_semaphores.setdefault(
             provider_name,
             asyncio.Semaphore(
@@ -158,8 +175,10 @@ class AsyncHttpClient:
         )
 
         async with semaphore:
-            for attempt in range(1, self.max_attempts + 1):
+            for attempt in range(1, max_attempts + 1):
                 try:
+                    if is_musicbrainz:
+                        await self._wait_for_musicbrainz()
                     request = getattr(self.session, method_name)
                     async with request(
                         url,
@@ -172,15 +191,15 @@ class AsyncHttpClient:
                 except Exception as error:
                     status = getattr(error, "status", None)
                     retryable = self._is_retryable(error, status)
-                    if retryable and attempt < self.max_attempts:
-                        delay = self.retry_base_seconds * (2 ** (attempt - 1))
+                    if retryable and attempt < max_attempts:
+                        delay = retry_base * (2 ** (attempt - 1))
                         status_context = (
                             f"HTTP {status}" if status is not None else "timeout"
                         )
                         logger.warning(
                             f"{provider_name} {status_context} while {context}; "
                             f"retrying in {delay:.2f}s "
-                            f"({attempt + 1}/{self.max_attempts})"
+                            f"({attempt + 1}/{max_attempts})"
                         )
                         await self._sleep(delay)
                         continue
@@ -195,6 +214,17 @@ class AsyncHttpClient:
                     ) from error
 
         raise AssertionError("unreachable")
+
+    async def _wait_for_musicbrainz(self) -> None:
+        # The semaphore bounds in-flight requests; this lock spaces every start,
+        # including retries. Slow responses already satisfy the interval.
+        async with self._musicbrainz_rate_lock:
+            if self._musicbrainz_last_start is not None:
+                remaining = 1.0 - (self._clock() - self._musicbrainz_last_start)
+                while remaining > 0:
+                    await self._sleep(remaining)
+                    remaining = 1.0 - (self._clock() - self._musicbrainz_last_start)
+            self._musicbrainz_last_start = self._clock()
 
     @staticmethod
     def _is_retryable(error: Exception, status: Optional[int]) -> bool:

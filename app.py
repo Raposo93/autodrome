@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     aiohttp_session = aiohttp.ClientSession()
     app.state.aiohttp_session = aiohttp_session
 
-    http_client = AsyncHttpClient(session=aiohttp_session)
+    http_client = AsyncHttpClient(session=aiohttp_session, settings=conf)
     redis_cache = RedisCache() if conf.redis_enabled else NullCache()
     metadata_service = MetadataService(
         http_client=http_client,

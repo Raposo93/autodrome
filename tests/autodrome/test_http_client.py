@@ -1,6 +1,7 @@
 import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, call
+from types import SimpleNamespace
 
 import aiohttp
 
@@ -78,7 +79,7 @@ class TestAsyncHttpClient(unittest.IsolatedAsyncioTestCase):
         ]
 
         result = await client.get(
-            "https://musicbrainz.org/ws/2/release/",
+            "https://example.test/ws/2/release/",
             context="searching releases",
         )
 
@@ -97,11 +98,11 @@ class TestAsyncHttpClient(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(
             UpstreamServiceError,
-            "MusicBrainz failed while loading release release-1: "
+            "External service failed while loading release release-1: "
             "HTTP 503 after 3 attempts",
         ):
             await client.get(
-                "https://musicbrainz.org/ws/2/release/release-1",
+                "https://example.test/ws/2/release/release-1",
                 context="loading release release-1",
             )
 
@@ -164,6 +165,81 @@ class TestAsyncHttpClient(unittest.IsolatedAsyncioTestCase):
         release.set()
         await asyncio.gather(first, second)
         self.assertEqual(tracker["maximum"], 1)
+
+    async def test_musicbrainz_spaces_concurrent_starts_and_retries(self):
+        now = [0.0]
+        starts = []
+
+        async def sleep(delay):
+            now[0] += delay
+            await asyncio.sleep(0)
+
+        success = MagicMock()
+        success.json = AsyncMock(return_value={"releases": []})
+        responses = iter([response_with_error(503), success, success])
+
+        def request(*args, **kwargs):
+            starts.append((now[0], kwargs["timeout"]))
+            return async_response_context(next(responses))
+
+        self.session.get.side_effect = request
+        client = AsyncHttpClient(
+            session=self.session, clock=lambda: now[0], sleep=sleep,
+            provider_limits={"MusicBrainz": 2},
+            settings=SimpleNamespace(
+                musicbrainz_timeout_seconds=35,
+                musicbrainz_max_attempts=2,
+                musicbrainz_retry_base_seconds=0.25,
+            ),
+        )
+        results = await asyncio.gather(
+            client.get("https://musicbrainz.org/ws/2/release/1"),
+            client.get("https://musicbrainz.org/ws/2/release/2"),
+        )
+        self.assertEqual(results, [{"releases": []}, {"releases": []}])
+        self.assertEqual(len(starts), 3)
+        self.assertTrue(all(b[0] - a[0] >= 1 for a, b in zip(starts, starts[1:])))
+        self.assertTrue(all(timeout == 35 for _, timeout in starts))
+
+    async def test_musicbrainz_configured_timeout_attempts_and_backoff(self):
+        now = [0.0]
+        delays = []
+
+        async def sleep(delay):
+            delays.append(delay)
+            now[0] += delay
+
+        self.session.get.side_effect = asyncio.TimeoutError()
+        client = AsyncHttpClient(
+            session=self.session, clock=lambda: now[0], sleep=sleep,
+            settings=SimpleNamespace(
+                musicbrainz_timeout_seconds=42,
+                musicbrainz_max_attempts=4,
+                musicbrainz_retry_base_seconds=2,
+            ),
+        )
+        with self.assertRaises(UpstreamServiceError) as raised:
+            await client.get("https://musicbrainz.org/ws/2/release/")
+        self.assertEqual(raised.exception.attempts, 4)
+        self.assertEqual(raised.exception.reason, "request timed out")
+        self.assertEqual(delays, [2, 4, 8])
+        self.assertTrue(all(c.kwargs["timeout"] == 42 for c in self.session.get.call_args_list))
+
+    async def test_slow_musicbrainz_and_other_providers_do_not_wait(self):
+        now = [0.0]
+        sleep = AsyncMock()
+        response = MagicMock()
+        response.json = AsyncMock(return_value={})
+        self.session.get.return_value = async_response_context(response)
+        client = AsyncHttpClient(session=self.session, clock=lambda: now[0], sleep=sleep)
+        await client.get("https://musicbrainz.org/ws/2/release/")
+        await client.get("https://coverartarchive.org/release/1")
+        await client.get("https://www.googleapis.com/youtube/v3/search")
+        now[0] += 2
+        await client.get("https://musicbrainz.org/ws/2/release/", timeout=7)
+        sleep.assert_not_awaited()
+        self.assertEqual(self.session.get.call_args.kwargs["timeout"], 7)
+        self.assertEqual(self.session.get.call_args_list[1].kwargs["timeout"], 10)
 
     async def test_post_returns_json_response(self):
         response = MagicMock()

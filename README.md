@@ -152,3 +152,19 @@ aplicar actualizaciones automáticas.
 Autodrome se proporciona únicamente con fines educativos y personales. Cada
 usuario debe contar con permiso para descargar, distribuir o almacenar el
 contenido y cumplir la legislación de propiedad intelectual aplicable.
+
+### MusicBrainz request policy
+
+MusicBrainz requests start at least one second apart, including retries, independently
+of its one-request concurrency limit. Slow responses do not add an unnecessary extra
+second. This limit is shared by search and release lookups in the application process;
+run a single backend process to preserve that cadence.
+
+- `MUSICBRAINZ_TIMEOUT_SECONDS` (default `20`): positive, finite timeout per attempt.
+- `MUSICBRAINZ_MAX_ATTEMPTS` (default `3`): total attempts, including the first; at least `1`.
+- `MUSICBRAINZ_RETRY_BASE_SECONDS` (default `1`): finite, nonnegative exponential backoff
+  base in seconds (`base`, `2 × base`, …). Setting it to zero still respects the rate limit.
+
+Only connection failures, timeouts, HTTP 429 and HTTP 5xx are retried. Exhaustion is
+reported as an upstream error, not an empty search. These settings do not change
+YouTube or Cover Art Archive request policy.

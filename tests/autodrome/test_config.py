@@ -36,6 +36,30 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.download_concurrency, 1)
         self.assertFalse(settings.redis_enabled)
 
+    def test_musicbrainz_policy_defaults_and_overrides(self):
+        settings = self.build_config(REQUIRED_ENV)
+        self.assertEqual(settings.musicbrainz_timeout_seconds, 20)
+        self.assertEqual(settings.musicbrainz_max_attempts, 3)
+        self.assertEqual(settings.musicbrainz_retry_base_seconds, 1)
+        settings = self.build_config({
+            **REQUIRED_ENV, "MUSICBRAINZ_TIMEOUT_SECONDS": "30.5",
+            "MUSICBRAINZ_MAX_ATTEMPTS": "1", "MUSICBRAINZ_RETRY_BASE_SECONDS": "0",
+        })
+        self.assertEqual(settings.musicbrainz_timeout_seconds, 30.5)
+        self.assertEqual(settings.musicbrainz_max_attempts, 1)
+        self.assertEqual(settings.musicbrainz_retry_base_seconds, 0)
+
+    def test_invalid_musicbrainz_policy_is_rejected(self):
+        for name, values in {
+            "MUSICBRAINZ_TIMEOUT_SECONDS": ["0", "-1", "nan", "inf", "bad"],
+            "MUSICBRAINZ_MAX_ATTEMPTS": ["0", "-1", "1.5", "bad"],
+            "MUSICBRAINZ_RETRY_BASE_SECONDS": ["-1", "nan", "inf", "bad"],
+        }.items():
+            for value in values:
+                with self.subTest(name=name, value=value):
+                    with self.assertRaisesRegex(ConfigurationError, name):
+                        self.build_config({**REQUIRED_ENV, name: value})
+
     def test_redis_can_be_enabled_explicitly(self):
         settings = self.build_config({**REQUIRED_ENV, "REDIS_ENABLED": "true"})
 

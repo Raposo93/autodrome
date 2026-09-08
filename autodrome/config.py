@@ -1,5 +1,6 @@
 import os
 import logging
+import math
 from urllib.parse import urlsplit
 from typing import Optional
 
@@ -50,6 +51,15 @@ class Config:
         )
         self.download_concurrency = self._read_int(
             "DOWNLOAD_CONCURRENCY", 1, minimum=1, maximum=1
+        )
+        self.musicbrainz_timeout_seconds = self._read_float(
+            "MUSICBRAINZ_TIMEOUT_SECONDS", 20, minimum=0, exclusive=True
+        )
+        self.musicbrainz_max_attempts = self._read_int(
+            "MUSICBRAINZ_MAX_ATTEMPTS", 3, minimum=1
+        )
+        self.musicbrainz_retry_base_seconds = self._read_float(
+            "MUSICBRAINZ_RETRY_BASE_SECONDS", 1, minimum=0
         )
         self.redis_enabled = self._read_bool("REDIS_ENABLED", False)
         self.api_host = os.getenv("API_HOST", "127.0.0.1").strip()
@@ -140,6 +150,19 @@ class Config:
                 else f"at least {minimum}"
             )
             raise ConfigurationError(f"{name} must be {expected}")
+        return value
+
+    @staticmethod
+    def _read_float(
+        name: str, default: float, minimum: float, exclusive: bool = False
+    ) -> float:
+        try:
+            value = float(os.getenv(name, str(default)))
+        except ValueError as e:
+            raise ConfigurationError(f"{name} must be a number") from e
+        if not math.isfinite(value) or value < minimum or (exclusive and value == minimum):
+            comparison = "greater than" if exclusive else "at least"
+            raise ConfigurationError(f"{name} must be finite and {comparison} {minimum}")
         return value
 
     @staticmethod
