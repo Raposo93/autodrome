@@ -64,6 +64,27 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
         self.metadata_service.get_release.assert_awaited_once_with("release-1")
         self.downloader.download_playlist.assert_awaited_once()
 
+    async def test_count_mismatch_stops_before_audio_or_staging(self):
+        for count in (0, 2):
+            with self.subTest(count=count):
+                with self.assertRaisesRegex(ValueError, f"playlist has {count} tracks.*release has 1"):
+                    await self.controller.download_and_tag(
+                        "https://example.test/playlist", "Artist", "Album",
+                        "release-1", track_count=count,
+                    )
+        self.organizer.create_staging_folder.assert_not_called()
+        self.downloader.download_playlist.assert_not_awaited()
+        self.metadata_service.get_cover_art.assert_not_awaited()
+        self.organizer.move_to_library.assert_not_called()
+
+    async def test_unknown_count_keeps_final_validation(self):
+        await self.controller.download_and_tag(
+            "https://example.test/playlist", "Artist", "Album", "release-1",
+            track_count=None,
+        )
+        self.downloader.download_playlist.assert_awaited_once()
+        self.organizer.validate_album.assert_called_once()
+
     async def test_redis_failure_does_not_block_download(self):
         redis_client = MagicMock()
         redis_client.get.side_effect = ConnectionError("Redis is down")

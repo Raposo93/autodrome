@@ -120,6 +120,7 @@
 
 <script>
 import api from '../services/api.js'
+import { trackCountError } from '../services/downloadSelection.js'
 import PlaylistsList from './PlaylistsList.vue'
 import ReleasesList from './ReleasesList.vue'
 import Queue from './Queue.vue'
@@ -134,11 +135,15 @@ export default {
     isSearching() {
       return this.loadingPlaylists || this.loadingReleases
     },
+    trackCountError() {
+      return trackCountError(this.selectedPlaylist, this.selectedRelease)
+    },
     selectionReady() {
       return Boolean(
         this.selectedPlaylist &&
         this.releaseDetailsReady &&
-        !this.releaseDetailsLoading
+        !this.releaseDetailsLoading &&
+        !this.trackCountError
       )
     },
     downloadStatusText() {
@@ -157,7 +162,7 @@ export default {
       if (!this.releaseDetailsReady) {
         return 'Release details could not be loaded. Choose another release or retry.'
       }
-      return 'Both selections are ready. Check their track counts before downloading.'
+      return this.trackCountError || 'Both selections are ready to download.'
     }
   },
   data() {
@@ -258,17 +263,13 @@ export default {
       }
     },
     async downloadSelected() {
+      if (!this.selectionReady) {
+        this.downloadError = this.trackCountError || this.downloadStatusText
+        return
+      }
       this.downloading = true
       this.downloadError = null
       this.downloadSuccess = false
-
-      console.log({
-        playlist_url: this.selectedPlaylist.url,
-        artist: this.selectedRelease.artist,
-        album: this.selectedRelease.title,
-        release_id: this.selectedRelease.id,
-        track_count: this.selectedPlaylist.track_count || null
-      })
 
       try {
         await api.download({
@@ -276,11 +277,11 @@ export default {
           artist: this.selectedRelease.artist,
           album: this.selectedRelease.title,
           release_id: this.selectedRelease.id,
-          track_count: this.selectedPlaylist.track_count || null
+          track_count: this.selectedPlaylist.track_count ?? null
         })
         this.downloadSuccess = true
       } catch (e) {
-        this.downloadError = "Download failed"
+        this.downloadError = e.response?.data?.detail || "Download failed"
         console.error(e)
       } finally {
         this.downloading = false

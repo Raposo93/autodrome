@@ -34,6 +34,11 @@ class DownloaderController:
 
         tracks: List[Track] = [Track(**t) for t in release_data.get("tracks", [])]
         date: Optional[str] = release_data.get("date")
+        if track_count is not None and track_count != len(tracks):
+            raise ValueError(
+                f"Track count mismatch: playlist has {track_count} tracks, "
+                f"but the selected release has {len(tracks)}. Choose a matching pair."
+            )
 
         with self.organizer.create_staging_folder(artist, album) as tmpdir:
             await self.downloader.download_playlist(playlist_url, tmpdir, total=track_count)

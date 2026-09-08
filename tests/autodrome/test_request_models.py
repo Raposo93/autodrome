@@ -21,6 +21,15 @@ class TestRequestModels(unittest.TestCase):
         self.assertEqual(request.artist, "Artist")
         self.assertEqual(request.model_dump(mode="json")["release_id"], VALID_DOWNLOAD["release_id"])
 
+    def test_download_preserves_known_zero_and_unknown_counts(self):
+        for count in (0, None):
+            self.assertEqual(
+                DownloadRequest(**{**VALID_DOWNLOAD, "track_count": count}).track_count,
+                count,
+            )
+        with self.assertRaises(ValidationError):
+            DownloadRequest(**{**VALID_DOWNLOAD, "track_count": -1})
+
     def test_download_rejects_non_youtube_and_local_urls(self):
         for url in (
             "https://example.com/playlist?list=PL1234567890",

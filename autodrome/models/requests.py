@@ -20,7 +20,7 @@ class DownloadRequest(BaseModel):
     artist: NonEmptyText
     album: NonEmptyText
     release_id: UUID
-    track_count: Optional[int] = Field(default=None, gt=0, le=10_000)
+    track_count: Optional[int] = Field(default=None, ge=0, le=10_000)
 
     @field_validator("artist", "album")
     @classmethod
