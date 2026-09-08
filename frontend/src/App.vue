@@ -1,8 +1,7 @@
 <template>
-  <div>
-    <h1>Music Search</h1>
+  <main class="app-shell">
     <MusicSearch />
-  </div>
+  </main>
 </template>
 
 <script>

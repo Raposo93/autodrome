@@ -1,13 +1,45 @@
 <template>
-  <div>
-    <h2>Music Search</h2>
-    <div class="search-form">
-      <input v-model="artist" placeholder="Artist" />
-      <input v-model="album" placeholder="Album" />
-      <button :disabled="!artist && !album" @click="searchAll">Search</button>
-    </div>
+  <div class="music-search">
+    <header class="search-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Autodrome music library</p>
+        <h1>Find the right album release</h1>
+        <p class="hero-description">
+          Match a YouTube playlist with trusted MusicBrainz metadata, then
+          download it ready for your library.
+        </p>
+      </div>
 
-    <div class="results-container">
+      <form class="search-toolbar" @submit.prevent="searchAll">
+        <label class="search-field">
+          <span>Artist</span>
+          <input
+            v-model="artist"
+            type="search"
+            placeholder="e.g. La Fuga"
+            autocomplete="off"
+          />
+        </label>
+        <label class="search-field">
+          <span>Album</span>
+          <input
+            v-model="album"
+            type="search"
+            placeholder="e.g. Mira"
+            autocomplete="off"
+          />
+        </label>
+        <button
+          class="search-button"
+          type="submit"
+          :disabled="(!artist && !album) || isSearching"
+        >
+          {{ isSearching ? 'Searching...' : 'Search music' }}
+        </button>
+      </form>
+    </header>
+
+    <section class="workspace-grid" aria-label="Search results and queue">
       <PlaylistsList
         :playlists="playlists"
         :selected="selectedPlaylist"
@@ -26,25 +58,63 @@
         @select="selectRelease"
       />
       <Queue />
-    </div>
+    </section>
 
-    <button
-      :disabled="
-        !selectedPlaylist ||
-        !releaseDetailsReady ||
-        releaseDetailsLoading ||
-        downloading
-      "
-      @click="downloadSelected"
-    >
-      {{ releaseDetailsLoading
-        ? 'Loading release details...'
-        : (downloading ? 'Downloading...' : 'Download & Tag')
-      }}
-    </button>
+    <section class="download-panel" aria-labelledby="download-title">
+      <div class="download-heading">
+        <p class="eyebrow">Current selection</p>
+        <h2 id="download-title">Download &amp; tag</h2>
+      </div>
 
-    <div v-if="downloadError" class="error">{{ downloadError }}</div>
-    <div v-if="downloadSuccess" class="success">Download queued!</div>
+      <div class="selection-pair">
+        <div
+          class="selection-card"
+          :class="{ 'selection-card--ready': selectedPlaylist }"
+        >
+          <span class="selection-label">YouTube playlist</span>
+          <strong>{{ selectedPlaylist?.title || 'Choose a playlist' }}</strong>
+          <span class="selection-meta">
+            {{ selectionTrackLabel(selectedPlaylist) }}
+          </span>
+        </div>
+
+        <span class="selection-link" aria-hidden="true">+</span>
+
+        <div
+          class="selection-card"
+          :class="{ 'selection-card--ready': releaseDetailsReady }"
+        >
+          <span class="selection-label">MusicBrainz release</span>
+          <strong>{{ selectedRelease?.title || 'Choose a release' }}</strong>
+          <span class="selection-meta">
+            {{ selectionTrackLabel(selectedRelease) }}
+          </span>
+        </div>
+      </div>
+
+      <div class="download-action">
+        <p>{{ downloadStatusText }}</p>
+        <button
+          class="download-button"
+          type="button"
+          :disabled="!selectionReady || downloading"
+          @click="downloadSelected"
+        >
+          {{ releaseDetailsLoading
+            ? 'Loading release details...'
+            : (downloading ? 'Adding to queue...' : 'Download & Tag')
+          }}
+        </button>
+        <div class="download-feedback" aria-live="polite">
+          <span v-if="downloadError" class="feedback feedback--error">
+            {{ downloadError }}
+          </span>
+          <span v-if="downloadSuccess" class="feedback feedback--success">
+            Download queued successfully.
+          </span>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -59,6 +129,36 @@ export default {
     PlaylistsList,
     ReleasesList,
     Queue
+  },
+  computed: {
+    isSearching() {
+      return this.loadingPlaylists || this.loadingReleases
+    },
+    selectionReady() {
+      return Boolean(
+        this.selectedPlaylist &&
+        this.releaseDetailsReady &&
+        !this.releaseDetailsLoading
+      )
+    },
+    downloadStatusText() {
+      if (this.releaseDetailsLoading) {
+        return 'Loading the selected release metadata.'
+      }
+      if (!this.selectedPlaylist && !this.selectedRelease) {
+        return 'Choose one playlist and one release to continue.'
+      }
+      if (!this.selectedPlaylist) {
+        return 'Choose the YouTube playlist that matches this release.'
+      }
+      if (!this.selectedRelease) {
+        return 'Choose the MusicBrainz release that matches this playlist.'
+      }
+      if (!this.releaseDetailsReady) {
+        return 'Release details could not be loaded. Choose another release or retry.'
+      }
+      return 'Both selections are ready. Check their track counts before downloading.'
+    }
   },
   data() {
     return {
@@ -77,7 +177,7 @@ export default {
       downloading: false,
       downloadError: null,
       downloadSuccess: false,
-      defaultPlaylistImg: '/default_playlist.png',
+      defaultPlaylistImg: '/default__no_cover.jpg',
       defaultReleaseImg: '/default__no_cover.jpg'
     }
   },
@@ -85,6 +185,7 @@ export default {
     async searchAll() {
       this.errorPlaylists = null
       this.errorReleases = null
+      this.downloadError = null
       this.downloadSuccess = false
       this.selectedPlaylist = null
       this.selectedRelease = null
@@ -114,6 +215,16 @@ export default {
     },
     selectPlaylist(pl) {
       this.selectedPlaylist = pl
+    },
+    selectionTrackLabel(item) {
+      if (!item) return 'No selection'
+      if (Number.isInteger(item.track_count)) {
+        return `${item.track_count} tracks`
+      }
+      if (Array.isArray(item.tracks)) {
+        return `${item.tracks.length} tracks`
+      }
+      return 'Track count unknown'
     },
     async selectRelease(rel) {
       this.selectedRelease = rel
@@ -178,38 +289,3 @@ export default {
   }
 }
 </script>
-
-<style scoped>
-.results-container {
-  display: flex;
-  gap: 20px;
-}
-.column {
-  flex: 1;
-  max-height: 400px;
-  overflow-y: auto;
-}
-ul {
-  list-style: none;
-  padding: 0;
-}
-li {
-  cursor: pointer;
-  padding: 5px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-li.selected {
-  background-color: #cce5ff;
-}
-.error {
-  color: red;
-}
-.success {
-  color: green;
-}
-.search-form {
-  margin-bottom: 1rem;
-}
-</style>

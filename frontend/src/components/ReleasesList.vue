@@ -1,29 +1,58 @@
 <template>
-  <div class="column releases">
-    <h3>Releases</h3>
-    <div v-if="loading">Loading releases...</div>
-    <div v-if="error" class="error">{{ error }}</div>
-    <ul>
-      <li 
-        v-for="rel in releases" 
-        :key="rel.id" 
-        :class="{ selected: selected?.id === rel.id }"
-        @click="$emit('select', rel)"
-      >
-        <img 
-          :src="rel.cover_url || defaultImg"
-          @error="handleImageError"
-          alt="Release cover" 
-          width="70"
-          loading="lazy"
-          decoding="async"
-        />
-        {{ rel.title }} by {{ rel.artist }}
-        ({{ rel.date || '?' }}, {{ trackCountLabel(rel) }})
-      </li>
-    </ul>
-    <div v-if="!loading && releases.length === 0">No releases found.</div>
-  </div>
+  <section class="panel releases-panel" aria-labelledby="releases-title">
+    <header class="panel-header">
+      <div>
+        <p class="panel-kicker">MusicBrainz</p>
+        <h2 id="releases-title">Releases</h2>
+      </div>
+      <span class="panel-count">{{ resultCount }}</span>
+    </header>
+
+    <div class="panel-body">
+      <div v-if="loading" class="panel-state" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <strong>Searching MusicBrainz</strong>
+        <span>Looking for matching album editions.</span>
+      </div>
+
+      <template v-else>
+        <div v-if="error" class="panel-alert" role="alert">{{ error }}</div>
+        <ul v-if="releases.length" class="result-list">
+          <li v-for="rel in releases" :key="rel.id">
+            <button
+              class="result-item"
+              :class="{ 'result-item--selected': selected?.id === rel.id }"
+              type="button"
+              :aria-pressed="selected?.id === rel.id"
+              @click="$emit('select', rel)"
+            >
+              <img
+                class="result-cover"
+                :src="rel.cover_url || defaultImg"
+                @error="handleImageError"
+                alt=""
+                width="58"
+                height="58"
+                loading="lazy"
+                decoding="async"
+              />
+              <span class="result-copy">
+                <strong>{{ rel.title }}</strong>
+                <span>{{ rel.artist }} · {{ rel.date || 'Date unknown' }}</span>
+              </span>
+              <span class="track-pill">{{ trackCountLabel(rel) }}</span>
+            </button>
+          </li>
+        </ul>
+
+        <div v-else-if="!error" class="panel-state panel-state--empty">
+          <span class="empty-icon" aria-hidden="true">♪</span>
+          <strong>No releases yet</strong>
+          <span>MusicBrainz results will appear here.</span>
+        </div>
+      </template>
+    </div>
+  </section>
 </template>
 
 <script>
@@ -37,6 +66,13 @@ export default {
       type: String,
       default: '/default__no_cover.jpg'
     },
+  },
+  computed: {
+    resultCount() {
+      if (this.loading) return 'Searching'
+      const count = this.releases.length
+      return `${count} ${count === 1 ? 'result' : 'results'}`
+    }
   },
   methods: {
     trackCountLabel(release) {
@@ -54,28 +90,3 @@ export default {
   }
 }
 </script>
-
-<style scoped>
-.column {
-  flex: 1;
-  max-height: 400px;
-  overflow-y: auto;
-}
-ul {
-  list-style: none;
-  padding: 0;
-}
-li {
-  cursor: pointer;
-  padding: 5px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-li.selected {
-  background-color: #cce5ff;
-}
-.error {
-  color: red;
-}
-</style>
