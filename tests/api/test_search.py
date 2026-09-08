@@ -50,7 +50,7 @@ class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
                     "channelTitle": "L&#39;été 🎵",
                 },
             }]},
-            {"items": [{"contentDetails": {"itemCount": 1}}]},
+            {"items": [{"id": "PL1234567890", "contentDetails": {"itemCount": 1}}]},
         ])
         metadata = MagicMock()
         metadata.search_releases = AsyncMock(return_value=[])

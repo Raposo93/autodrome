@@ -30,7 +30,7 @@ class TestYTApi(unittest.IsolatedAsyncioTestCase):
             ]
         }
         count_response = {
-            "items": [{"contentDetails": {"itemCount": 42}}]
+            "items": [{"id": "PL123", "contentDetails": {"itemCount": 42}}]
         }
         self.http_client.get.side_effect = [search_response, count_response]
 
@@ -63,7 +63,7 @@ class TestYTApi(unittest.IsolatedAsyncioTestCase):
                         "id": {"kind": "youtube#playlist", "playlistId": "PL123"},
                         "snippet": {"title": raw, "channelTitle": raw},
                     }]},
-                    {"items": [{"contentDetails": {"itemCount": 1}}]},
+                    {"items": [{"id": "PL123", "contentDetails": {"itemCount": 1}}]},
                 ]
                 playlist, = await self.api.search_playlist("query")
                 self.assertEqual(playlist.title, expected)
@@ -75,6 +75,34 @@ class TestYTApi(unittest.IsolatedAsyncioTestCase):
         results = await self.api.search_playlist("empty")
 
         self.assertEqual(results, [])
+        self.http_client.get.assert_awaited_once()
+
+    async def test_ten_playlists_use_one_details_request_and_match_by_id(self):
+        ids = [f"PL{i}" for i in range(10)]
+        for returned_ids in [list(reversed(ids)), ["PL8", "PL2"], []]:
+            with self.subTest(returned_ids=returned_ids):
+                self.http_client.get.reset_mock()
+                self.http_client.get.side_effect = [
+                    {"items": [
+                        {"id": {"kind": "youtube#playlist", "playlistId": pid}}
+                        for pid in ids
+                    ]},
+                    {"items": [
+                        {"id": pid, "contentDetails": {"itemCount": int(pid[2:])}}
+                        for pid in returned_ids
+                    ]},
+                ]
+                results = await self.api.search_playlist("album")
+                self.assertEqual([p.id for p in results], ids)
+                self.assertEqual(
+                    [p.track_count for p in results],
+                    [i if pid in returned_ids else None for i, pid in enumerate(ids)],
+                )
+                self.assertEqual(self.http_client.get.await_count, 2)
+                details = self.http_client.get.call_args
+                self.assertTrue(details.args[0].endswith("/playlists"))
+                self.assertEqual(details.kwargs["params"]["id"], ",".join(ids))
+                self.assertEqual(details.kwargs["params"]["maxResults"], 50)
 
     async def test_search_playlist_handles_missing_playlist_id(self):
         self.http_client.get.return_value = {
@@ -94,7 +122,7 @@ class TestYTApi(unittest.IsolatedAsyncioTestCase):
         self.http_client.get.side_effect = Exception("API error")
 
         with self.assertRaisesRegex(Exception, "API error"):
-            await self.api._get_track_count("any_id")
+            await self.api._get_track_counts(["any_id"])
 
 
 if __name__ == "__main__":

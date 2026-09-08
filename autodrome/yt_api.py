@@ -1,4 +1,3 @@
-import asyncio
 import html
 import re
 from functools import cached_property
@@ -26,10 +25,9 @@ class YTApi:
         data = await self._fetch_search_results(query)
         playlists = self._parse_playlists(data)
         
-        tasks = [self._get_track_count(p.id) for p in playlists]
-        counts = await asyncio.gather(*tasks)
-        for playlist, count in zip(playlists, counts):
-            playlist.track_count = count
+        counts = await self._get_track_counts([p.id for p in playlists])
+        for playlist in playlists:
+            playlist.track_count = counts.get(playlist.id)
         
         return playlists
     
@@ -96,28 +94,30 @@ class YTApi:
             return None
         return item["id"].get("playlistId")
     
-    async def _get_track_count(self, playlist_id: str) -> Optional[int]:
+    async def _get_track_counts(self, playlist_ids: List[str]) -> dict:
+        if not playlist_ids:
+            return {}
         url = f"{self.BASE_URL}/playlists"
         params = {
             "part": "contentDetails",
-            "id": playlist_id,
+            "id": ",".join(playlist_ids),
+            "maxResults": 50,
             "key": self.api_key,
         }
         data = await self.http_client.get(
             url,
             params=params,
             provider="YouTube",
-            context=f"loading playlist {playlist_id} details",
+            context="loading playlist details",
         )
         if not isinstance(data, dict) or not isinstance(data.get("items", []), list):
             raise UpstreamServiceError(
                 provider="YouTube",
-                context=f"loading playlist {playlist_id} details",
+                context="loading playlist details",
                 reason="invalid response",
             )
-        items = data.get("items", [])
-        if not items:
-            logger.warning(f"No details found for playlist {playlist_id}")
-            return None
-        item = items[0]
-        return item.get("contentDetails", {}).get("itemCount")
+        return {
+            item["id"]: item.get("contentDetails", {}).get("itemCount")
+            for item in data.get("items", [])
+            if item.get("id") in playlist_ids
+        }
