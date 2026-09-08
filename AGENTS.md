@@ -181,6 +181,8 @@ For the final commit that completes an issue:
 
 `Close #12`
 
+Issue-closing keywords must be separated from the commit body by real newline characters. Never write literal escape sequences such as `\n\nClose #12` into the commit message: GitHub will treat them as text and will not close the issue automatically. Before finishing an issue, inspect the resulting commit message and verify the issue actually changed to `closed`; if it did not, fix the administrative state explicitly instead of assuming the keyword worked.
+
 When one commit intentionally completes multiple tightly coupled issues, reference each explicitly, but prefer separate commits/issues whenever the work can be separated cleanly.
 
 Before every commit:
