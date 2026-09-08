@@ -15,9 +15,11 @@
           @error="handleImageError"
           alt="Release cover" 
           width="70"
+          loading="lazy"
+          decoding="async"
         />
         {{ rel.title }} by {{ rel.artist }}
-        ({{ rel.date || '?' }}, {{ Array.isArray(rel.tracks) ? `${rel.tracks.length} tracks` : 'select for details' }})
+        ({{ rel.date || '?' }}, {{ trackCountLabel(rel) }})
       </li>
     </ul>
     <div v-if="!loading && releases.length === 0">No releases found.</div>
@@ -37,6 +39,15 @@ export default {
     },
   },
   methods: {
+    trackCountLabel(release) {
+      if (Number.isInteger(release.track_count)) {
+        return `${release.track_count} tracks`
+      }
+      if (Array.isArray(release.tracks)) {
+        return `${release.tracks.length} tracks`
+      }
+      return '? tracks'
+    },
     handleImageError(event) {
       event.target.src = this.defaultImg
     }

@@ -43,6 +43,7 @@ class SearchController:
                     "date": r.date,
                     "artist": r.artist,
                     "cover_url": r.cover_url,
+                    "track_count": r.track_count,
                 }
                 for r in releases_results
             ]
@@ -73,6 +74,7 @@ class SearchController:
             "date": release.date,
             "artist": release.artist,
             "cover_url": release.cover_url,
+            "track_count": len(release.tracks),
             "tracks": [track.to_dict() for track in release.tracks],
         }
         

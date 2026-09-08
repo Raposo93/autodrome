@@ -24,6 +24,7 @@ class TestMetadataService(unittest.IsolatedAsyncioTestCase):
                     "date": "2020-01-01",
                     "artist-credit": [{"name": "Test Artist"}],
                     "cover-art-archive": {"front": True},
+                    "track-count": 11,
                 },
                 {
                     "id": "release2",
@@ -46,15 +47,33 @@ class TestMetadataService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(release.date, "2020-01-01")
         self.assertEqual(release.artist, "Test Artist")
         self.assertEqual(release.tracks, [])
+        self.assertEqual(release.track_count, 11)
         self.assertEqual(
             release.cover_url,
             "https://coverartarchive.org/release/release1/front-250",
         )
         self.assertIsNone(releases[1].cover_url)
+        self.assertIsNone(releases[1].track_count)
         self.service._get_tracks.assert_not_awaited()
         self.service._get_cover_url.assert_not_awaited()
         self.service.redis_cache.get_release.assert_not_called()
         self.service.redis_cache.set_release.assert_not_called()
+
+    async def test_search_releases_ignores_invalid_track_count(self):
+        self.http_client.get.return_value = {
+            "releases": [
+                {
+                    "id": "release1",
+                    "title": "Test Album",
+                    "artist-credit": [{"name": "Test Artist"}],
+                    "track-count": "11",
+                }
+            ]
+        }
+
+        releases = await self.service.search_releases("Test Artist", "Test Album")
+
+        self.assertIsNone(releases[0].track_count)
 
     async def test_search_releases_handles_empty_response(self):
         self.http_client.get.return_value = {"releases": []}

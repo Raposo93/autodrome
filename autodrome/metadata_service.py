@@ -333,10 +333,19 @@ class MetadataService:
                     date=r.get("date") or "Unknown",
                     cover_url=cover_url,
                     artist=artist_credit[0].get("name") or artist or "Unknown",
-                    tracks=[]
+                    tracks=[],
+                    track_count=self._parse_search_track_count(
+                        r.get("track-count")
+                    ),
                 )
             )
         return releases
+
+    @staticmethod
+    def _parse_search_track_count(value: Any) -> Optional[int]:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return None
+        return value
 
 
 

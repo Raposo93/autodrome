@@ -16,6 +16,7 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
             artist="Artist",
             cover_url="https://archive.test/small.jpg",
             tracks=[],
+            track_count=11,
         )
         controller.metadata_service.search_releases = AsyncMock(
             return_value=[release]
@@ -28,6 +29,7 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
             result["releases"][0]["cover_url"],
             "https://archive.test/small.jpg",
         )
+        self.assertEqual(result["releases"][0]["track_count"], 11)
         self.assertNotIn("tracks", result["releases"][0])
         controller.metadata_service.get_cover_art.assert_not_awaited()
 
@@ -52,6 +54,7 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
             details = await controller.get_release_details("release-1")
 
         self.assertEqual(details["id"], "release-1")
+        self.assertEqual(details["track_count"], 0)
         self.assertEqual(details["tracks"], [])
         metadata_service.get_release.assert_awaited_once_with("release-1")
         self.assertTrue(
