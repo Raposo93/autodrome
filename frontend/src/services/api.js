@@ -4,13 +4,23 @@ import {
   createReconnectingWebSocket,
 } from './websocket'
 
-const apiToken = import.meta.env.VITE_API_TOKEN
-const apiClient = axios.create({
-  baseURL: '/api',
-  headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : {},
+const tokenKey = 'autodrome-api-token'
+const apiToken = () => sessionStorage.getItem(tokenKey) || ''
+export function setApiToken(value) {
+  if (value) sessionStorage.setItem(tokenKey, value)
+  else sessionStorage.removeItem(tokenKey)
+}
+const apiClient = axios.create({ baseURL: '/api' })
+apiClient.interceptors.request.use(config => {
+  const token = apiToken()
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
 })
 
 export default {
+  authenticate() {
+    return apiClient.get('/auth')
+  },
   combinedSearch(artist, album) {
     return apiClient.get('/search/', { params: { artist, album } })
   },
@@ -44,7 +54,7 @@ export function connectWebSocket(onMessage) {
   return createReconnectingWebSocket({
     onMessage,
     urlFactory() {
-      return buildWebSocketUrl(window.location, apiToken)
+      return buildWebSocketUrl(window.location, apiToken())
     },
   })
 }

@@ -1,4 +1,5 @@
 import aiohttp
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -98,3 +99,12 @@ async def authenticate_external_api(request: Request, call_next):
 app.include_router(search_router, prefix="/api/search")
 app.include_router(download_router, prefix="/api/download")
 app.include_router(websocket_router)
+
+
+@app.get("/api/auth")
+async def auth_status():
+    return {"authenticated": True}
+
+
+from api.frontend import FrontendFiles
+app.mount("/", FrontendFiles(directory=Path(__file__).resolve().parent / "frontend/dist", check_dir=False))

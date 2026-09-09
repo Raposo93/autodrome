@@ -53,10 +53,14 @@ La ruta recomendada es:
 ```
 
 El script valida herramientas, dependencias y configuración antes de arrancar.
-Después inicia FastAPI en `http://127.0.0.1:5000` y Vue en
-`http://127.0.0.1:5173`, mostrando los logs de ambos procesos en la terminal.
-Abre la dirección de Vue en el navegador. Pulsa `Ctrl+C` para detener exactamente
-los dos procesos de esa instancia.
+Antes del primer arranque ejecuta `npm run build --prefix frontend`. El modo
+predeterminado (`--production`) sirve frontend, API y WebSocket desde FastAPI
+en `http://127.0.0.1:5000`, sin Node ni Vite durante la ejecución. Las rutas de
+la SPA admiten recarga directa. Pulsa `Ctrl+C` para detener el servidor.
+
+Para desarrollo, `./start_autodrome.sh --dev` inicia FastAPI y Vite
+(`http://127.0.0.1:5173`) y detiene ambos al salir. `npm run dev --prefix frontend`
+sigue disponible cuando se gestiona el backend por separado.
 
 No existe un comando CLI soportado para buscar o descargar álbumes.
 
@@ -98,17 +102,17 @@ Red y frontend:
 
 - `API_HOST` y `API_PORT`: escucha de FastAPI; `127.0.0.1:5000` por defecto.
 - `API_TOKEN`: token de al menos 32 caracteres, obligatorio cuando `API_HOST`
-  no es loopback. `start_autodrome.sh` lo entrega al frontend sin duplicarlo.
+  no es loopback. Introdúcelo en la pantalla de conexión del navegador; se
+  conserva solo durante la sesión de esa pestaña. Nunca se incrusta en el build.
 - `CORS_ORIGINS`: orígenes `http`/`https` permitidos, separados por comas; vacío
   por defecto.
 - `VITE_HOST` y `VITE_PORT`: escucha de Vue; `127.0.0.1:5173` por defecto.
-- `VITE_API_TOKEN`: anulación opcional del token usado por el frontend.
 - `VITE_IP_HOST`: destino opcional del proxy de Vite. El script lo calcula desde
   `API_HOST` y `API_PORT` si no se configura.
 
 Para exponer la aplicación fuera del equipo, configura deliberadamente
-`API_HOST`, `VITE_HOST`, `API_TOKEN` y la red/firewall. No expongas el servidor
-de desarrollo directamente a Internet; sitúalo detrás de un proxy HTTPS.
+`API_HOST`, `API_TOKEN` y la red/firewall. Usa un proxy HTTPS para acceso remoto.
+`VITE_HOST` solo afecta al desarrollo. No expongas Vite a Internet.
 
 ## Selección y metadata manual
 

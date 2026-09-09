@@ -20,6 +20,15 @@ if [[ ! -x "$PROJECT_PYTHON" ]]; then
   exit 1
 fi
 
+case "${1:---production}" in
+  --production)
+    command -v ffmpeg >/dev/null || { echo "Error: ffmpeg is required"; exit 1; }
+    exec "$PROJECT_PYTHON" -m autodrome.server
+    ;;
+  --dev) ;;
+  *) echo "Usage: $0 [--production|--dev]"; exit 2 ;;
+esac
+
 for command in node npm ffmpeg; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "Error: required command '$command' is not installed."
@@ -68,14 +77,6 @@ print(os.getenv(sys.argv[1], ""))
 
 BACKEND_HOST="$(config_value api_host)"
 BACKEND_PORT="$(config_value api_port)"
-
-if [[ -z "${VITE_API_TOKEN:-}" ]]; then
-  VITE_API_TOKEN="$(dotenv_value VITE_API_TOKEN)"
-fi
-if [[ -z "$VITE_API_TOKEN" ]]; then
-  VITE_API_TOKEN="$(config_value api_token)"
-fi
-export VITE_API_TOKEN
 
 if [[ -z "${VITE_HOST:-}" ]]; then
   VITE_HOST="$(dotenv_value VITE_HOST)"
