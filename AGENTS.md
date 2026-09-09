@@ -69,19 +69,24 @@ These rules are important across issues:
 - MusicBrainz request starts must continue to respect the configured request policy and the one-request-per-second cadence.
 - Keep playlist-track downloads sequential unless an explicit issue deliberately changes that policy and preserves publication integrity.
 
-## Current issue priority and dependencies
+## Issue selection and dependencies
 
-When choosing work autonomously, always refresh the current open issues before starting. Do not use old completed backlog issues as an ordering source.
+When choosing work autonomously, always refresh the current open issues before starting and again after closing an issue that may unblock other work. Current GitHub issue state, explicit issue dependencies, and newer user instructions are the source of truth. Do not maintain a static numbered priority list in this file.
 
-At the time of this update, the active sequence is:
+Unless an explicit dependency or instruction overrides it, prefer work in this order:
 
-1. **#26** — validate the real yt-dlp manifest before downloading. This is the highest-priority integrity guard because it can reject a known incomplete playlist before any audio is downloaded.
-2. **#25** — reduce YouTube requests used to obtain playlist track counts. Keep the result contract and per-playlist unknown state intact.
-3. **#24** — run YouTube and MusicBrainz searches in parallel and support provider-specific partial failure. Preserve successful results from the provider that remains available.
+1. library integrity, data-loss prevention, and recoverability;
+2. correctness of track, release, and metadata identity;
+3. core user workflow and known failure handling;
+4. persistent deployment and operability;
+5. observability and quality-of-life improvements;
+6. performance, concurrency, stress testing, and experimental work.
 
-These issues are independently actionable, but prefer the order above unless newer issue state, dependencies, or explicit instructions supersede it.
+Treat blockers written in issue bodies as hard gates. Do not start a dependent issue merely because it looks easy. If a blocker requires real-world verification, a closed issue and green automated tests alone do not satisfy that requirement.
 
-Do not start a dependent issue merely because it looks easy. Finish or verify its prerequisites first.
+When several independent issues have the same priority, prefer the smaller coherent change that reduces risk or unblocks more work. Re-evaluate the backlog after each completed issue instead of assuming the previous ordering is still valid.
+
+For stress, fault-injection, or chaos work, establish deterministic and reproducible failure cases first. Randomized or high-load experiments come later and must not weaken the normal integrity guarantees merely to make the experiment succeed.
 
 ## Autonomous working method
 
