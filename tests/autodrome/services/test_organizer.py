@@ -17,8 +17,8 @@ def test_tag_and_rename_basic(monkeypatch):
     organizer = Organizer()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_dummy_mp3(tmpdir, "track1.mp3")
-        create_dummy_mp3(tmpdir, "track2.mp3")
+        create_dummy_mp3(tmpdir, "01 - Audio.mp3")
+        create_dummy_mp3(tmpdir, "02 - Audio.mp3")
 
         tracks = [Track(1, "Song A"), Track(2, "Song B")]
 
@@ -35,7 +35,7 @@ def test_tag_and_rename_rejects_missing_download_before_changes(monkeypatch):
     organizer = Organizer()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_dummy_mp3(tmpdir, "track1.mp3")
+        create_dummy_mp3(tmpdir, "01 - Audio.mp3")
         tracks = [Track(1, "Song A"), Track(2, "Song B")]
 
         monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
@@ -47,7 +47,7 @@ def test_tag_and_rename_rejects_missing_download_before_changes(monkeypatch):
         ):
             organizer.tag_and_rename(tmpdir, "Artist", "Album", tracks)
 
-        assert os.listdir(tmpdir) == ["track1.mp3"]
+        assert os.listdir(tmpdir) == ["01 - Audio.mp3"]
         organizer.tagger.tag_files.assert_not_called()
         organizer.cover_embedder.embed_cover.assert_not_called()
 
@@ -55,8 +55,8 @@ def test_tag_and_rename_rejects_extra_download_before_changes(monkeypatch):
     organizer = Organizer()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_dummy_mp3(tmpdir, "track1.mp3")
-        create_dummy_mp3(tmpdir, "track2.mp3")
+        create_dummy_mp3(tmpdir, "01 - Audio.mp3")
+        create_dummy_mp3(tmpdir, "02 - Audio.mp3")
         tracks = [Track(1, "Song A")]
 
         monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
@@ -68,7 +68,7 @@ def test_tag_and_rename_rejects_extra_download_before_changes(monkeypatch):
         ):
             organizer.tag_and_rename(tmpdir, "Artist", "Album", tracks)
 
-        assert sorted(os.listdir(tmpdir)) == ["track1.mp3", "track2.mp3"]
+        assert sorted(os.listdir(tmpdir)) == ["01 - Audio.mp3", "02 - Audio.mp3"]
         organizer.tagger.tag_files.assert_not_called()
         organizer.cover_embedder.embed_cover.assert_not_called()
 
@@ -76,27 +76,27 @@ def test_tag_and_rename_rejects_sanitized_filename_collision(monkeypatch):
     organizer = Organizer()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_dummy_mp3(tmpdir, "track1.mp3")
-        create_dummy_mp3(tmpdir, "track2.mp3")
+        create_dummy_mp3(tmpdir, "01 - Audio.mp3")
+        create_dummy_mp3(tmpdir, "02 - Audio.mp3")
         tracks = [Track(1, "Song?"), Track(1, "Song*")]
 
         monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
 
         with pytest.raises(
             ValueError,
-            match="Track filename collision after sanitization: 01 - Song_.mp3",
+            match="duplicate track identity",
         ):
             organizer.tag_and_rename(tmpdir, "Artist", "Album", tracks)
 
-        assert sorted(os.listdir(tmpdir)) == ["track1.mp3", "track2.mp3"]
+        assert sorted(os.listdir(tmpdir)) == ["01 - Audio.mp3", "02 - Audio.mp3"]
         organizer.tagger.tag_files.assert_not_called()
 
 def test_tag_and_rename_uses_unambiguous_multidisc_names(monkeypatch):
     organizer = Organizer()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_dummy_mp3(tmpdir, "track1.mp3")
-        create_dummy_mp3(tmpdir, "track2.mp3")
+        create_dummy_mp3(tmpdir, "01 - Audio.mp3")
+        create_dummy_mp3(tmpdir, "02 - Audio.mp3")
         tracks = [
             Track(1, "First", disc_number=1, position=1, global_position=1),
             Track(1, "First", disc_number=2, position=1, global_position=2),
@@ -115,8 +115,8 @@ def test_tag_and_rename_prepares_cover_once_before_modifying_tracks(monkeypatch)
     organizer = Organizer()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_dummy_mp3(tmpdir, "track1.mp3")
-        create_dummy_mp3(tmpdir, "track2.mp3")
+        create_dummy_mp3(tmpdir, "01 - Audio.mp3")
+        create_dummy_mp3(tmpdir, "02 - Audio.mp3")
         cover_path = os.path.join(tmpdir, "cover.png")
         with open(cover_path, "wb") as cover_file:
             cover_file.write(b"cover")
@@ -129,9 +129,9 @@ def test_tag_and_rename_prepares_cover_once_before_modifying_tracks(monkeypatch)
         def prepare_before_changes(path):
             assert path == cover_path
             assert sorted(os.listdir(tmpdir)) == [
+                "01 - Audio.mp3",
+                "02 - Audio.mp3",
                 "cover.png",
-                "track1.mp3",
-                "track2.mp3",
             ]
             organizer.tagger.tag_files.assert_not_called()
             return prepared_cover
@@ -157,7 +157,7 @@ def test_tag_and_rename_rejects_cover_before_modifying_tracks(monkeypatch):
     organizer = Organizer()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_dummy_mp3(tmpdir, "track1.mp3")
+        create_dummy_mp3(tmpdir, "01 - Audio.mp3")
         cover_path = os.path.join(tmpdir, "cover.jpg")
         with open(cover_path, "wb") as cover_file:
             cover_file.write(b"damaged")
@@ -178,7 +178,7 @@ def test_tag_and_rename_rejects_cover_before_modifying_tracks(monkeypatch):
                 cover_path=cover_path,
             )
 
-        assert sorted(os.listdir(tmpdir)) == ["cover.jpg", "track1.mp3"]
+        assert sorted(os.listdir(tmpdir)) == ["01 - Audio.mp3", "cover.jpg"]
         organizer.tagger.tag_files.assert_not_called()
         organizer.cover_embedder.embed_cover.assert_not_called()
 
@@ -385,3 +385,57 @@ def test_publication_failure_leaves_no_partial_album(monkeypatch):
 
         assert not os.path.exists(os.path.join(libdir, "Artist", "Album"))
         assert os.path.isfile(os.path.join(staging_folder, "01 - Song A.mp3"))
+
+@pytest.mark.parametrize("count,multidisc", [(99, False), (100, False), (101, False), (101, True)])
+def test_audio_identity_survives_rename_tag_and_validation(tmp_path, monkeypatch, count, multidisc):
+    tracks = []
+    for index in range(1, count + 1):
+        disc = 2 if multidisc and index > 60 else 1
+        position = index - 60 if disc == 2 else index
+        tracks.append(Track(position, f"Track {index}", disc, position, index))
+        (tmp_path / f"{index:02d} - Audio {index}.mp3").write_text(str(index))
+    tagged = {}
+
+    class Audio(dict):
+        info = mock.Mock(length=180)
+
+        def save(self):
+            pass
+
+    def load_audio(path, **kwargs):
+        identity = int(open(path).read())
+        return tagged.setdefault(identity, Audio())
+
+    monkeypatch.setattr("autodrome.services.tagger.MP3", load_audio)
+    monkeypatch.setattr("autodrome.services.organizer.MP3", load_audio)
+    monkeypatch.setattr("autodrome.services.organizer.ID3", lambda path: mock.Mock(getall=lambda name: []))
+    organizer = Organizer()
+    organizer.tag_and_rename(str(tmp_path), "Artist", "Album", tracks)
+    for track in tracks:
+        audio = tagged[track.global_position]
+        assert audio["title"] == track.title
+        assert audio["tracknumber"] == str(track.number)
+        if multidisc:
+            assert audio["discnumber"] == str(track.disc_number)
+        prefix = f"{track.disc_number:02d}-{track.position:02d}" if multidisc else f"{track.number:02d}"
+        assert (tmp_path / f"{prefix} - {track.title}.mp3").read_text() == str(track.global_position)
+        for key, value in list(audio.items()):
+            audio[key] = [value]  # EasyID3 reads return lists.
+    organizer.validate_album(str(tmp_path), "Artist", "Album", tracks)
+
+
+@pytest.mark.parametrize("files", [
+    ["Audio.mp3", "02 - Audio.mp3"],
+    ["01 - A.mp3", "1 - B.mp3"],
+    ["01 - A.mp3", "03 - B.mp3"],
+])
+def test_unreliable_identity_rejected_before_any_rename(tmp_path, monkeypatch, files):
+    for name in files:
+        (tmp_path / name).write_bytes(b"audio")
+    organizer = Organizer()
+    tag = mock.Mock()
+    monkeypatch.setattr(organizer.tagger, "tag_files", tag)
+    with pytest.raises(ValueError, match="identity|identities"):
+        organizer.tag_and_rename(str(tmp_path), "Artist", "Album", [Track(1, "A"), Track(2, "B")])
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(files)
+    tag.assert_not_called()

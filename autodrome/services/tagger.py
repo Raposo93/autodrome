@@ -3,6 +3,7 @@ from typing import List, Optional
 from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
 from autodrome.models.track import Track
+from autodrome.services.track_files import match_track_files
 from autodrome.logger import logger
 
 class Tagger:
@@ -28,8 +29,7 @@ class Tagger:
             number != 1 for number in disc_numbers
         )
 
-        for index, file in enumerate(files):
-            track = tracks[index]
+        for file, track in match_track_files(files, tracks):
             file_path = os.path.join(folder_path, file)
             audio = MP3(file_path, ID3=EasyID3)
             audio["artist"] = artist

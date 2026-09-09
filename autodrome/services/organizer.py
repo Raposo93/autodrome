@@ -9,6 +9,7 @@ from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3
 from mutagen.mp3 import MP3
 from autodrome.models.track import Track
+from autodrome.services.track_files import match_track_files
 from autodrome.logger import logger
 from autodrome import config
 from autodrome.services.tagger import Tagger
@@ -125,8 +126,7 @@ class Organizer:
                 f"expected {len(tracks)}, got {len(files)}"
             )
 
-        for index, file in enumerate(files):
-            track = tracks[index]
+        for file, track in match_track_files(files, tracks):
             file_path = os.path.join(folder_path, file)
             try:
                 audio = MP3(file_path, ID3=EasyID3)
@@ -216,8 +216,7 @@ class Organizer:
         final_names = set()
         multi_disc = self._is_multi_disc(tracks)
 
-        for index, file in enumerate(files):
-            track = tracks[index]
+        for file, track in match_track_files(files, tracks, downloaded=True):
             sanitized_title = self._sanitize_filename(track.title)
             if multi_disc:
                 prefix = f"{track.disc_number:02d}-{track.position:02d}"
