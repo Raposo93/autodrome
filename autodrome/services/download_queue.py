@@ -130,6 +130,8 @@ class DownloadQueueManager:
                         album=payload["album"],
                         release_id=payload["release_id"],
                         track_count=payload.get("track_count"),
+                        **({"metadata_mode": "manual", "manual_confirmed": payload.get("manual_confirmed", False)}
+                           if payload.get("metadata_mode") == "manual" else {}),
                     )
                 except asyncio.CancelledError:
                     # Shutdown must not wait indefinitely for broken storage.

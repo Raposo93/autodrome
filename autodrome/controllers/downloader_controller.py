@@ -25,16 +25,28 @@ class DownloaderController:
         playlist_url: str, 
         artist: str, 
         album: str, 
-        release_id: str, 
-        track_count: Optional[int] = None
+        release_id: Optional[str],
+        track_count: Optional[int] = None,
+        metadata_mode: str = "musicbrainz",
+        manual_confirmed: bool = False
     ) -> None:
         logger.debug(f"Starting download_and_tag for release_id: {release_id}")
 
-        release_data = await self._get_release_data(release_id)
-
-        artist = release_data.get("artist") or artist
-        tracks: List[Track] = [Track(**t) for t in release_data.get("tracks", [])]
-        date: Optional[str] = release_data.get("date")
+        manifest = None
+        if metadata_mode == "manual":
+            if release_id is not None or not manual_confirmed:
+                raise ValueError("Manual metadata requires explicit confirmation")
+            manifest = await self.downloader.get_playlist_manifest(playlist_url, track_count)
+            tracks = [Track(number=entry["position"], title=entry["title"])
+                      for entry in manifest["tracks"]]
+            date = None
+        elif metadata_mode == "musicbrainz" and release_id:
+            release_data = await self._get_release_data(release_id)
+            artist = release_data.get("artist") or artist
+            tracks = [Track(**t) for t in release_data.get("tracks", [])]
+            date = release_data.get("date")
+        else:
+            raise ValueError("MusicBrainz mode requires a release")
         if track_count is not None and track_count != len(tracks):
             raise ValueError(
                 f"Track count mismatch: playlist has {track_count} tracks, "
@@ -42,8 +54,11 @@ class DownloaderController:
             )
 
         with self.organizer.create_staging_folder(artist, album) as tmpdir:
-            await self.downloader.download_playlist(playlist_url, tmpdir, total=track_count)
-            cover_path: Optional[str] = await self.metadata_service.get_cover_art(release_id)
+            await self.downloader.download_playlist(
+                playlist_url, tmpdir, total=len(tracks),
+                **({"manifest": manifest} if manifest is not None else {}),
+            )
+            cover_path = await self.metadata_service.get_cover_art(release_id) if release_id else None
 
             self.organizer.tag_and_rename(tmpdir, artist, album, tracks, cover_path, date)
             self.organizer.validate_album(tmpdir, artist, album, tracks)

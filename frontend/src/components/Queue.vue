@@ -30,6 +30,7 @@
           ></span>
           <span class="queue-copy">
             <strong>{{ itemTitle(item) }}</strong>
+            <span>{{ item.metadata_mode === 'manual' ? 'Manual metadata' : 'MusicBrainz metadata' }}</span>
             <span class="queue-status">{{ statusLabel(item) }}</span>
             <span v-if="item.error" class="queue-error">{{ item.error }}</span>
           </span>

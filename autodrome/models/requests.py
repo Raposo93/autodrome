@@ -1,4 +1,4 @@
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Literal
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
@@ -19,8 +19,19 @@ class DownloadRequest(BaseModel):
     playlist_url: str
     artist: NonEmptyText
     album: NonEmptyText
-    release_id: UUID
+    release_id: Optional[UUID] = None
+    metadata_mode: Literal["musicbrainz", "manual"] = "musicbrainz"
+    manual_confirmed: bool = False
     track_count: Optional[int] = Field(default=None, ge=0, le=10_000)
+
+    @model_validator(mode="after")
+    def validate_metadata_mode(self):
+        if self.metadata_mode == "manual":
+            if self.release_id is not None or not self.manual_confirmed:
+                raise ValueError("Manual metadata requires confirmation and no MusicBrainz release")
+        elif self.release_id is None or self.manual_confirmed:
+            raise ValueError("MusicBrainz mode requires a release")
+        return self
 
     @field_validator("artist", "album")
     @classmethod

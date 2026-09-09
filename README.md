@@ -110,6 +110,23 @@ Para exponer la aplicación fuera del equipo, configura deliberadamente
 `API_HOST`, `VITE_HOST`, `API_TOKEN` y la red/firewall. No expongas el servidor
 de desarrollo directamente a Internet; sitúalo detrás de un proxy HTTPS.
 
+## Selección y metadata manual
+
+La búsqueda muestra candidatos ligeros. Los tracklists de MusicBrainz se cargan
+progresivamente y se pueden desplegar para comparar ediciones. Solo se comprueba
+el manifiesto de YouTube al seleccionar una playlist; un fallo o una cantidad
+incompatible bloquea la selección. El manifiesto se reutiliza hasta dos minutos
+y se vuelve a validar en el backend antes de descargar.
+
+Se recomienda seleccionar una playlist y su release de MusicBrainz. Si no existe
+un release adecuado, selecciona la playlist y pulsa **Download without MusicBrainz**.
+Acepta la explicación e introduce los nombres definitivos de **Artist** y **Album**;
+son independientes de la búsqueda y se guardan con el trabajo y sus reintentos.
+En modo manual, los títulos y el orden proceden de la playlist. No se obtiene fecha,
+portada, créditos individuales ni estructura multidisco de MusicBrainz. La cola
+identifica este modo como **Manual metadata**. Las garantías de validación, staging
+y publicación atómica son las mismas.
+
 ## Integridad y recuperación
 
 Cada álbum se construye completamente dentro del staging de la biblioteca. Se

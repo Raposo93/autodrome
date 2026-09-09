@@ -24,7 +24,8 @@ function setup(combinedSearch, playlistPreflight = async () => ({ data: { track_
     playlists: [{ id: 'old-playlist' }], releases: [{ id: 'old-release' }],
   }
   for (const [name, method] of Object.entries(component.methods)) state[name] = method.bind(state)
-  return { state, search: () => component.methods.searchAll.call(state) }
+  for (const [name, getter] of Object.entries(component.computed)) Object.defineProperty(state, name, { get: () => getter.call(state) })
+  return { state, context, search: () => component.methods.searchAll.call(state) }
 }
 
 for (const failed of [[], ['youtube'], ['musicbrainz'], ['youtube', 'musicbrainz']]) {
@@ -91,4 +92,26 @@ test('manifest mismatch leaves selection blocked with useful error', async () =>
   await state.selectPlaylist({ url: 'playlist' })
   assert.equal(state.playlistReady, false)
   assert.match(state.playlistError, /extractable 12/)
+})
+
+
+test('manual mode requires confirmation and submits edited metadata independent of search', async () => {
+  const { state, context } = setup(async () => ({}))
+  const downloads = []
+  context.api.download = async payload => downloads.push(payload)
+  state.selectedPlaylist = { url: 'playlist', track_count: 1 }
+  state.playlistReady = true
+  state.manualArtist = ' Final Artist '
+  state.manualAlbum = ' Final Album '
+  await state.downloadManual()
+  assert.equal(downloads.length, 0)
+  state.manualConfirmed = true
+  await state.downloadManual()
+  assert.equal(downloads[0].artist, 'Final Artist')
+  assert.equal(downloads[0].album, 'Final Album')
+  assert.equal(downloads[0].metadata_mode, 'manual')
+  assert.equal(downloads[0].release_id, null)
+  state.manualAlbum = '   '
+  await state.downloadManual()
+  assert.equal(downloads.length, 1)
 })

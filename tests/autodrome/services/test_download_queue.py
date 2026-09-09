@@ -397,3 +397,24 @@ class TestStorageRecovery(unittest.IsolatedAsyncioTestCase):
         restored = DownloadQueueManager(AsyncMock(), AsyncMock(), self.state_path)
         self.assertEqual(restored.snapshot()[0]["status"], "interrupted")
         self.assertTrue(restored.queue.empty())
+
+class TestManualQueue(unittest.IsolatedAsyncioTestCase):
+    async def test_manual_decision_survives_retry_and_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, 'queue.json')
+            payload = {**PAYLOAD, 'release_id': None, 'metadata_mode': 'manual',
+                       'manual_confirmed': True, 'artist': 'Final Artist', 'album': 'Final Album'}
+            manager = DownloadQueueManager(AsyncMock(), AsyncMock(), path)
+            original = await manager.enqueue(payload)
+            await manager._transition(manager._jobs[original], 'failed', 'temporary error')
+            retry = await manager.retry_job(original)
+            downloader = AsyncMock()
+            restored = DownloadQueueManager(downloader, AsyncMock(), path)
+            try:
+                restored.start()
+                await asyncio.wait_for(restored.queue.join(), 1)
+                downloader.download_and_tag.assert_awaited_once_with(**payload)
+                self.assertEqual(restored._jobs[retry].payload, payload)
+                self.assertEqual(restored._jobs[original].status, 'failed')
+            finally:
+                await restored.stop()

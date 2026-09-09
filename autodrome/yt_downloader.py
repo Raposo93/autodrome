@@ -53,11 +53,17 @@ class YTDownloader:
         url: str,
         dest: str,
         total: Optional[int] = None,
+        manifest=None,
     ) -> None:
         logger.debug(f"[YTDownloader] Starting download_playlist: {url} to {dest}")
         print(f"[YTDownloader] Descargando: {url} en {dest}")
 
-        track_urls = await self.get_playlist_track_urls(url)
+        if manifest is not None:
+            if manifest.get("unavailable"):
+                raise RuntimeError("Playlist contains unavailable entries")
+            track_urls = [track["url"] for track in manifest["tracks"]]
+        else:
+            track_urls = await self.get_playlist_track_urls(url)
         self.validate_manifest(track_urls, total)
 
         hook = self._build_progress_hook(total or len(track_urls))

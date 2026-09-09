@@ -92,6 +92,24 @@
         </div>
       </div>
 
+      <div v-if="selectedPlaylist && !selectedRelease" class="manual-metadata">
+        <p>MusicBrainz metadata is recommended when a matching release exists.</p>
+        <button v-if="!manualPrompt && !manualConfirmed" type="button" @click="manualPrompt = true">
+          Download without MusicBrainz
+        </button>
+        <div v-if="manualPrompt && !manualConfirmed" role="alert">
+          <p>Without MusicBrainz, titles and order come from the playlist and Artist + Album
+            from your input. There will be no MusicBrainz date, track credits, multidisc
+            metadata or cover art.</p>
+          <button type="button" @click="manualConfirmed = true">I understand — enter manual metadata</button>
+        </div>
+        <form v-if="manualConfirmed" @submit.prevent="downloadManual">
+          <label>Artist <input v-model="manualArtist" required maxlength="255" /></label>
+          <label>Album <input v-model="manualAlbum" required maxlength="255" /></label>
+          <button type="submit" :disabled="!manualReady || downloading">Confirm metadata &amp; queue manual download</button>
+        </form>
+      </div>
+
       <div class="download-action">
         <p>{{ downloadStatusText }}</p>
         <button
@@ -133,6 +151,10 @@ export default {
     Queue
   },
   computed: {
+    manualReady() {
+      return this.manualConfirmed && this.playlistReady && !this.selectedRelease &&
+        Boolean(this.manualArtist.trim() && this.manualAlbum.trim())
+    },
     isSearching() {
       return this.loadingPlaylists || this.loadingReleases
     },
@@ -170,6 +192,10 @@ export default {
   },
   data() {
     return {
+      manualPrompt: false,
+      manualConfirmed: false,
+      manualArtist: '',
+      manualAlbum: '',
       hydrator: null,
       artist: '',
       album: '',
@@ -216,6 +242,8 @@ export default {
       this.hydrator.start(this.releases)
     },
     async searchAll() {
+      this.manualConfirmed = false
+      this.manualPrompt = false
       this.hydrator?.reset()
       this.playlistGeneration += 1
       this.playlistReady = false
@@ -256,6 +284,8 @@ export default {
       }
     },
     async selectPlaylist(pl) {
+      this.manualConfirmed = false
+      this.manualPrompt = false
       const generation = ++this.playlistGeneration
       this.selectedPlaylist = pl
       this.playlistReady = false
@@ -281,10 +311,31 @@ export default {
       return 'Track count unknown'
     },
     selectRelease(rel) {
+      this.manualConfirmed = false
+      this.manualPrompt = false
       this.selectedRelease = rel
       this.releaseDetailsReady = Array.isArray(rel.tracks)
       this.releaseDetailsLoading = !this.releaseDetailsReady
       this.hydrator?.prioritize(rel.id)
+    },
+    async downloadManual() {
+      if (!this.manualReady || this.downloading) return
+      this.downloading = true
+      this.downloadError = null
+      this.downloadSuccess = false
+      try {
+        await api.download({
+          playlist_url: this.selectedPlaylist.url,
+          track_count: this.selectedPlaylist.track_count,
+          release_id: null, metadata_mode: 'manual', manual_confirmed: true,
+          artist: this.manualArtist.trim(), album: this.manualAlbum.trim()
+        })
+        this.downloadSuccess = true
+      } catch (error) {
+        this.downloadError = error.response?.data?.detail || 'Manual download failed'
+      } finally {
+        this.downloading = false
+      }
     },
     async downloadSelected() {
       if (!this.selectionReady) {

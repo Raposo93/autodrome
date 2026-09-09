@@ -161,3 +161,30 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestManualDownload(unittest.IsolatedAsyncioTestCase):
+    setUp = TestDownloaderController.setUp
+
+    async def test_manual_tracks_use_manifest_and_confirmed_metadata(self):
+        manifest = {"tracks": [{"position": 1, "title": "Live track", "url": "video"}], "unavailable": 0}
+        self.downloader.get_playlist_manifest = AsyncMock(return_value=manifest)
+        await self.controller.download_and_tag("playlist", "Manual Artist", "Manual Album", None,
+                                               1, metadata_mode="manual", manual_confirmed=True)
+        self.metadata_service.get_release.assert_not_awaited()
+        self.metadata_service.get_cover_art.assert_not_awaited()
+        args = self.organizer.tag_and_rename.call_args.args
+        self.assertEqual(args[1:3], ("Manual Artist", "Manual Album"))
+        self.assertEqual(args[3][0].title, "Live track")
+        self.assertEqual(args[3][0].number, 1)
+        self.assertEqual(args[4:], (None, None))
+        self.assertIs(self.downloader.download_playlist.call_args.kwargs["manifest"], manifest)
+        self.organizer.validate_album.assert_called_once()
+        self.organizer.move_to_library.assert_called_once_with("/tmp/autodrome-download", "Manual Artist", "Manual Album")
+
+    async def test_invalid_manual_manifest_prevents_staging(self):
+        self.downloader.get_playlist_manifest = AsyncMock(side_effect=RuntimeError("unavailable"))
+        with self.assertRaisesRegex(RuntimeError, "unavailable"):
+            await self.controller.download_and_tag("playlist", "Artist", "Album", None,
+                                                   metadata_mode="manual", manual_confirmed=True)
+        self.organizer.create_staging_folder.assert_not_called()
+        self.downloader.download_playlist.assert_not_awaited()

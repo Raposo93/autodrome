@@ -63,3 +63,14 @@ class TestRequestModels(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestManualRequest(unittest.TestCase):
+    def test_manual_mode_requires_confirmation_and_safe_explicit_metadata(self):
+        manual = {**VALID_DOWNLOAD, "release_id": None, "metadata_mode": "manual", "manual_confirmed": True}
+        self.assertEqual(DownloadRequest(**manual).artist, "Artist")
+        for change in ({"manual_confirmed": False}, {"metadata_mode": "musicbrainz"},
+                       {"artist": " "}, {"album": ".."}, {"release_id": VALID_DOWNLOAD["release_id"]}):
+            with self.subTest(change=change), self.assertRaises(ValidationError):
+                DownloadRequest(**{**manual, **change})
+        with self.assertRaises(ValidationError):
+            DownloadRequest(**{key: value for key, value in VALID_DOWNLOAD.items() if key != "release_id"})
