@@ -130,6 +130,15 @@ El original conserva su estado y error, y el nuevo guarda su identificador en
 activo. Cada cambio se guarda antes de emitir el snapshot por WebSocket; si no se
 puede guardar, la operación se revierte y la UI muestra un error.
 
+Si falla guardar una transición del procesador, la cola se pausa y muestra el
+error de almacenamiento. No acepta nuevas descargas hasta recuperar la escritura.
+Corrige el espacio libre o los permisos de `QUEUE_STATE_PATH`: el procesador
+reintenta guardar cada cinco segundos y continúa automáticamente, sin repetir
+una descarga que ya terminó. No hace falta reiniciar. Si reinicias mientras
+la finalización sigue sin guardar, el trabajo pasa de `running` a `interrupted`;
+comprueba la biblioteca y el staging antes de solicitar un reintento. Una parada
+con almacenamiento averiado conserva en disco el último estado confirmado.
+
 La portada original queda en `covers/<release-id>.jpg`. Si se rechaza, sustituye
 ese archivo por una imagen JPEG, PNG o WebP válida y vuelve a solicitar el álbum.
 La versión optimizada solo vive en memoria y no modifica el original.

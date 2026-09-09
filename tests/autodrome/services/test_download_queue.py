@@ -325,3 +325,75 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestStorageRecovery(unittest.IsolatedAsyncioTestCase):
+    setUp = TestDownloadQueueManager.setUp
+    asyncTearDown = TestDownloadQueueManager.asyncTearDown
+    persisted_jobs = TestDownloadQueueManager.persisted_jobs
+
+    async def test_worker_retries_state_without_repeating_download(self):
+        for target in ("running", "succeeded", "failed"):
+            with self.subTest(target=target):
+                await self.manager.stop()
+                self.manager = DownloadQueueManager(
+                    AsyncMock(), AsyncMock(), self.state_path + target
+                )
+                self.manager.STORAGE_RETRY_SECONDS = 0.001
+                if target == "failed":
+                    self.manager.downloader.download_and_tag.side_effect = RuntimeError("provider failed")
+                first = await self.manager.enqueue(PAYLOAD)
+                await self.manager.enqueue(PAYLOAD)
+                persist = self.manager._persist_state
+                broken = True
+                attempted = asyncio.Event()
+
+                def save():
+                    if broken and self.manager._jobs[first].status == target:
+                        attempted.set()
+                        raise OSError("disk full")
+                    persist()
+
+                with patch.object(self.manager, "_persist_state", side_effect=save):
+                    self.manager.start()
+                    await asyncio.wait_for(attempted.wait(), 1)
+                    self.assertFalse(self.manager.worker_task.done())
+                    self.assertIn("disk full", self.manager.storage_error)
+                    self.assertEqual(self.manager.queue.qsize(), 1)
+                    with open(self.manager.state_path) as stream:
+                        saved = json.load(stream)["jobs"]
+                    self.assertEqual(saved[0]["status"], "queued" if target == "running" else "running")
+                    self.assertEqual(saved[1]["status"], "queued")
+                    self.assertEqual(self.manager.downloader.download_and_tag.await_count,
+                                     0 if target == "running" else 1)
+                    with self.assertRaisesRegex(OSError, "processing paused"):
+                        await self.manager.enqueue(PAYLOAD)
+                    broken = False
+                    await asyncio.wait_for(self.manager.queue.join(), 1)
+                self.assertIsNone(self.manager.storage_error)
+                self.assertFalse(self.manager.worker_task.done())
+                self.assertEqual(self.manager.downloader.download_and_tag.await_count, 2)
+                with open(self.manager.state_path) as stream:
+                    saved = json.load(stream)["jobs"]
+                self.assertEqual([job["status"] for job in saved],
+                                 ["failed", "failed"] if target == "failed" else ["succeeded", "succeeded"])
+                if target == "failed":
+                    self.assertEqual(saved[0]["error"], "provider failed")
+
+    async def test_shutdown_storage_failure_leaves_uncertain_job_for_restart(self):
+        started = asyncio.Event()
+
+        async def download(**kwargs):
+            started.set()
+            await asyncio.Event().wait()
+
+        self.downloader.download_and_tag.side_effect = download
+        await self.manager.enqueue(PAYLOAD)
+        self.manager.start()
+        await asyncio.wait_for(started.wait(), 1)
+        with patch.object(self.manager, "_persist_state", side_effect=OSError("disk full")):
+            await asyncio.wait_for(self.manager.stop(), 1)
+        self.assertIn("interrupted", self.manager.storage_error)
+        self.assertEqual(self.persisted_jobs()[0]["status"], "running")
+        restored = DownloadQueueManager(AsyncMock(), AsyncMock(), self.state_path)
+        self.assertEqual(restored.snapshot()[0]["status"], "interrupted")
+        self.assertTrue(restored.queue.empty())

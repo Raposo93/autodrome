@@ -25,6 +25,8 @@ async def websocket_endpoint(websocket: WebSocket):
         await ws_manager.connect(websocket)
         connected = True
         await websocket.send_json(app.state.queue_manager.snapshot())
+        if app.state.queue_manager.storage_error:
+            await websocket.send_json(app.state.queue_manager.processing_status())
         logger.info(f"WebSocket connected: {websocket.client}")
         while True:
             try:

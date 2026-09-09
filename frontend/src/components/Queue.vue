@@ -15,6 +15,7 @@
         </button>
         <span v-if="busy" role="status">Saving queue changes…</span>
       </div>
+      <p v-if="storageError" class="queue-error" role="alert">{{ storageError }}</p>
       <p v-if="actionError" class="queue-error" role="alert">{{ actionError }}</p>
       <ul v-if="queueMessages.length" class="queue-list">
         <li
@@ -62,6 +63,7 @@ export default {
       queueMessages: [],
       socket: null,
       busy: false,
+      storageError: null,
       actionError: null
     }
   },
@@ -69,6 +71,8 @@ export default {
     this.socket = connectWebSocket((msg) => {
       if (Array.isArray(msg)) {
         this.queueMessages = msg
+      } else if (msg?.type === 'queue_processing') {
+        this.storageError = msg.error
       } else {
         console.warn('Unexpected message:', msg)
       }

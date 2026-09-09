@@ -17,6 +17,7 @@ class TestWebSocketEndpoint(unittest.IsolatedAsyncioTestCase):
         websocket_manager = MagicMock()
         websocket_manager.connect = AsyncMock()
         queue_manager = MagicMock()
+        queue_manager.storage_error = None
         queue_manager.websocket_manager = websocket_manager
         queue_manager.snapshot.return_value = [
             {"job_id": "job-1", "status": "running"}
@@ -43,6 +44,7 @@ class TestWebSocketEndpoint(unittest.IsolatedAsyncioTestCase):
         websocket_manager = MagicMock()
         websocket_manager.connect = AsyncMock()
         queue_manager = MagicMock()
+        queue_manager.storage_error = None
         queue_manager.websocket_manager = websocket_manager
         queue_manager.snapshot.return_value = []
         websocket.scope = {"app": MagicMock()}
@@ -75,6 +77,7 @@ class TestWebSocketEndpoint(unittest.IsolatedAsyncioTestCase):
         websocket.client = MagicMock()
         websocket_manager = WebSocketManager()
         queue_manager = MagicMock()
+        queue_manager.storage_error = None
         queue_manager.websocket_manager = websocket_manager
         queue_manager.snapshot.return_value = []
         websocket.scope = {"app": MagicMock()}

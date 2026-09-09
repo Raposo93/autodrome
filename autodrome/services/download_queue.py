@@ -10,6 +10,7 @@ from autodrome.models.download_job import DownloadJob, TERMINAL_STATUSES, RETRYA
 
 
 class DownloadQueueManager:
+    STORAGE_RETRY_SECONDS = 5
     REQUIRED_KEYS = {"playlist_url", "artist", "album", "release_id"}
 
     def __init__(
@@ -23,6 +24,7 @@ class DownloadQueueManager:
         self.websocket_manager = websocket_manager
         self.state_path = os.path.abspath(state_path)
         self.worker_task: Optional[asyncio.Task] = None
+        self.storage_error: Optional[str] = None
         self._snapshot_lock = asyncio.Lock()
         self._jobs: Dict[str, DownloadJob] = {}
         self._load_state()
@@ -45,6 +47,8 @@ class DownloadQueueManager:
         self.worker_task = None
 
     async def enqueue(self, payload: Dict, *, retry_of: Optional[str] = None) -> str:
+        if self.storage_error:
+            raise OSError(self.storage_error)
         if missing := self.REQUIRED_KEYS - payload.keys():
             raise ValueError(f"Payload is missing required keys: {sorted(missing)}")
 
@@ -117,34 +121,60 @@ class DownloadQueueManager:
                 if job.status != "queued":
                     continue
 
-                await self._transition(job, "running")
+                await self._save_worker_transition(job, "running")
                 payload = job.payload
-                await self.downloader.download_and_tag(
-                    playlist_url=payload["playlist_url"],
-                    artist=payload["artist"],
-                    album=payload["album"],
-                    release_id=payload["release_id"],
-                    track_count=payload.get("track_count"),
-                )
-            except asyncio.CancelledError:
-                if job is not None:
-                    if job.status == "running":
+                try:
+                    await self.downloader.download_and_tag(
+                        playlist_url=payload["playlist_url"],
+                        artist=payload["artist"],
+                        album=payload["album"],
+                        release_id=payload["release_id"],
+                        track_count=payload.get("track_count"),
+                    )
+                except asyncio.CancelledError:
+                    # Shutdown must not wait indefinitely for broken storage.
+                    try:
                         await self._transition(
-                            job,
-                            "interrupted",
-                            "Worker stopped before the download completed",
+                            job, "interrupted", "Worker stopped before the download completed"
                         )
-                raise
-            except Exception as e:
-                logger.error(f"Error processing download job {job_id}: {e}")
-                if job_id is not None:
-                    await self._transition(self._jobs[job_id], "failed", str(e))
-            else:
-                await self._transition(self._jobs[job_id], "succeeded")
-                logger.info(f"Completed download job {job_id}")
+                    except OSError as error:
+                        await self._report_storage_error(job, "interrupted", str(error))
+                    raise
+                except Exception as error:
+                    logger.error(f"Error processing download job {job_id}: {error}")
+                    await self._save_worker_transition(job, "failed", str(error))
+                else:
+                    await self._save_worker_transition(job, "succeeded")
+                    logger.info(f"Completed download job {job_id}")
             finally:
                 if job_id is not None:
                     self.queue.task_done()
+
+    def processing_status(self) -> Dict:
+        return {"type": "queue_processing", "paused": self.storage_error is not None,
+                "error": self.storage_error}
+
+    async def _report_storage_error(self, job, status, error) -> None:
+        self.storage_error = (
+            f"Queue processing paused: could not save {status} for job {job.job_id}: "
+            f"{error}. Fix queue storage; saving will retry automatically."
+        )
+        logger.error(self.storage_error)
+        await self.websocket_manager.broadcast(self.processing_status())
+
+    async def _save_worker_transition(self, job, status, error=None) -> None:
+        # Retry only this state write, never the download that preceded it.
+        while True:
+            try:
+                await self._transition(job, status, error)
+            except OSError as storage_error:
+                await self._report_storage_error(job, status, str(storage_error))
+                await asyncio.sleep(self.STORAGE_RETRY_SECONDS)
+            else:
+                if self.storage_error is not None:
+                    self.storage_error = None
+                    await self.websocket_manager.broadcast(self.processing_status())
+                return
 
     async def _transition(
         self,

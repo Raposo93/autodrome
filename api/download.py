@@ -8,7 +8,7 @@ download_router = APIRouter()
 @download_router.post("/", status_code=status.HTTP_202_ACCEPTED)
 async def download(payload: DownloadRequest, request: Request):
     job_payload = payload.model_dump(mode="json")
-    job_id = await request.app.state.queue_manager.enqueue(job_payload)
+    job_id = await _history_operation(request.app.state.queue_manager.enqueue(job_payload))
     return {"status": "queued", "job_id": job_id}
 
 
@@ -21,7 +21,7 @@ async def _history_operation(operation):
         raise HTTPException(status_code=409, detail=str(error)) from error
     except OSError as error:
         raise HTTPException(
-            status_code=503, detail="Could not save queue changes. Please try again."
+            status_code=503, detail="Queue storage unavailable. Processing may be paused; fix storage and try again."
         ) from error
 
 
