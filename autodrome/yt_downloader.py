@@ -118,16 +118,29 @@ class YTDownloader:
         index: int,
         hook: Callable,
     ) -> None:
+        stopping = threading.Event()
+
+        def cancellable_hook(data):
+            if stopping.is_set():
+                raise RuntimeError("Download stopped during shutdown")
+            hook(data)
+
         for attempt in range(1, self.track_download_attempts + 1):
+            operation = asyncio.create_task(asyncio.to_thread(
+                self._download_track_blocking, url, dest, index, cancellable_hook
+            ))
             try:
-                await asyncio.to_thread(
-                    self._download_track_blocking,
-                    url,
-                    dest,
-                    index,
-                    hook,
-                )
+                await asyncio.shield(operation)
                 return
+            except asyncio.CancelledError:
+                stopping.set()
+                # A cancelled to_thread await does not stop its thread. Drain it
+                # before allowing the job/staging lifecycle to finish.
+                try:
+                    await operation
+                except Exception:
+                    pass
+                raise
             except Exception as e:
                 logger.warning(
                     f"[YTDownloader] Track {index} attempt {attempt} of "
@@ -208,6 +221,7 @@ class YTDownloader:
 
     def _build_ydl_opts(self, dest: Path, hook: Callable, index: int) -> dict:
         return {
+            'socket_timeout': 20,
             'format': 'bestaudio/best',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',

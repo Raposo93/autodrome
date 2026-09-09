@@ -5,7 +5,8 @@ YouTube, descargar su audio, obtener metadatos de MusicBrainz y Cover Art
 Archive, etiquetar los MP3 y publicarlos de forma segura en una biblioteca.
 
 La interfaz soportada es **FastAPI + Vue/Vite**. La antigua CLI no forma parte
-del producto y `start_autodrome.sh` es la única ruta de inicio recomendada.
+del producto. Se recomienda systemd para ejecución persistente y
+`start_autodrome.sh` para desarrollo o diagnóstico.
 
 ## Funcionalidad
 
@@ -43,6 +44,41 @@ Edita `.env` y completa como mínimo `GOOGLE_API_KEY` y `CONTACT_EMAIL`. Revisa
 también `LIBRARY_PATH`; se recomienda una ruta absoluta hacia la biblioteca de
 música. No uses `sudo` para instalar dependencias dentro de `.venv` ni para
 ejecutar la aplicación.
+
+## Servicio systemd (recomendado)
+
+Completa la instalación anterior y ejecuta `npm run build --prefix frontend`.
+La unidad de ejemplo [deploy/autodrome.service](deploy/autodrome.service) usa
+`/opt/autodrome` y el usuario/grupo no-root `autodrome`. Puedes usar otro usuario
+existente y otra ruta: ajusta `User`, `Group`, `WorkingDirectory`, `EnvironmentFile`
+y `ExecStart` en la copia de la unidad. Ese usuario necesita lectura del código,
+el entorno y `.env`, y escritura en la biblioteca, staging, cola, `covers/` y
+`autodrome.log` dentro del proyecto. Protege `.env` con permisos `600`.
+
+```bash
+sudo install -m 644 deploy/autodrome.service /etc/systemd/system/autodrome.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now autodrome
+systemctl status autodrome
+journalctl -u autodrome -f
+sudo systemctl stop autodrome
+sudo systemctl start autodrome
+sudo systemctl restart autodrome
+```
+
+El proceso permanece en foreground, arranca sin login y se reinicia tras fallos
+con una espera de cinco segundos. Al parar, se espera a que termine o se interrumpa
+la operación de audio activa; no se inicia otra pista. Si no termina en 120 segundos,
+systemd elimina todo el grupo de procesos. La cola conserva el último estado durable
+y los trabajos inciertos pasan a `interrupted` al reiniciar; revisa staging y biblioteca
+antes de reintentarlos. Los logs están en journal y en `autodrome.log`.
+
+Para actualizar: detén el servicio, ejecuta `git pull`, instala las dependencias
+bloqueadas con `.venv/bin/python -m pip install -r requirements.lock` y
+`npm ci --prefix frontend`, reconstruye con `npm run build --prefix frontend` y
+vuelve a arrancar. Si cambia la unidad, actualiza su copia y ejecuta
+`sudo systemctl daemon-reload` antes de arrancar. Ejecuta las instalaciones y el
+build con el usuario propietario, sin `sudo`.
 
 ## Arranque y parada
 

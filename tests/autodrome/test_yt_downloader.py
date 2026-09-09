@@ -260,3 +260,35 @@ class TestPlaylistPreflight(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "yt-dlp failed"):
             await downloader.get_playlist_manifest("playlist")
         self.assertEqual(downloader._manifests, {})
+
+class TestDownloadShutdown(unittest.IsolatedAsyncioTestCase):
+    async def test_shutdown_drains_blocking_audio_operation_without_retry(self):
+        import asyncio
+        import threading
+        downloader = YTDownloader()
+        started = threading.Event()
+        released = threading.Event()
+        ended = threading.Event()
+
+        def blocking(url, dest, index, hook):
+            started.set()
+            try:
+                released.wait(2)
+                hook({'status': 'downloading'})
+            finally:
+                ended.set()
+
+        downloader._download_track_blocking = MagicMock(side_effect=blocking)
+        task = asyncio.create_task(downloader.download_track('video', 'unused', 1, MagicMock()))
+        try:
+            await asyncio.to_thread(started.wait, 2)
+            task.cancel()
+            await asyncio.sleep(0)
+            self.assertFalse(task.done())
+            released.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertTrue(ended.is_set())
+            downloader._download_track_blocking.assert_called_once()
+        finally:
+            released.set()

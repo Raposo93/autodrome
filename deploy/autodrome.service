@@ -1,0 +1,24 @@
+[Unit]
+Description=Autodrome music library
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=autodrome
+Group=autodrome
+WorkingDirectory=/opt/autodrome
+EnvironmentFile=/opt/autodrome/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/autodrome/start_autodrome.sh --production
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=120
+UMask=0077
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
