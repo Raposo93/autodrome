@@ -64,6 +64,14 @@ class DownloadRequest(BaseModel):
         return value
 
 
+class PlaylistPreflightRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    playlist_url: str
+    track_count: Optional[int] = Field(default=None, ge=0, le=10_000)
+
+    validate_playlist_url = field_validator("playlist_url")(DownloadRequest.validate_playlist_url.__func__)
+
+
 class SearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

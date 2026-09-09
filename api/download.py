@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request, status
 
-from autodrome.models.requests import DownloadRequest
+from autodrome.models.requests import DownloadRequest, PlaylistPreflightRequest
 
 download_router = APIRouter()
 
@@ -41,3 +41,15 @@ async def delete_job(job_id: str, request: Request):
 async def retry_job(job_id: str, request: Request):
     new_job_id = await _history_operation(request.app.state.queue_manager.retry_job(job_id))
     return {"status": "queued", "job_id": new_job_id}
+
+
+@download_router.post("/preflight")
+async def playlist_preflight(payload: PlaylistPreflightRequest, request: Request):
+    try:
+        return await request.app.state.downloader_controller.downloader.get_playlist_manifest(
+            payload.playlist_url, payload.track_count
+        )
+    except (RuntimeError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="Could not extract playlist manifest. Try again.") from error

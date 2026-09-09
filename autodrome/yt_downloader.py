@@ -1,6 +1,7 @@
 import asyncio
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -42,6 +43,8 @@ class YTDownloader:
                 "download_concurrency must remain 1 until parallel publication "
                 "is supported"
             )
+        self._manifests = {}
+        self.manifest_ttl_seconds = 120
         self.track_download_attempts = track_download_attempts
         self.download_concurrency = download_concurrency
 
@@ -55,16 +58,7 @@ class YTDownloader:
         print(f"[YTDownloader] Descargando: {url} en {dest}")
 
         track_urls = await self.get_playlist_track_urls(url)
-        if total is not None and len(track_urls) != total:
-            raise RuntimeError(
-                f"[YTDownloader] Playlist manifest mismatch: expected {total} "
-                f"tracks, extractable {len(track_urls)}. The current manifest "
-                "does not match the known count; entries may be unavailable."
-            )
-        if not track_urls:
-            raise RuntimeError(
-                "[YTDownloader] The playlist does not contain downloadable tracks"
-            )
+        self.validate_manifest(track_urls, total)
 
         hook = self._build_progress_hook(total or len(track_urls))
         failures = []
@@ -79,8 +73,37 @@ class YTDownloader:
 
         await self._check_downloaded_files(dest)
 
+    @staticmethod
+    def validate_manifest(track_urls, total=None):
+        if total is not None and len(track_urls) != total:
+            raise RuntimeError(
+                f"[YTDownloader] Playlist manifest mismatch: expected {total} "
+                f"tracks, extractable {len(track_urls)}. The current manifest "
+                "does not match the known count; entries may be unavailable."
+            )
+        if not track_urls:
+            raise RuntimeError(
+                "[YTDownloader] The playlist does not contain downloadable tracks"
+            )
+
+    async def get_playlist_manifest(self, url: str, total=None):
+        cached = self._manifests.get(url)
+        if cached and time.monotonic() - cached[0] < self.manifest_ttl_seconds:
+            manifest = cached[1]
+        else:
+            manifest = await asyncio.to_thread(self._extract_manifest, url)
+            if manifest["unavailable"]:
+                raise RuntimeError("Playlist contains unavailable or unextractable entries")
+            self.validate_manifest(manifest["tracks"], total)
+            if len(self._manifests) >= 16:
+                self._manifests.pop(next(iter(self._manifests)))
+            self._manifests[url] = (time.monotonic(), manifest)
+        self.validate_manifest(manifest["tracks"], total)
+        return manifest
+
     async def get_playlist_track_urls(self, url: str) -> List[str]:
-        return await asyncio.to_thread(self._extract_track_urls, url)
+        manifest = await self.get_playlist_manifest(url)
+        return [track["url"] for track in manifest["tracks"]]
 
     async def download_track(
         self,
@@ -108,6 +131,9 @@ class YTDownloader:
                     raise TrackDownloadError(index, url, str(e)) from e
 
     def _extract_track_urls(self, url: str) -> List[str]:
+        return [track["url"] for track in self._extract_manifest(url)["tracks"]]
+
+    def _extract_manifest(self, url: str):
         options = {
             "extract_flat": "in_playlist",
             "skip_download": True,
@@ -117,9 +143,11 @@ class YTDownloader:
         with YoutubeDL(options) as ydl:
             playlist = ydl.extract_info(url, download=False)
 
-        track_urls = []
-        for entry in playlist.get("entries") or []:
-            if not entry:
+        tracks = []
+        unavailable = 0
+        for position, entry in enumerate(playlist.get("entries") or [], 1):
+            if not entry or entry.get("availability") in {"private", "premium_only", "subscriber_only", "needs_auth"} or entry.get("title") in {"[Private video]", "[Deleted video]"}:
+                unavailable += 1
                 continue
             track_url = entry.get("webpage_url") or entry.get("original_url")
             if not track_url and entry.get("id"):
@@ -127,10 +155,11 @@ class YTDownloader:
             if not track_url:
                 track_url = entry.get("url")
             if track_url:
-                track_urls.append(track_url)
+                tracks.append({"position": position, "id": entry.get("id"), "url": track_url, "title": entry.get("title") or f"Track {position}"})
+            else:
+                unavailable += 1
 
-        logger.info(f"[YTDownloader] Extracted {len(track_urls)} playlist track URLs")
-        return track_urls
+        return {"tracks": tracks, "track_count": len(tracks), "unavailable": unavailable}
 
     def _download_track_blocking(
         self,

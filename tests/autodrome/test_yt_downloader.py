@@ -225,3 +225,38 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestPlaylistPreflight(unittest.IsolatedAsyncioTestCase):
+    async def test_preflight_reused_for_download_but_expired_manifest_refetched(self):
+        downloader = YTDownloader()
+        downloader._extract_manifest = MagicMock(return_value={
+            "tracks": [{"url": "track", "title": "Title", "position": 1}],
+            "track_count": 1, "unavailable": 0,
+        })
+        downloader.download_track = AsyncMock()
+        downloader._check_downloaded_files = AsyncMock()
+        await downloader.get_playlist_manifest("playlist", 1)
+        downloader.download_track.assert_not_awaited()
+        await downloader.download_playlist("playlist", "unused", 1)
+        downloader._extract_manifest.assert_called_once()
+        downloader.download_track.assert_awaited_once()
+        downloader.manifest_ttl_seconds = 0
+        await downloader.get_playlist_manifest("playlist", 1)
+        self.assertEqual(downloader._extract_manifest.call_count, 2)
+
+    async def test_invalid_preflight_is_not_cached_or_downloaded(self):
+        for unavailable, total in [(0, 2), (1, 1)]:
+            downloader = YTDownloader()
+            downloader._extract_manifest = MagicMock(return_value={
+                "tracks": [{"url": "track"}], "track_count": 1, "unavailable": unavailable,
+            })
+            with self.assertRaises(RuntimeError):
+                await downloader.get_playlist_manifest("playlist", total)
+            self.assertEqual(downloader._manifests, {})
+
+    async def test_extractor_failure_is_not_cached(self):
+        downloader = YTDownloader()
+        downloader._extract_manifest = MagicMock(side_effect=RuntimeError("yt-dlp failed"))
+        with self.assertRaisesRegex(RuntimeError, "yt-dlp failed"):
+            await downloader.get_playlist_manifest("playlist")
+        self.assertEqual(downloader._manifests, {})

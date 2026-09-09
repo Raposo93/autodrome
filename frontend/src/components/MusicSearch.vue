@@ -141,13 +141,15 @@ export default {
     },
     selectionReady() {
       return Boolean(
-        this.selectedPlaylist &&
+        this.selectedPlaylist && this.playlistReady &&
         this.releaseDetailsReady &&
         !this.releaseDetailsLoading &&
         !this.trackCountError
       )
     },
     downloadStatusText() {
+      if (this.playlistError) return this.playlistError
+      if (this.selectedPlaylist && !this.playlistReady) return 'Checking playlist availability…'
       if (this.releaseDetailsLoading) {
         return 'Loading the selected release metadata.'
       }
@@ -178,6 +180,9 @@ export default {
       errorPlaylists: null,
       errorReleases: null,
       selectedPlaylist: null,
+      playlistReady: false,
+      playlistError: null,
+      playlistGeneration: 0,
       selectedRelease: null,
       releaseDetailsLoading: false,
       releaseDetailsReady: false,
@@ -212,6 +217,9 @@ export default {
     },
     async searchAll() {
       this.hydrator?.reset()
+      this.playlistGeneration += 1
+      this.playlistReady = false
+      this.playlistError = null
       this.errorPlaylists = null
       this.errorReleases = null
       this.downloadError = null
@@ -247,8 +255,20 @@ export default {
         this.loadingReleases = false
       }
     },
-    selectPlaylist(pl) {
+    async selectPlaylist(pl) {
+      const generation = ++this.playlistGeneration
       this.selectedPlaylist = pl
+      this.playlistReady = false
+      this.playlistError = null
+      try {
+        const response = await api.playlistPreflight({ playlist_url: pl.url, track_count: pl.track_count ?? null })
+        if (generation !== this.playlistGeneration) return
+        this.selectedPlaylist = { ...pl, track_count: response.data.track_count }
+        this.playlistReady = true
+      } catch (error) {
+        if (generation !== this.playlistGeneration) return
+        this.playlistError = error.response?.data?.detail || 'Could not check playlist. Select it again to retry.'
+      }
     },
     selectionTrackLabel(item) {
       if (!item) return 'No selection'

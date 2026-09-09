@@ -31,6 +31,10 @@ export default {
     return apiClient.post(`/download/jobs/${encodeURIComponent(jobId)}/retry`)
   },
 
+  playlistPreflight(payload) {
+    return apiClient.post('/download/preflight', payload)
+  },
+
   download(payload) {
     return apiClient.post('/download/', payload)
   },
