@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, ANY
 
 from autodrome.models.download_job import DownloadJob
 from autodrome.services.download_queue import DownloadQueueManager
@@ -45,6 +45,7 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job["status"], "succeeded")
         self.assertIsNone(job["error"])
         self.downloader.download_and_tag.assert_awaited_once_with(
+            progress=ANY,
             playlist_url=PAYLOAD["playlist_url"],
             artist=PAYLOAD["artist"],
             album=PAYLOAD["album"],
@@ -240,7 +241,7 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
                 await restored.retry_job(original.job_id)
             restored.start()
             await asyncio.wait_for(restored.queue.join(), timeout=1)
-            self.downloader.download_and_tag.assert_awaited_once_with(**PAYLOAD)
+            self.downloader.download_and_tag.assert_awaited_once_with(**PAYLOAD, progress=ANY)
             self.assertEqual(restored._jobs[retry_id].status, "succeeded")
             self.assertEqual(restored._jobs[retry_id].retry_of, original.job_id)
             self.assertEqual(restored._jobs[original.job_id].error, "original failure")
@@ -413,8 +414,36 @@ class TestManualQueue(unittest.IsolatedAsyncioTestCase):
             try:
                 restored.start()
                 await asyncio.wait_for(restored.queue.join(), 1)
-                downloader.download_and_tag.assert_awaited_once_with(**payload)
+                downloader.download_and_tag.assert_awaited_once_with(**payload, progress=ANY)
                 self.assertEqual(restored._jobs[retry].payload, payload)
                 self.assertEqual(restored._jobs[original].status, 'failed')
             finally:
                 await restored.stop()
+
+class TestQueueProgress(unittest.IsolatedAsyncioTestCase):
+    setUp = TestDownloadQueueManager.setUp
+    asyncTearDown = TestDownloadQueueManager.asyncTearDown
+    persisted_jobs = TestDownloadQueueManager.persisted_jobs
+
+    async def test_progress_is_visible_to_reconnections_and_persisted_on_failure(self):
+        active = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def download(progress, **kwargs):
+            await progress('downloading', 1, 2, 0)
+            active.set()
+            await finish.wait()
+            await progress('validating', None, None, None)
+            raise RuntimeError('invalid tags')
+
+        self.downloader.download_and_tag.side_effect = download
+        await self.manager.enqueue(PAYLOAD)
+        self.manager.start()
+        await asyncio.wait_for(active.wait(), 1)
+        self.assertEqual(self.manager.snapshot()[0]['progress']['current'], 1)
+        finish.set()
+        await asyncio.wait_for(self.manager.queue.join(), 1)
+        self.assertEqual(self.persisted_jobs()[0]['progress']['phase'], 'validating')
+        self.assertEqual(self.persisted_jobs()[0]['status'], 'failed')
+        restored = DownloadQueueManager(AsyncMock(), AsyncMock(), self.state_path)
+        self.assertEqual(restored.snapshot()[0]['progress']['phase'], 'validating')

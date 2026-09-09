@@ -123,8 +123,19 @@ class DownloadQueueManager:
 
                 await self._save_worker_transition(job, "running")
                 payload = job.payload
+
+                async def progress(phase, current, total, completed):
+                    previous_phase = (job.progress or {}).get("phase")
+                    job.progress = {"phase": phase, "current": current,
+                                    "total": total, "completed": completed}
+                    if previous_phase != phase:
+                        await self._save_worker_transition(job, job.status)
+                    else:
+                        await self._broadcast_snapshot()
+
                 try:
                     await self.downloader.download_and_tag(
+                        progress=progress,
                         playlist_url=payload["playlist_url"],
                         artist=payload["artist"],
                         album=payload["album"],

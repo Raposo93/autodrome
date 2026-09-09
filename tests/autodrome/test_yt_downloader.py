@@ -292,3 +292,18 @@ class TestDownloadShutdown(unittest.IsolatedAsyncioTestCase):
             downloader._download_track_blocking.assert_called_once()
         finally:
             released.set()
+
+class TestTrackProgress(unittest.IsolatedAsyncioTestCase):
+    async def test_retries_report_only_one_completed_track(self):
+        downloader = YTDownloader()
+        downloader.get_playlist_track_urls = AsyncMock(return_value=['first', 'second'])
+        downloader._download_track_blocking = MagicMock(side_effect=[RuntimeError('retry'), None, None])
+        downloader._check_downloaded_files = AsyncMock()
+        progress = AsyncMock()
+        await downloader.download_playlist('playlist', 'unused', 2, progress=progress)
+        events = [call.args for call in progress.call_args_list]
+        self.assertEqual(events, [
+            ('manifest', None, None, None),
+            ('downloading', 1, 2, 0), ('downloading', 1, 2, 1),
+            ('downloading', 2, 2, 1), ('downloading', 2, 2, 2),
+        ])

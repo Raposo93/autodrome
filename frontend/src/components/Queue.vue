@@ -32,6 +32,7 @@
             <strong>{{ itemTitle(item) }}</strong>
             <span>{{ item.metadata_mode === 'manual' ? 'Manual metadata' : 'MusicBrainz metadata' }}</span>
             <span class="queue-status">{{ statusLabel(item) }}</span>
+            <span v-if="item.progress">{{ progressLabel(item.progress) }}</span>
             <span v-if="item.error" class="queue-error">{{ item.error }}</span>
           </span>
           <div class="queue-actions">
@@ -56,6 +57,7 @@
 
 <script>
 import api, { connectWebSocket } from '../services/api'
+import { progressLabel } from '../services/queueProgress.js'
 import { canDeleteJob, canRetryJob } from '../services/queueHistory.js'
 
 export default {
@@ -94,6 +96,7 @@ export default {
     }
   },
   methods: {
+    progressLabel,
     canDelete: canDeleteJob,
     canRetry(item) {
       return canRetryJob(item, this.queueMessages)

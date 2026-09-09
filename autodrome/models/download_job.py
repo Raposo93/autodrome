@@ -22,6 +22,7 @@ class DownloadJob:
     updated_at: str
     error: Optional[str] = None
     retry_of: Optional[str] = None
+    progress: Optional[Dict[str, Any]] = None
 
     @classmethod
     def create(cls, payload: Dict[str, Any]) -> "DownloadJob":
@@ -48,6 +49,7 @@ class DownloadJob:
             updated_at=data["updated_at"],
             error=data.get("error"),
             retry_of=data.get("retry_of"),
+            progress=data.get("progress"),
         )
 
     def transition(self, status: str, error: Optional[str] = None) -> None:
@@ -66,6 +68,7 @@ class DownloadJob:
             "updated_at": self.updated_at,
             "error": self.error,
             "retry_of": self.retry_of,
+            "progress": self.progress,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -77,4 +80,5 @@ class DownloadJob:
             "updated_at": self.updated_at,
             "error": self.error,
             "retry_of": self.retry_of,
+            "progress": self.progress,
         }

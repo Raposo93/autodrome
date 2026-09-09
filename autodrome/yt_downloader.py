@@ -8,6 +8,7 @@ from typing import Callable, List, Optional, Tuple
 from yt_dlp import YoutubeDL
 
 from autodrome.logger import logger
+from autodrome.models.progress import report_progress, ProgressCallback
 
 
 class PlaylistDownloadError(RuntimeError):
@@ -54,10 +55,12 @@ class YTDownloader:
         dest: str,
         total: Optional[int] = None,
         manifest=None,
+        progress: Optional[ProgressCallback] = None,
     ) -> None:
         logger.debug(f"[YTDownloader] Starting download_playlist: {url} to {dest}")
         print(f"[YTDownloader] Descargando: {url} en {dest}")
 
+        await report_progress(progress, "manifest")
         if manifest is not None:
             if manifest.get("unavailable"):
                 raise RuntimeError("Playlist contains unavailable entries")
@@ -68,9 +71,13 @@ class YTDownloader:
 
         hook = self._build_progress_hook(total or len(track_urls))
         failures = []
+        completed = 0
         for index, track_url in enumerate(track_urls, start=1):
+            await report_progress(progress, "downloading", index, len(track_urls), completed)
             try:
                 await self.download_track(track_url, dest, index, hook)
+                completed += 1
+                await report_progress(progress, "downloading", index, len(track_urls), completed)
             except TrackDownloadError as e:
                 failures.append((e.index, e.url, e.reason))
 
