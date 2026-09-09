@@ -120,6 +120,7 @@
 
 <script>
 import api from '../services/api.js'
+import { createReleaseHydration } from '../services/releaseHydration.js'
 import { trackCountError } from '../services/downloadSelection.js'
 import PlaylistsList from './PlaylistsList.vue'
 import ReleasesList from './ReleasesList.vue'
@@ -167,6 +168,7 @@ export default {
   },
   data() {
     return {
+      hydrator: null,
       artist: '',
       album: '',
       playlists: [],
@@ -186,8 +188,30 @@ export default {
       defaultReleaseImg: '/default__no_cover.jpg'
     }
   },
+  beforeUnmount() {
+    this.hydrator?.reset()
+  },
   methods: {
+    hydrateReleases() {
+      if (!this.hydrator) {
+        this.hydrator = createReleaseHydration(
+          async id => (await api.releaseDetails(id)).data,
+          (id, details) => {
+            const release = this.releases.find(item => item.id === id)
+            if (!release) return
+            Object.assign(release, details)
+            if (this.selectedRelease?.id === id) {
+              this.selectedRelease = release
+              this.releaseDetailsReady = details.hydration === 'ready'
+              this.releaseDetailsLoading = ['pending', 'loading'].includes(details.hydration)
+            }
+          }
+        )
+      }
+      this.hydrator.start(this.releases)
+    },
     async searchAll() {
+      this.hydrator?.reset()
       this.errorPlaylists = null
       this.errorReleases = null
       this.downloadError = null
@@ -213,6 +237,7 @@ export default {
         this.releases = response.data.releases || []
         this.errorPlaylists = response.data.errors?.youtube || null
         this.errorReleases = response.data.errors?.musicbrainz || null
+        this.hydrateReleases()
 
       } catch (e) {
         this.errorPlaylists = e.response?.data?.errors?.youtube || "Error fetching playlists"
@@ -235,36 +260,11 @@ export default {
       }
       return 'Track count unknown'
     },
-    async selectRelease(rel) {
+    selectRelease(rel) {
       this.selectedRelease = rel
       this.releaseDetailsReady = Array.isArray(rel.tracks)
-      this.releaseDetailsLoading = false
-      this.errorReleases = null
-
-      if (this.releaseDetailsReady) return
-
-      const releaseId = rel.id
-      this.releaseDetailsLoading = true
-      try {
-        const response = await api.releaseDetails(releaseId)
-        if (this.selectedRelease?.id !== releaseId) return
-
-        this.selectedRelease = response.data
-        this.releaseDetailsReady = true
-        const index = this.releases.findIndex(item => item.id === releaseId)
-        if (index !== -1) this.releases.splice(index, 1, response.data)
-      } catch (error) {
-        if (this.selectedRelease?.id !== releaseId) return
-
-        this.releaseDetailsReady = false
-        this.errorReleases = (
-          error.response?.data?.error || 'Error loading release details'
-        )
-      } finally {
-        if (this.selectedRelease?.id === releaseId) {
-          this.releaseDetailsLoading = false
-        }
-      }
+      this.releaseDetailsLoading = !this.releaseDetailsReady
+      this.hydrator?.prioritize(rel.id)
     },
     async downloadSelected() {
       if (!this.selectionReady) {

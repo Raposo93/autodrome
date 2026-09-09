@@ -42,6 +42,17 @@
               </span>
               <span class="track-pill">{{ trackCountLabel(rel) }}</span>
             </button>
+            <p v-if="rel.hydrationError" class="panel-alert" role="alert">{{ rel.hydrationError }}</p>
+            <details v-if="Array.isArray(rel.tracks)">
+              <summary>Tracklist · {{ rel.tracks.length }} tracks</summary>
+              <ol>
+                <li v-for="track in rel.tracks" :key="track.global_position">
+                  {{ track.disc_number }}.{{ track.position }} · {{ track.title }}
+                  <span v-if="track.artist"> — {{ track.artist }}</span>
+                </li>
+              </ol>
+            </details>
+            <p v-else class="selection-meta">{{ rel.hydration === 'loading' ? 'Loading tracklist…' : 'Tracklist pending' }}</p>
           </li>
         </ul>
 

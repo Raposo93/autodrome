@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import vm from 'node:vm'
+import { createReleaseHydration } from './releaseHydration.js'
 import { parse } from '@vue/compiler-sfc'
 
 // Exercise the component's actual search method without a browser or live APIs.
@@ -13,7 +14,8 @@ const script = descriptor.script.content
 
 function setup(combinedSearch) {
   const context = vm.createContext({
-    api: { combinedSearch }, PlaylistsList: {}, ReleasesList: {}, Queue: {},
+    createReleaseHydration,
+    api: { combinedSearch, releaseDetails: async () => ({ data: { tracks: [] } }) }, PlaylistsList: {}, ReleasesList: {}, Queue: {},
   })
   vm.runInContext(script, context)
   const component = context.component
@@ -21,6 +23,7 @@ function setup(combinedSearch) {
     ...component.data(), artist: 'Artist', album: 'Album',
     playlists: [{ id: 'old-playlist' }], releases: [{ id: 'old-release' }],
   }
+  for (const [name, method] of Object.entries(component.methods)) state[name] = method.bind(state)
   return { state, search: () => component.methods.searchAll.call(state) }
 }
 
