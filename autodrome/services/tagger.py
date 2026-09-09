@@ -32,7 +32,8 @@ class Tagger:
         for file, track in match_track_files(files, tracks):
             file_path = os.path.join(folder_path, file)
             audio = MP3(file_path, ID3=EasyID3)
-            audio["artist"] = artist
+            audio["artist"] = track.artist or artist
+            audio["albumartist"] = artist
             audio["album"] = album
             audio["title"] = track.title
             audio["tracknumber"] = str(track.number)

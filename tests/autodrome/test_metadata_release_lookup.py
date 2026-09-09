@@ -65,6 +65,7 @@ class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
                     "disc_number": 1,
                     "position": 1,
                     "global_position": 1,
+                    "artist": None,
                 },
                 {
                     "number": 2,
@@ -72,6 +73,7 @@ class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
                     "disc_number": 1,
                     "position": 2,
                     "global_position": 2,
+                    "artist": None,
                 },
             ],
         )
@@ -129,3 +131,32 @@ class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestArtistCredits(unittest.IsolatedAsyncioTestCase):
+    async def test_collaboration_and_track_credits_survive_cache(self):
+        from unittest.mock import MagicMock
+        cache = MagicMock()
+        cache.get_release.return_value = None
+        client = AsyncMock()
+        client.get.side_effect = [{
+            "id": "release", "title": "Compilation", "date": "2026",
+            "artist-credit": [{"name": "Alice", "joinphrase": " & "}, {"name": "Bob"}],
+            "media": [{"tracks": [
+                {"title": "One", "artist-credit": [{"name": "Credited Alice", "artist": {"name": "Canonical Alice"}}]},
+                {"title": "Two", "artist-credit": [{"name": "Bob", "joinphrase": " feat. "}, {"name": "Carol"}]},
+                {"title": "Three", "recording": {"artist-credit": [{"artist": {"name": "Dave"}}]}},
+                {"title": "Four"},
+            ]}],
+        }, {"images": []}]
+        service = MetadataService(client, cache)
+        release = await service.get_release("release")
+        self.assertEqual(release.artist, "Alice & Bob")
+        self.assertEqual([t.artist for t in release.tracks], ["Credited Alice", "Bob feat. Carol", "Dave", None])
+        cached = cache.set_release.call_args.args[1]
+        cache.get_release.return_value = cached
+        restored = await service.get_release("release")
+        self.assertEqual([t.to_dict() for t in restored.tracks], [t.to_dict() for t in release.tracks])
+        for track in cached["tracks"]:
+            track.pop("artist")
+        old = await service.get_release("release")
+        self.assertTrue(all(t.artist is None for t in old.tracks))

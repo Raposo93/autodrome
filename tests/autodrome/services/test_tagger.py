@@ -34,6 +34,7 @@ class TestTagger(unittest.TestCase):
 
         self.assertEqual(mock_audio_1.__setitem__.call_args_list, [
             call("artist", "Test Artist"),
+            call("albumartist", "Test Artist"),
             call("album", "Test Album"),
             call("title", "First"),
             call("tracknumber", "1"),
@@ -103,3 +104,16 @@ class TestTagger(unittest.TestCase):
 
         self.assertIn(call("discnumber", "1"), first_audio.__setitem__.call_args_list)
         self.assertIn(call("discnumber", "2"), second_audio.__setitem__.call_args_list)
+
+    @patch("os.listdir", return_value=["01.mp3", "02.mp3"])
+    @patch("autodrome.services.tagger.MP3")
+    def test_compilation_uses_track_artist_and_album_fallback(self, mp3, listdir):
+        first, second = MagicMock(), MagicMock()
+        mp3.side_effect = [first, second]
+        self.tagger.tag_files(self.folder, "Various Artists", "Compilation", [
+            Track(1, "One", artist="Alice feat. Bob"), Track(2, "Two")
+        ])
+        self.assertIn(call("artist", "Alice feat. Bob"), first.__setitem__.call_args_list)
+        self.assertIn(call("artist", "Various Artists"), second.__setitem__.call_args_list)
+        for audio in (first, second):
+            self.assertIn(call("albumartist", "Various Artists"), audio.__setitem__.call_args_list)

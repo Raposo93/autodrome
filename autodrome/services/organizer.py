@@ -138,7 +138,8 @@ class Organizer:
                 raise ValueError(f"Staged MP3 has no positive duration: {file}")
 
             expected_tags = {
-                "artist": artist,
+                "artist": track.artist or artist,
+                "albumartist": artist,
                 "album": album,
                 "title": track.title,
                 "tracknumber": str(track.number),

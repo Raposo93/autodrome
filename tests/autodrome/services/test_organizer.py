@@ -198,6 +198,7 @@ def test_validate_album_accepts_readable_tagged_mp3s(monkeypatch):
             audio.info.length = 180
             audio.get.side_effect = {
                 "artist": ["Artist"],
+                "albumartist": ["Artist"],
                 "album": ["Album"],
                 "title": [track.title],
                 "tracknumber": [str(track.number)],
@@ -243,6 +244,7 @@ def test_validate_album_rejects_oversized_embedded_cover(monkeypatch):
         audio.info.length = 180
         audio.get.side_effect = {
             "artist": ["Artist"],
+                "albumartist": ["Artist"],
             "album": ["Album"],
             "title": ["Song A"],
             "tracknumber": ["1"],

@@ -95,7 +95,7 @@ class MetadataService:
             release_id=release_id,
             title=data.get("title") or "Unknown",
             date=data.get("date") or "Unknown",
-            artist=artist_credit[0].get("name") or "Unknown",
+            artist=self._artist_credit(artist_credit) or "Unknown",
             cover_url=await self._get_cover_url(release_id),
             tracks=tracks,
         )
@@ -221,13 +221,30 @@ class MetadataService:
 
     async def _fetch_tracks_data(self, release_id: str) -> Dict[str, Any]:
         url = f"https://musicbrainz.org/ws/2/release/{release_id}"
-        params = {"inc": "recordings", "fmt": "json"}
+        params = {"inc": "recordings artist-credits", "fmt": "json"}
         return await self.http_client.get(
             url,
             params=params,
             provider="MusicBrainz",
             context=f"loading tracks for release {release_id}",
         )
+
+    @staticmethod
+    def _artist_credit(credits) -> Optional[str]:
+        if not credits:
+            return None
+        parts = []
+        for credit in credits:
+            if isinstance(credit, str):
+                parts.append(credit)
+            elif isinstance(credit, dict):
+                name = credit.get("name") or (credit.get("artist") or {}).get("name")
+                if not isinstance(name, str) or not name:
+                    raise ValueError("Invalid MusicBrainz artist credit")
+                parts.append(name + (credit.get("joinphrase") or ""))
+            else:
+                raise ValueError("Invalid MusicBrainz artist credit")
+        return "".join(parts) or None
 
     def _parse_tracks(
         self,
@@ -281,6 +298,8 @@ class MetadataService:
                 global_position += 1
                 tracks.append(
                     Track(
+                        artist=(self._artist_credit(track_data.get("artist-credit"))
+                                or self._artist_credit((track_data.get("recording") or {}).get("artist-credit"))),
                         number=number,
                         title=track_data.get("title", "Unknown"),
                         disc_number=disc_number,
@@ -332,7 +351,7 @@ class MetadataService:
                     title=r.get("title") or "Unknown",
                     date=r.get("date") or "Unknown",
                     cover_url=cover_url,
-                    artist=artist_credit[0].get("name") or artist or "Unknown",
+                    artist=self._artist_credit(artist_credit) or artist or "Unknown",
                     tracks=[],
                     track_count=self._parse_search_track_count(
                         r.get("track-count")

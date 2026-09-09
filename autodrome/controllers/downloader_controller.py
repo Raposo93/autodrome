@@ -32,6 +32,7 @@ class DownloaderController:
 
         release_data = await self._get_release_data(release_id)
 
+        artist = release_data.get("artist") or artist
         tracks: List[Track] = [Track(**t) for t in release_data.get("tracks", [])]
         date: Optional[str] = release_data.get("date")
         if track_count is not None and track_count != len(tracks):
