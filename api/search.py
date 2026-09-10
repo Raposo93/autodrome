@@ -29,6 +29,7 @@ async def combined_search(
             search.artist or "",
             search.album or "",
             youtube_limit=search.youtube_limit,
+            youtube_max_tracks=search.youtube_max_tracks,
         )
         if len(results.get("errors", {})) == 2:
             return JSONResponse(

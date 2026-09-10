@@ -21,9 +21,13 @@ export default {
   authenticate() {
     return apiClient.get('/auth')
   },
-  combinedSearch(artist, album, youtubeLimit = 10) {
+  combinedSearch(artist, album, youtubeLimit = 10, youtubeMaxTracks = null) {
+    const params = { artist, album, youtube_limit: youtubeLimit }
+    if (youtubeMaxTracks !== null && youtubeMaxTracks !== undefined) {
+      params.youtube_max_tracks = youtubeMaxTracks
+    }
     return apiClient.get('/search/', {
-      params: { artist, album, youtube_limit: youtubeLimit }
+      params
     })
   },
 

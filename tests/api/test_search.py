@@ -41,7 +41,10 @@ class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"playlists": [], "releases": []})
         self.app.state.search_controller.search.assert_awaited_once_with(
-            "Artist", "", youtube_limit=10
+            "Artist",
+            "",
+            youtube_limit=10,
+            youtube_max_tracks=None,
         )
 
     async def test_custom_youtube_limit_is_forwarded(self):
@@ -58,7 +61,10 @@ class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
 
                     self.assertEqual(response.status_code, 200)
                     self.app.state.search_controller.search.assert_awaited_once_with(
-                        "Artist", "", youtube_limit=youtube_limit
+                        "Artist",
+                        "",
+                        youtube_limit=youtube_limit,
+                        youtube_max_tracks=None,
                     )
 
     async def test_invalid_youtube_limit_is_rejected_without_searching(self):
@@ -75,6 +81,48 @@ class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
 
                     self.assertEqual(response.status_code, 422)
                     self.assertIn("youtube_limit", response.text)
+                    self.app.state.search_controller.search.assert_not_awaited()
+
+    async def test_optional_youtube_max_tracks_is_forwarded(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            for max_tracks in (1, 30, 10_000):
+                with self.subTest(max_tracks=max_tracks):
+                    self.app.state.search_controller.search.reset_mock()
+                    response = await client.get(
+                        "/api/search/",
+                        params={
+                            "artist": "Artist",
+                            "youtube_max_tracks": max_tracks,
+                        },
+                    )
+
+                    self.assertEqual(response.status_code, 200)
+                    self.app.state.search_controller.search.assert_awaited_once_with(
+                        "Artist",
+                        "",
+                        youtube_limit=10,
+                        youtube_max_tracks=max_tracks,
+                    )
+
+    async def test_invalid_youtube_max_tracks_is_rejected_without_searching(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            for max_tracks in (0, -1, 1.5, "many"):
+                with self.subTest(max_tracks=max_tracks):
+                    self.app.state.search_controller.search.reset_mock()
+                    response = await client.get(
+                        "/api/search/",
+                        params={
+                            "artist": "Artist",
+                            "youtube_max_tracks": max_tracks,
+                        },
+                    )
+
+                    self.assertEqual(response.status_code, 422)
+                    self.assertIn("youtube_max_tracks", response.text)
                     self.app.state.search_controller.search.assert_not_awaited()
 
     async def test_youtube_text_reaches_ui_normalized_once(self):

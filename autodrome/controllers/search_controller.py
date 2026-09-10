@@ -1,5 +1,7 @@
 import asyncio
 import time
+from typing import Optional
+
 from autodrome.logger import logger
 from autodrome.metadata_service import MetadataService
 from autodrome.yt_api import YTApi
@@ -16,7 +18,13 @@ class SearchController:
         self.yt_api = YTApi(http_client=self.http_client)
 
 
-    async def search(self, artist: str, album: str, youtube_limit: int = 10):
+    async def search(
+        self,
+        artist: str,
+        album: str,
+        youtube_limit: int = 10,
+        youtube_max_tracks: Optional[int] = None,
+    ):
         start = time.monotonic()
         query = f"{artist} {album}".strip()
 
@@ -26,7 +34,11 @@ class SearchController:
             playlists_results, releases_results = await asyncio.gather(
                 self._search_provider(
                     "youtube",
-                    self.yt_api.search_playlist(query, limit=youtube_limit),
+                    self.yt_api.search_playlist(
+                        query,
+                        limit=youtube_limit,
+                        max_tracks=youtube_max_tracks,
+                    ),
                     errors,
                 ),
                 self._search_provider(

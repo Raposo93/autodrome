@@ -75,9 +75,9 @@ test('each search sends its own YouTube result limit', async () => {
   await search()
 
   assert.deepEqual(calls, [
-    ['Artist', 'Album', 10],
-    ['Artist', 'Album', 50],
-    ['Artist', 'Album', 7],
+    ['Artist', 'Album', 10, null],
+    ['Artist', 'Album', 50, null],
+    ['Artist', 'Album', 7, null],
   ])
 })
 
@@ -94,6 +94,45 @@ test('invalid YouTube result limits are rejected before the request', async () =
     assert.match(state.errorPlaylists, /whole number from 1 to 50/)
   }
   assert.equal(requests, 0)
+})
+
+test('maximum-track filtering is optional and scoped to each search', async () => {
+  const calls = []
+  const { state, search } = setup(async (...args) => {
+    calls.push(args)
+    return { data: { playlists: [], releases: [], errors: {} } }
+  })
+
+  await search()
+  state.maxTracksEnabled = true
+  state.youtubeMaxTracks = 30
+  await search()
+  state.youtubeMaxTracks = 12
+  await search()
+  state.maxTracksEnabled = false
+  await search()
+
+  assert.deepEqual(calls.map(call => call[3]), [null, 30, 12, null])
+})
+
+test('enabled maximum-track filter requires a positive whole number', async () => {
+  let requests = 0
+  const { state, search } = setup(async () => {
+    requests += 1
+    return { data: { playlists: [], releases: [], errors: {} } }
+  })
+  state.maxTracksEnabled = true
+
+  for (const maxTracks of [0, -1, 2.5, '30', '']) {
+    state.youtubeMaxTracks = maxTracks
+    await search()
+    assert.match(state.errorPlaylists, /positive whole number/)
+  }
+  assert.equal(requests, 0)
+
+  state.maxTracksEnabled = false
+  await search()
+  assert.equal(requests, 1)
 })
 
 

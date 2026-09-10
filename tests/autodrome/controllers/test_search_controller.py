@@ -34,8 +34,9 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
         youtube_started = asyncio.Event()
         musicbrainz_started = asyncio.Event()
 
-        async def youtube(query, limit):
+        async def youtube(query, limit, max_tracks):
             self.assertEqual(limit, 10)
+            self.assertIsNone(max_tracks)
             youtube_started.set()
             await musicbrainz_started.wait()
             return []
@@ -50,15 +51,20 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
         result = await asyncio.wait_for(controller.search("Artist", "Album"), 1)
         self.assertEqual(result, {"playlists": [], "releases": [], "errors": {}})
 
-    async def test_search_forwards_limit_only_to_youtube(self):
+    async def test_search_forwards_youtube_options_only_to_youtube(self):
         controller = SearchController(http_client=MagicMock())
         controller.yt_api.search_playlist = AsyncMock(return_value=[])
         controller.metadata_service.search_releases = AsyncMock(return_value=[])
 
-        await controller.search("Artist", "Album", youtube_limit=37)
+        await controller.search(
+            "Artist",
+            "Album",
+            youtube_limit=37,
+            youtube_max_tracks=28,
+        )
 
         controller.yt_api.search_playlist.assert_awaited_once_with(
-            "Artist Album", limit=37
+            "Artist Album", limit=37, max_tracks=28
         )
         controller.metadata_service.search_releases.assert_awaited_once_with(
             "Artist", "Album"
