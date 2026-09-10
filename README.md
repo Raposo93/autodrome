@@ -199,6 +199,22 @@ la finalización sigue sin guardar, el trabajo pasa de `running` a `interrupted`
 comprueba la biblioteca y el staging antes de solicitar un reintento. Una parada
 con almacenamiento averiado conserva en disco el último estado confirmado.
 
+Si el filesystem se queda sin espacio durante descarga, conversión, tagging,
+portada o publicación, el álbum no se publica y el trabajo termina en `failed`
+con la última fase y el error `ENOSPC`, siempre que la cola aún pueda guardar su
+estado. Por defecto se conserva el staging fallido para diagnóstico; con
+`PRESERVE_FAILED_STAGING=false` se limpia únicamente ese staging, nunca una
+biblioteca válida. La comprobación inicial de espacio es una guardia temprana,
+no una reserva: libera espacio tanto en el filesystem de biblioteca/staging como
+en los que alojan `QUEUE_STATE_PATH` y `covers/`.
+
+Para recuperarte, restaura espacio y comprueba primero biblioteca y staging. Si
+la cola estaba pausada por no poder persistir, reintentará la escritura y seguirá
+automáticamente. Para un job `failed` o `interrupted`, usa **Retry** solo después
+de confirmar que el álbum final no existe; Autodrome rechazará un destino ya
+publicado en vez de sobrescribirlo. Conserva o mueve aparte cualquier staging que
+necesites para diagnóstico antes de reintentar.
+
 La portada original queda en `covers/<release-id>.jpg`. Si se rechaza, sustituye
 ese archivo por una imagen JPEG, PNG o WebP válida y vuelve a solicitar el álbum.
 La versión optimizada solo vive en memoria y no modifica el original.

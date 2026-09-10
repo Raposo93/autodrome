@@ -1,8 +1,16 @@
 """Small deterministic fault helpers; never import this module in production."""
 
+import errno
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from typing import Any
+
+
+class NoSpaceError(OSError):
+    """Deterministic ``ENOSPC`` carrying the named fault context."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(errno.ENOSPC, detail)
 
 
 class FaultInjector:

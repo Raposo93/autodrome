@@ -19,7 +19,7 @@ from autodrome.yt_downloader import (
     TrackDownloadError,
     YTDownloader,
 )
-from tests.fault_injection import FaultInjector, ScriptedCall
+from tests.fault_injection import FaultInjector, NoSpaceError, ScriptedCall
 
 
 PAYLOAD = {
@@ -86,7 +86,7 @@ class TestQueueFaultInjection(unittest.IsolatedAsyncioTestCase):
             allow_retry = asyncio.Event()
             faults = FaultInjector(
                 "initial-running-transition",
-                {"queue.persist.running": {1: OSError}},
+                {"queue.persist.running": {1: NoSpaceError}},
             )
 
             def persist_with_fault():
@@ -118,6 +118,7 @@ class TestQueueFaultInjection(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(manager.worker_task.done())
                     self.assertEqual(manager.queue.qsize(), 1)
                     self.assertIn("queue.persist.running", manager.storage_error)
+                    self.assertIn("Errno 28", manager.storage_error)
                     with open(state_path, encoding="utf-8") as state_file:
                         jobs = json.load(state_file)["jobs"]
                     self.assertEqual([job["status"] for job in jobs], ["queued", "queued"])
@@ -159,7 +160,7 @@ class TestQueueFaultInjection(unittest.IsolatedAsyncioTestCase):
             retry_waiting = asyncio.Event()
             faults = FaultInjector(
                 "published-before-succeeded-write",
-                {"queue.persist.succeeded": {1: OSError}},
+                {"queue.persist.succeeded": {1: NoSpaceError}},
             )
 
             def persist_with_fault():
@@ -223,7 +224,7 @@ class TestQueueFaultInjection(unittest.IsolatedAsyncioTestCase):
                 real_replace = os.replace
                 faults = FaultInjector(
                     "atomic-queue-replace",
-                    {"queue.persist.os_replace": {1: OSError}},
+                    {"queue.persist.os_replace": {1: NoSpaceError}},
                 )
 
                 def replace_with_fault(source, destination):
@@ -237,10 +238,11 @@ class TestQueueFaultInjection(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaisesRegex(
                         OSError,
                         "atomic-queue-replace.*queue.persist.os_replace",
-                    ):
+                    ) as raised:
                         await manager.enqueue(PAYLOAD)
 
                 faults.assert_complete()
+                self.assertEqual(raised.exception.errno, 28)
                 self.assertEqual(manager.snapshot(), [])
                 self.assertTrue(manager.queue.empty())
                 self.assertEqual(os.listdir(directory), [])
