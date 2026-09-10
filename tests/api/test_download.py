@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from api.download import download, download_router
-from autodrome.models.requests import DownloadRequest
+from api.download import album_destination, download, download_router
+from autodrome.models.requests import AlbumDestinationRequest, DownloadRequest
 
 
 class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
@@ -23,6 +23,28 @@ class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
         response = await download(payload, request)
 
         self.assertEqual(response, {"status": "queued", "job_id": "job-1"})
+
+    async def test_destination_preflight_uses_organizer_result(self):
+        request = MagicMock()
+        request.app.state.downloader_controller.organizer.inspect_album_destination.return_value = {
+            "state": "exists",
+            "exists": True,
+            "artist": "Artist",
+            "album": "Album",
+            "relative_path": "Artist/Album",
+            "mp3_count": 2,
+            "file_count": 3,
+        }
+
+        response = await album_destination(
+            AlbumDestinationRequest(artist="Artist", album="Album"),
+            request,
+        )
+
+        self.assertTrue(response["exists"])
+        request.app.state.downloader_controller.organizer.inspect_album_destination.assert_called_once_with(
+            "Artist", "Album"
+        )
 
     async def test_queue_routes_delegate_and_return_results(self):
         app = FastAPI()

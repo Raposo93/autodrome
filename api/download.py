@@ -1,6 +1,10 @@
 from fastapi import APIRouter, HTTPException, Request, status
 
-from autodrome.models.requests import DownloadRequest, PlaylistPreflightRequest
+from autodrome.models.requests import (
+    AlbumDestinationRequest,
+    DownloadRequest,
+    PlaylistPreflightRequest,
+)
 
 download_router = APIRouter()
 
@@ -59,3 +63,11 @@ async def playlist_preflight(payload: PlaylistPreflightRequest, request: Request
         raise HTTPException(status_code=422, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=502, detail="Could not extract playlist manifest. Try again.") from error
+
+
+@download_router.post("/destination")
+async def album_destination(payload: AlbumDestinationRequest, request: Request):
+    return request.app.state.downloader_controller.organizer.inspect_album_destination(
+        payload.artist,
+        payload.album,
+    )

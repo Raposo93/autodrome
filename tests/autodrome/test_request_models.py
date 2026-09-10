@@ -2,7 +2,11 @@ import unittest
 
 from pydantic import ValidationError
 
-from autodrome.models.requests import DownloadRequest, SearchRequest
+from autodrome.models.requests import (
+    AlbumDestinationRequest,
+    DownloadRequest,
+    SearchRequest,
+)
 
 
 VALID_DOWNLOAD = {
@@ -59,6 +63,19 @@ class TestRequestModels(unittest.TestCase):
             SearchRequest()
         with self.assertRaises(ValidationError):
             SearchRequest(artist="   ")
+
+    def test_album_destination_requires_safe_final_metadata(self):
+        request = AlbumDestinationRequest(artist="  Artist  ", album="Album")
+        self.assertEqual(request.artist, "Artist")
+        for change in (
+            {"artist": ".."},
+            {"album": "/tmp/album"},
+            {"extra": True},
+        ):
+            with self.subTest(change=change), self.assertRaises(ValidationError):
+                AlbumDestinationRequest(
+                    **{"artist": "Artist", "album": "Album", **change}
+                )
 
 
 if __name__ == "__main__":

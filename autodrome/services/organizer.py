@@ -1,8 +1,10 @@
 import os
 import shutil
+import stat
 import tempfile
 import uuid
 from contextlib import contextmanager
+from pathlib import PurePosixPath
 from typing import Iterator, List, Optional, Tuple
 
 from mutagen.easyid3 import EasyID3
@@ -199,13 +201,80 @@ class Organizer:
 
         logger.info(f"Published album atomically to: {album_folder}")
 
+    def inspect_album_destination(self, artist: str, album: str) -> dict:
+        """Inspect a final destination without creating or changing library files."""
+        safe_artist, safe_album = self._normalized_album_components(artist, album)
+        relative_path = str(PurePosixPath(safe_artist, safe_album))
+        base_result = {
+            "artist": safe_artist,
+            "album": safe_album,
+            "relative_path": relative_path,
+        }
+
+        try:
+            album_folder = str(
+                resolve_album_path(conf.library_path, safe_artist, safe_album)
+            )
+            destination_stat = os.lstat(album_folder)
+        except FileNotFoundError:
+            return {
+                **base_result,
+                "state": "not_found",
+                "exists": False,
+                "mp3_count": 0,
+                "file_count": 0,
+            }
+        except (OSError, ValueError):
+            return {
+                **base_result,
+                "state": "unknown",
+                "exists": None,
+                "mp3_count": None,
+                "file_count": None,
+            }
+
+        if not stat.S_ISDIR(destination_stat.st_mode):
+            return {
+                **base_result,
+                "state": "exists",
+                "exists": True,
+                "mp3_count": None,
+                "file_count": None,
+            }
+
+        try:
+            with os.scandir(album_folder) as entries:
+                files = [
+                    entry.name
+                    for entry in entries
+                    if entry.is_file(follow_symlinks=False)
+                ]
+        except OSError:
+            files = None
+
+        return {
+            **base_result,
+            "state": "exists",
+            "exists": True,
+            "mp3_count": (
+                sum(name.lower().endswith(".mp3") for name in files)
+                if files is not None
+                else None
+            ),
+            "file_count": len(files) if files is not None else None,
+        }
+
     def _get_album_folder(self, artist: str, album: str) -> str:
+        safe_artist, safe_album = self._normalized_album_components(artist, album)
         destination = os.path.abspath(conf.library_path)
+        return str(resolve_album_path(destination, safe_artist, safe_album))
+
+    def _normalized_album_components(self, artist: str, album: str) -> Tuple[str, str]:
         safe_artist = self._sanitize_filename(validate_path_component(artist))
         safe_album = self._sanitize_filename(validate_path_component(album))
         validate_path_component(safe_artist)
         validate_path_component(safe_album)
-        return str(resolve_album_path(destination, safe_artist, safe_album))
+        return safe_artist, safe_album
 
     def _build_rename_plan(
         self,

@@ -83,6 +83,17 @@ class PlaylistPreflightRequest(BaseModel):
     validate_playlist_url = field_validator("playlist_url")(DownloadRequest.validate_playlist_url.__func__)
 
 
+class AlbumDestinationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artist: NonEmptyText
+    album: NonEmptyText
+
+    validate_path_fields = field_validator("artist", "album")(
+        DownloadRequest.validate_path_fields.__func__
+    )
+
+
 class SearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

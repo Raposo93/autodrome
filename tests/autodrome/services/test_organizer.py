@@ -355,6 +355,98 @@ def test_create_staging_folder_rejects_existing_album(monkeypatch):
 
         assert os.path.isfile(existing_file)
 
+
+def test_destination_preflight_reports_missing_and_normalized_names(tmp_path, monkeypatch):
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(tmp_path))
+    before = list(tmp_path.iterdir())
+
+    result = Organizer().inspect_album_destination("AC/DC", "Live: 1992")
+
+    assert result == {
+        "state": "not_found",
+        "exists": False,
+        "artist": "AC_DC",
+        "album": "Live_ 1992",
+        "relative_path": "AC_DC/Live_ 1992",
+        "mp3_count": 0,
+        "file_count": 0,
+    }
+    assert list(tmp_path.iterdir()) == before
+
+
+def test_destination_preflight_counts_existing_regular_files(tmp_path, monkeypatch):
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(tmp_path))
+    album = tmp_path / "Artist" / "Album"
+    album.mkdir(parents=True)
+    (album / "01.mp3").write_bytes(b"audio")
+    (album / "02.MP3").write_bytes(b"audio")
+    (album / "cover.jpg").write_bytes(b"image")
+    (album / "nested").mkdir()
+    (album / "linked.mp3").symlink_to(album / "01.mp3")
+
+    result = Organizer().inspect_album_destination("Artist", "Album")
+
+    assert result["state"] == "exists"
+    assert result["exists"] is True
+    assert result["mp3_count"] == 2
+    assert result["file_count"] == 3
+
+
+def test_destination_preflight_never_turns_filesystem_errors_into_missing(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(tmp_path))
+    monkeypatch.setattr(
+        "autodrome.services.organizer.os.lstat",
+        mock.MagicMock(side_effect=PermissionError("denied")),
+    )
+
+    result = Organizer().inspect_album_destination("Artist", "Album")
+
+    assert result["state"] == "unknown"
+    assert result["exists"] is None
+    assert result["mp3_count"] is None
+
+
+def test_destination_preflight_does_not_follow_library_symlinks(tmp_path, monkeypatch):
+    library = tmp_path / "library"
+    outside = tmp_path / "outside"
+    library.mkdir()
+    outside.mkdir()
+    (outside / "Album").mkdir()
+    (outside / "Album" / "private.mp3").write_bytes(b"private")
+    (library / "Artist").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(library))
+
+    result = Organizer().inspect_album_destination("Artist", "Album")
+
+    assert result["state"] == "unknown"
+    assert result["exists"] is None
+    assert result["mp3_count"] is None
+
+
+def test_album_created_after_preflight_is_not_overwritten(tmp_path, monkeypatch):
+    library = tmp_path / "library"
+    staging = tmp_path / "staging"
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(library))
+    monkeypatch.setattr("autodrome.services.organizer.conf.staging_path", str(staging))
+    monkeypatch.setattr(
+        "autodrome.services.organizer.conf.minimum_staging_free_bytes", 0
+    )
+    organizer = Organizer()
+
+    assert organizer.inspect_album_destination("Artist", "Album")["state"] == "not_found"
+    with pytest.raises(FileExistsError, match="Album already exists"):
+        with organizer.create_staging_folder("Artist", "Album") as staging_folder:
+            create_dummy_mp3(staging_folder, "01 - Song.mp3")
+            destination = library / "Artist" / "Album"
+            destination.mkdir(parents=True)
+            existing = destination / "existing.mp3"
+            existing.write_bytes(b"existing")
+            organizer.move_to_library(staging_folder, "Artist", "Album")
+
+    assert existing.read_bytes() == b"existing"
+
 def test_create_staging_folder_rejects_insufficient_space(monkeypatch):
     organizer = Organizer()
 
