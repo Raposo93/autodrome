@@ -11,7 +11,7 @@ del producto. Se recomienda systemd para ejecución persistente y
 ## Funcionalidad
 
 - Búsqueda conjunta de playlists de YouTube y releases de MusicBrainz.
-- Cola persistente con estados visibles por WebSocket.
+- Cola persistente con estados, fases y avance por pista visibles por WebSocket.
 - Descarga secuencial por pista, con reintentos y errores individualizados.
 - Metadatos y nombres correctos para releases de uno o varios discos.
 - Validación, optimización y MIME real de las portadas embebidas.
@@ -223,6 +223,20 @@ Para actualizar dependencias frontend de forma intencionada, ejecuta
 `npm install --prefix frontend` y revisa `frontend/package-lock.json`. CI repite
 las pruebas y builds; la auditoría de dependencias informa vulnerabilidades sin
 aplicar actualizaciones automáticas.
+
+## Limitaciones de la primera release
+
+- Un backend y un álbum activo; pistas secuenciales (`DOWNLOAD_CONCURRENCY=1`).
+- No hay cancelación de trabajos en espera ni de descargas activas desde la UI.
+- Las playlists pueden cambiar tras el preflight. Un fallo posterior impide publicar
+  el álbum y conserva el contexto; no se completa con pistas ausentes.
+- MusicBrainz y Cover Art Archive deben responder para completar el flujo con release.
+  Un timeout o error no se interpreta como ausencia válida de metadata o portada.
+- El modo manual no edita pistas individuales ni deduce estructura multidisco.
+- Los trabajos interrumpidos requieren revisar biblioteca/staging antes de Retry.
+- Las pruebas avanzadas de disco lleno, SIGKILL, reboot y concurrencia quedan
+  aplazadas; no forman parte de las garantías verificadas de esta versión.
+- No se incluye rotación de `autodrome.log`; configura la retención del host.
 
 ## Uso responsable
 
