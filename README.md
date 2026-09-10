@@ -225,6 +225,11 @@ estar completo aunque el job figure como `interrupted`: revisa primero bibliotec
 y staging y no uses **Retry** sobre un álbum ya publicado. La protección de
 destino impedirá sobrescribirlo.
 
+La aceptación de un reinicio completo requiere un host de prueba real; no debe
+ejecutarse en CI compartido ni inferirse solo de la configuración systemd. Sigue
+el procedimiento y conserva las evidencias descritas en
+[`docs/reboot-acceptance.md`](docs/reboot-acceptance.md).
+
 La portada original queda en `covers/<release-id>.jpg`. Si se rechaza, sustituye
 ese archivo por una imagen JPEG, PNG o WebP válida y vuelve a solicitar el álbum.
 La versión optimizada solo vive en memoria y no modifica el original.
