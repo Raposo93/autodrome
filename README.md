@@ -176,10 +176,12 @@ rename atómico. Un álbum existente no se sobrescribe.
 Al reiniciar, los trabajos `queued` se reanudan en orden. Un trabajo que estaba
 `running` pasa a `interrupted` y conserva el último error; no se repite a ciegas.
 
-Desde la cola, **Clear finished jobs** limpia el historial de trabajos `succeeded`,
-`failed` e `interrupted`; **Remove** elimina uno de ellos. Los trabajos `queued` y
-`running` permanecen intactos. Estas acciones solo borran entradas del historial,
-no archivos de audio, álbumes publicados ni staging conservado.
+Desde la cola, **Cancel** impide que un trabajo `queued` llegue a ejecutarse y lo
+conserva como `cancelled`. No interrumpe trabajos que ya estén `running`.
+**Clear finished jobs** limpia el historial de trabajos `succeeded`, `failed`,
+`interrupted` y `cancelled`; **Remove** elimina uno de ellos. Estas dos últimas
+acciones solo borran entradas del historial, no archivos de audio, álbumes
+publicados ni staging conservado.
 
 **Retry** crea un nuevo trabajo con el payload original de un fallo o interrupción.
 El original conserva su estado y error, y el nuevo guarda su identificador en
@@ -227,7 +229,7 @@ aplicar actualizaciones automáticas.
 ## Limitaciones de la primera release
 
 - Un backend y un álbum activo; pistas secuenciales (`DOWNLOAD_CONCURRENCY=1`).
-- No hay cancelación de trabajos en espera ni de descargas activas desde la UI.
+- Los trabajos en espera se pueden cancelar; las descargas activas no se interrumpen.
 - Las playlists pueden cambiar tras el preflight. Un fallo posterior impide publicar
   el álbum y conserva el contexto; no se completa con pistas ausentes.
 - MusicBrainz y Cover Art Archive deben responder para completar el flujo con release.

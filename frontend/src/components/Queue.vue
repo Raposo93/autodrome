@@ -36,6 +36,14 @@
             <span v-if="item.error" class="queue-error">{{ item.error }}</span>
           </span>
           <div class="queue-actions">
+            <button
+              v-if="canCancel(item)"
+              type="button"
+              :disabled="busy"
+              @click="cancelJob(item)"
+            >
+              Cancel
+            </button>
             <button type="button" :disabled="busy || !canRetry(item)" @click="retryJob(item)">
               Retry
             </button>
@@ -58,7 +66,7 @@
 <script>
 import api, { connectWebSocket } from '../services/api'
 import { progressLabel } from '../services/queueProgress.js'
-import { canDeleteJob, canRetryJob } from '../services/queueHistory.js'
+import { canCancelJob, canDeleteJob, canRetryJob } from '../services/queueHistory.js'
 
 export default {
   data() {
@@ -97,6 +105,7 @@ export default {
   },
   methods: {
     progressLabel,
+    canCancel: canCancelJob,
     canDelete: canDeleteJob,
     canRetry(item) {
       return canRetryJob(item, this.queueMessages)
@@ -121,6 +130,10 @@ export default {
       if (!this.canDelete(item)) return
       return this.runAction(() => api.deleteJob(item.job_id))
     },
+    cancelJob(item) {
+      if (!this.canCancel(item)) return
+      return this.runAction(() => api.cancelJob(item.job_id))
+    },
     retryJob(item) {
       if (!this.canRetry(item)) return
       return this.runAction(() => api.retryJob(item.job_id))
@@ -131,7 +144,9 @@ export default {
     },
     statusClass(item) {
       const status = typeof item === 'object' ? item.status : null
-      return ['queued', 'running', 'succeeded', 'failed', 'interrupted'].includes(status)
+      return [
+        'queued', 'running', 'succeeded', 'failed', 'interrupted', 'cancelled'
+      ].includes(status)
         ? status
         : 'unknown'
     },

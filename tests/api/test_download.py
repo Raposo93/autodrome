@@ -24,7 +24,7 @@ class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response, {"status": "queued", "job_id": "job-1"})
 
-    async def test_history_routes_delegate_and_return_results(self):
+    async def test_queue_routes_delegate_and_return_results(self):
         app = FastAPI()
         app.include_router(download_router, prefix="/api/download")
         app.state.queue_manager = AsyncMock()
@@ -37,18 +37,26 @@ class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
             response = await client.delete("/api/download/jobs/old-job")
             self.assertEqual(response.status_code, 200)
             app.state.queue_manager.delete_job.assert_awaited_once_with("old-job")
+            response = await client.post("/api/download/jobs/queued-job/cancel")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {"status": "cancelled", "job_id": "queued-job"},
+            )
+            app.state.queue_manager.cancel_job.assert_awaited_once_with("queued-job")
             response = await client.post("/api/download/jobs/old-job/retry")
             self.assertEqual(response.status_code, 202)
             self.assertEqual(response.json(), {"status": "queued", "job_id": "new-job"})
             app.state.queue_manager.retry_job.assert_awaited_once_with("old-job")
 
-    async def test_history_routes_translate_rejections_and_persistence_errors(self):
+    async def test_queue_routes_translate_rejections_and_persistence_errors(self):
         app = FastAPI()
         app.include_router(download_router, prefix="/api/download")
         app.state.queue_manager = AsyncMock()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             for method, path, operation in (
                 ("delete", "/api/download/jobs/job", "delete_job"),
+                ("post", "/api/download/jobs/job/cancel", "cancel_job"),
                 ("post", "/api/download/jobs/job/retry", "retry_job"),
                 ("delete", "/api/download/history", "clear_history"),
             ):

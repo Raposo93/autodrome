@@ -1,5 +1,9 @@
 export function canDeleteJob(job) {
-  return ['succeeded', 'failed', 'interrupted'].includes(job?.status)
+  return ['succeeded', 'failed', 'interrupted', 'cancelled'].includes(job?.status)
+}
+
+export function canCancelJob(job) {
+  return job?.status === 'queued'
 }
 
 export function canRetryJob(job, jobs) {

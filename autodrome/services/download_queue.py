@@ -79,6 +79,12 @@ class DownloadQueueManager:
             raise ValueError("Only finished jobs can be deleted")
         await self._remove_jobs({job_id})
 
+    async def cancel_job(self, job_id: str) -> None:
+        job = self._get_job(job_id)
+        if job.status != "queued":
+            raise ValueError("Only queued jobs can be cancelled")
+        await self._transition(job, "cancelled")
+
     async def retry_job(self, job_id: str) -> str:
         job = self._get_job(job_id)
         if job.status not in RETRYABLE_STATUSES:
@@ -117,8 +123,8 @@ class DownloadQueueManager:
             job = None
             try:
                 job_id = await self.queue.get()
-                job = self._jobs[job_id]
-                if job.status != "queued":
+                job = self._jobs.get(job_id)
+                if job is None or job.status != "queued":
                     continue
 
                 await self._save_worker_transition(job, "running")

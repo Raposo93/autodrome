@@ -114,6 +114,109 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
         finally:
             await restarted_manager.stop()
 
+    async def test_queued_job_can_be_cancelled_durably_and_is_skipped(self):
+        job_id = await self.manager.enqueue(PAYLOAD)
+        self.websocket_manager.broadcast.reset_mock()
+
+        await self.manager.cancel_job(job_id)
+
+        self.assertEqual(self.manager.snapshot()[0]["status"], "cancelled")
+        self.assertEqual(self.persisted_jobs()[0]["status"], "cancelled")
+        self.websocket_manager.broadcast.assert_awaited_once_with(
+            self.manager.snapshot()
+        )
+
+        self.manager.start()
+        await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+        self.downloader.download_and_tag.assert_not_awaited()
+
+    async def test_cancelled_job_remains_terminal_after_restart(self):
+        job_id = await self.manager.enqueue(PAYLOAD)
+        await self.manager.cancel_job(job_id)
+        restarted_downloader = AsyncMock()
+        restarted_manager = DownloadQueueManager(
+            restarted_downloader,
+            AsyncMock(),
+            self.state_path,
+        )
+        try:
+            self.assertTrue(restarted_manager.queue.empty())
+            self.assertEqual(
+                restarted_manager.snapshot()[0]["status"], "cancelled"
+            )
+            restarted_manager.start()
+            await asyncio.wait_for(restarted_manager.queue.join(), timeout=1)
+            restarted_downloader.download_and_tag.assert_not_awaited()
+        finally:
+            await restarted_manager.stop()
+
+    async def test_cancel_rejects_job_that_already_started(self):
+        started = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def download(**kwargs):
+            started.set()
+            await finish.wait()
+
+        self.downloader.download_and_tag.side_effect = download
+        self.manager.start()
+        job_id = await self.manager.enqueue(PAYLOAD)
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        with self.assertRaisesRegex(ValueError, "Only queued jobs"):
+            await self.manager.cancel_job(job_id)
+
+        self.assertEqual(self.manager.snapshot()[0]["status"], "running")
+        self.assertEqual(self.persisted_jobs()[0]["status"], "running")
+        finish.set()
+        await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+
+    async def test_cancel_persistence_failure_restores_queued_job(self):
+        job_id = await self.manager.enqueue(PAYLOAD)
+        self.websocket_manager.broadcast.reset_mock()
+
+        with patch(
+            "autodrome.services.download_queue.os.replace",
+            side_effect=OSError("disk full"),
+        ):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                await self.manager.cancel_job(job_id)
+
+        self.assertEqual(self.manager.snapshot()[0]["status"], "queued")
+        self.assertEqual(self.persisted_jobs()[0]["status"], "queued")
+        self.websocket_manager.broadcast.assert_not_awaited()
+        self.manager.start()
+        await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+        self.downloader.download_and_tag.assert_awaited_once()
+
+    async def test_worker_continues_after_cancelled_job_is_cleared(self):
+        first_started = asyncio.Event()
+        finish_first = asyncio.Event()
+        downloaded_albums = []
+
+        async def download(album, **kwargs):
+            downloaded_albums.append(album)
+            if album == "First":
+                first_started.set()
+                await finish_first.wait()
+
+        self.downloader.download_and_tag.side_effect = download
+        first_id = await self.manager.enqueue({**PAYLOAD, "album": "First"})
+        self.manager.start()
+        await asyncio.wait_for(first_started.wait(), timeout=1)
+        cancelled_id = await self.manager.enqueue({**PAYLOAD, "album": "Cancelled"})
+        third_id = await self.manager.enqueue({**PAYLOAD, "album": "Third"})
+        await self.manager.cancel_job(cancelled_id)
+        self.assertEqual(await self.manager.clear_history(), 1)
+
+        finish_first.set()
+        await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+
+        self.assertEqual(downloaded_albums, ["First", "Third"])
+        self.assertEqual(self.manager._jobs[first_id].status, "succeeded")
+        self.assertNotIn(cancelled_id, self.manager._jobs)
+        self.assertEqual(self.manager._jobs[third_id].status, "succeeded")
+
     async def test_running_job_becomes_interrupted_after_restart(self):
         job = DownloadJob.create(PAYLOAD)
         job.transition("running")
@@ -175,7 +278,14 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
 
     def seed_history(self):
         jobs = {}
-        for status in ("queued", "running", "succeeded", "failed", "interrupted"):
+        for status in (
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "interrupted",
+            "cancelled",
+        ):
             job = DownloadJob.create(PAYLOAD)
             job.transition(status, "original failure" if status == "failed" else None)
             self.manager._jobs[job.job_id] = job
@@ -190,7 +300,7 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
     async def test_clear_removes_only_terminal_jobs_and_persists_snapshot(self):
         jobs = self.seed_history()
         removed = await self.manager.clear_history()
-        self.assertEqual(removed, 3)
+        self.assertEqual(removed, 4)
         self.assertEqual(
             [job["job_id"] for job in self.manager.snapshot()],
             [jobs["queued"].job_id, jobs["running"].job_id],
@@ -201,7 +311,7 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
 
     async def test_delete_each_terminal_status_persists_and_survives_restart(self):
         jobs = self.seed_history()
-        for status in ("succeeded", "failed", "interrupted"):
+        for status in ("succeeded", "failed", "interrupted", "cancelled"):
             job_id = jobs[status].job_id
             await self.manager.delete_job(job_id)
             self.assertNotIn(job_id, [j["job_id"] for j in self.persisted_jobs()])
@@ -256,8 +366,9 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
                 await self.manager.delete_job(jobs[status].job_id)
             with self.assertRaisesRegex(ValueError, "failed or interrupted"):
                 await self.manager.retry_job(jobs[status].job_id)
-        with self.assertRaises(ValueError):
-            await self.manager.retry_job(jobs["succeeded"].job_id)
+        for status in ("succeeded", "cancelled"):
+            with self.assertRaises(ValueError):
+                await self.manager.retry_job(jobs[status].job_id)
         for action in (self.manager.delete_job, self.manager.retry_job):
             with self.assertRaises(KeyError):
                 await action("missing")

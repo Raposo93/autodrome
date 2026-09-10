@@ -43,6 +43,10 @@ export default {
     return apiClient.delete(`/download/jobs/${encodeURIComponent(jobId)}`)
   },
 
+  cancelJob(jobId) {
+    return apiClient.post(`/download/jobs/${encodeURIComponent(jobId)}/cancel`)
+  },
+
   retryJob(jobId) {
     return apiClient.post(`/download/jobs/${encodeURIComponent(jobId)}/retry`)
   },

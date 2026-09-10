@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 from uuid import uuid4
 
 
-TERMINAL_STATUSES = {"succeeded", "failed", "interrupted"}
+TERMINAL_STATUSES = {"succeeded", "failed", "interrupted", "cancelled"}
 RETRYABLE_STATUSES = {"failed", "interrupted"}
 JOB_STATUSES = {"queued", "running"} | TERMINAL_STATUSES
 

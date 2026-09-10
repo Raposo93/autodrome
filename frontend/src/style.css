@@ -472,6 +472,11 @@ input:focus-visible {
   box-shadow: 0 0 0 4px rgba(201, 88, 88, 0.13);
 }
 
+.status-dot--cancelled {
+  background: #72878d;
+  box-shadow: 0 0 0 4px rgba(114, 135, 141, 0.13);
+}
+
 .queue-copy {
   display: grid;
   gap: 3px;
