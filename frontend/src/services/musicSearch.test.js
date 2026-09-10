@@ -22,6 +22,7 @@ function setup(combinedSearch, playlistPreflight = async () => ({ data: { track_
   const state = {
     ...component.data(), artist: 'Artist', album: 'Album',
     playlists: [{ id: 'old-playlist' }], releases: [{ id: 'old-release' }],
+    destinationCheck: { reset() {}, inspect() {}, dispose() {} },
   }
   for (const [name, method] of Object.entries(component.methods)) state[name] = method.bind(state)
   for (const [name, getter] of Object.entries(component.computed)) Object.defineProperty(state, name, { get: () => getter.call(state) })
@@ -180,6 +181,7 @@ test('manual mode requires confirmation and submits edited metadata independent 
   await state.downloadManual()
   assert.equal(downloads.length, 0)
   state.manualConfirmed = true
+  state.destinationState = 'not_found'
   await state.downloadManual()
   assert.equal(downloads[0].artist, 'Final Artist')
   assert.equal(downloads[0].album, 'Final Album')

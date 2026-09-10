@@ -85,6 +85,16 @@ test('happy path queues one fully checked download', async ({ page }) => {
 
   await preflight.reply({ track_count: 2 })
   await hydration.reply(releaseDetails('happy'))
+  const destination = await backend.next('destination')
+  expect(destination.body).toEqual({
+    artist: 'Artist happy',
+    album: 'Release happy',
+  })
+  await destination.reply({
+    state: 'not_found', exists: false, artist: 'Artist happy',
+    album: 'Release happy', relative_path: 'Artist happy/Release happy',
+    mp3_count: 0, file_count: 0,
+  })
   const readyButton = page.getByRole('button', { name: 'Download & Tag' })
   await expect(readyButton).toBeEnabled()
 
@@ -189,12 +199,86 @@ test('rapid playlist and release changes ignore stale completions', async ({ pag
   await firstHydration.reply(releaseDetails('r1'))
   const secondHydration = await backend.next('release:r2')
   await secondHydration.reply(releaseDetails('r2'))
+  const destination = await backend.next('destination')
+  await destination.reply({ state: 'not_found', exists: false })
 
   await expect(page.getByText('Playlist p2', { exact: true })).toHaveCount(2)
   await expect(page.getByText('Release r2', { exact: true })).toHaveCount(2)
   await expect(page.getByText('Both selections are ready to download.')).toBeVisible()
   await expect(page.getByText('stale playlist mismatch')).toHaveCount(0)
   expect(backend.callCount('download')).toBe(0)
+})
+
+test('existing albums are explained and blocked before enqueue', async ({ page }) => {
+  const backend = new ControlledBackend()
+  await openApp(page, backend)
+
+  await startSearch(page, { artist: 'Search words', album: 'Not final metadata' })
+  const search = await backend.next('search')
+  await search.reply({
+    playlists: [playlist('existing', 13)],
+    releases: [release('existing', 13)],
+    errors: {},
+  })
+  const hydration = await backend.next('release:existing')
+  await playlistsPanel(page).getByRole('button', { name: /Playlist existing/ }).click()
+  const playlistCheck = await backend.next('preflight')
+  await playlistCheck.reply({ track_count: 13 })
+  await releasesPanel(page).getByRole('button', { name: /Release existing/ }).click()
+  await hydration.reply(releaseDetails('existing', 13))
+
+  const destination = await backend.next('destination')
+  expect(destination.body).toEqual({
+    artist: 'Artist existing',
+    album: 'Release existing',
+  })
+  await destination.reply({
+    state: 'exists', exists: true, artist: 'Artist existing',
+    album: 'Release existing', relative_path: 'Artist existing/Release existing',
+    mp3_count: 13, file_count: 14,
+  })
+
+  const warning = page.getByRole('alert')
+  await expect(warning).toContainText('already appears to exist')
+  await expect(warning).toContainText('Artist existing/Release existing')
+  await expect(warning).toContainText('MP3 files found: 13')
+  await expect(page.getByRole('button', { name: 'Album already exists' })).toBeDisabled()
+  expect(backend.callCount('download')).toBe(0)
+})
+
+test('late destination results cannot contaminate a newer release', async ({ page }) => {
+  const backend = new ControlledBackend()
+  await openApp(page, backend)
+
+  await startSearch(page)
+  const search = await backend.next('search')
+  await search.reply({
+    playlists: [playlist('playlist')],
+    releases: [release('old'), release('current')],
+    errors: {},
+  })
+  const oldHydration = await backend.next('release:old')
+  await playlistsPanel(page).getByRole('button', { name: /Playlist playlist/ }).click()
+  const playlistCheck = await backend.next('preflight')
+  await playlistCheck.reply({ track_count: 2 })
+  await releasesPanel(page).getByRole('button', { name: /Release old/ }).click()
+  await oldHydration.reply(releaseDetails('old'))
+  const oldDestination = await backend.next('destination')
+
+  await releasesPanel(page).getByRole('button', { name: /Release current/ }).click()
+  const currentHydration = await backend.next('release:current')
+  await currentHydration.reply(releaseDetails('current'))
+  const currentDestination = await backend.next('destination')
+  await currentDestination.reply({ state: 'not_found', exists: false })
+  await oldDestination.reply({
+    state: 'exists', exists: true, relative_path: 'Artist old/Release old',
+    mp3_count: 2, file_count: 2,
+  })
+
+  await expect(page.getByText('Release current', { exact: true })).toHaveCount(2)
+  await expect(page.getByText('Both selections are ready to download.')).toBeVisible()
+  await expect(page.getByText('Artist old/Release old')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Download & Tag' })).toBeEnabled()
 })
 
 test('queue actions are single-shot, selection-safe, and restored on reentry', async ({ page }) => {
@@ -287,7 +371,11 @@ test('manual mode is explicit and does not acquire MusicBrainz metadata', async 
   await page.getByRole('button', { name: 'I understand — enter manual metadata' }).click()
   await page.getByLabel('Artist').last().fill('Edited Artist')
   await page.getByLabel('Album').last().fill('Edited Album')
-  const manualButton = page.getByRole('button', { name: 'Confirm metadata & queue manual download' })
+  const destination = await backend.next('destination')
+  expect(destination.body).toEqual({ artist: 'Edited Artist', album: 'Edited Album' })
+  await destination.reply({ state: 'not_found', exists: false })
+  const manualButton = page.locator('.manual-metadata form button')
+  await expect(manualButton).toHaveText('Confirm metadata & queue manual download')
   await manualButton.dispatchEvent('click')
   await manualButton.dispatchEvent('click')
 

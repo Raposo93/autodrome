@@ -187,11 +187,23 @@ portada, créditos individuales ni estructura multidisco de MusicBrainz. La cola
 identifica este modo como **Manual metadata**. Las garantías de validación, staging
 y publicación atómica son las mismas.
 
+Cuando los nombres finales de artista y álbum ya son autoritativos —desde el
+release cargado o desde los campos manuales confirmados— la interfaz comprueba el
+destino normalizado antes de habilitar la descarga. Si ya existe, muestra su ruta
+relativa y el número de MP3 regulares que puede leer; si el filesystem no permite
+una respuesta fiable, conserva el estado como desconocido y bloquea el botón. Los
+términos originales de búsqueda nunca se usan como destino implícito.
+
 ## Integridad y recuperación
 
 Cada álbum se construye completamente dentro del staging de la biblioteca. Se
 validan cantidad, duración, tags y tamaño de portadas antes de publicar con un
 rename atómico. Un álbum existente no se sobrescribe.
+
+La comprobación preventiva de la interfaz no reserva el nombre. El backend vuelve
+a comprobar el destino tanto antes del trabajo costoso como inmediatamente antes
+del rename final; si otro proceso crea el álbum entretanto, la publicación falla
+sin reemplazarlo.
 
 Al reiniciar, los trabajos `queued` se reanudan en orden. Un trabajo que estaba
 `running` pasa a `interrupted` y conserva el último error; no se repite a ciegas.

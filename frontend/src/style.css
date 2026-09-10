@@ -599,6 +599,28 @@ input:focus-visible {
   gap: 8px;
 }
 
+.destination-alert {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  padding: 13px 15px;
+  font-size: 0.76rem;
+  border: 1px solid;
+  border-radius: 11px;
+}
+
+.destination-alert--exists {
+  color: #7b5011;
+  background: #fff6df;
+  border-color: #ecd5a2;
+}
+
+.destination-alert--unknown {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: #f0cfca;
+}
+
 .download-action > p {
   max-width: 340px;
   margin: 0;

@@ -58,6 +58,10 @@ export default {
     return apiClient.post('/download/preflight', payload)
   },
 
+  albumDestination(payload) {
+    return apiClient.post('/download/destination', payload)
+  },
+
   download(payload) {
     return apiClient.post('/download/', payload)
   },

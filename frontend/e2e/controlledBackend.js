@@ -64,6 +64,7 @@ export class ControlledBackend {
       return `release:${decodeURIComponent(path.slice('/api/search/releases/'.length))}`
     }
     if (method === 'POST' && path === '/api/download/preflight') return 'preflight'
+    if (method === 'POST' && path === '/api/download/destination') return 'destination'
     if (method === 'POST' && path === '/api/download/') return 'download'
     const action = path.match(/^\/api\/download\/jobs\/([^/]+)\/(cancel|retry)$/)
     if (method === 'POST' && action) {

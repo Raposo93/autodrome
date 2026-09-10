@@ -161,8 +161,33 @@
         <form v-if="manualConfirmed" @submit.prevent="downloadManual">
           <label>Artist <input v-model="manualArtist" required maxlength="255" /></label>
           <label>Album <input v-model="manualAlbum" required maxlength="255" /></label>
-          <button type="submit" :disabled="!manualReady || downloading">Confirm metadata &amp; queue manual download</button>
+          <button type="submit" :disabled="!manualReady || downloading">
+            {{ destinationButtonLabel('Confirm metadata & queue manual download') }}
+          </button>
         </form>
+      </div>
+
+      <div
+        v-if="destinationState === 'exists'"
+        class="destination-alert destination-alert--exists"
+        role="alert"
+      >
+        <strong>This album already appears to exist in the library.</strong>
+        <span>Path: {{ destinationResult.relative_path }}</span>
+        <span v-if="destinationResult.mp3_count !== null">
+          MP3 files found: {{ destinationResult.mp3_count }}
+        </span>
+        <span v-else>MP3 file count is unavailable.</span>
+        <span>Download is blocked because Autodrome never overwrites existing albums.</span>
+      </div>
+      <div
+        v-if="destinationState === 'unknown'"
+        class="destination-alert destination-alert--unknown"
+        role="alert"
+      >
+        <strong>Library destination could not be checked.</strong>
+        <span>{{ destinationError || 'Filesystem access prevented a reliable result.' }}</span>
+        <span>Download remains blocked; the backend no-overwrite guard is unchanged.</span>
       </div>
 
       <div class="download-action">
@@ -173,10 +198,7 @@
           :disabled="!selectionReady || downloading"
           @click="downloadSelected"
         >
-          {{ releaseDetailsLoading
-            ? 'Loading release details...'
-            : (downloading ? 'Adding to queue...' : 'Download & Tag')
-          }}
+          {{ destinationButtonLabel('Download & Tag') }}
         </button>
         <div class="download-feedback" aria-live="polite">
           <span v-if="downloadError" class="feedback feedback--error">
@@ -193,6 +215,7 @@
 
 <script>
 import api from '../services/api.js'
+import { createAlbumDestinationCheck } from '../services/albumDestination.js'
 import { createReleaseHydration } from '../services/releaseHydration.js'
 import { trackCountError } from '../services/downloadSelection.js'
 import PlaylistsList from './PlaylistsList.vue'
@@ -208,7 +231,34 @@ export default {
   computed: {
     manualReady() {
       return this.manualConfirmed && this.playlistReady && !this.selectedRelease &&
-        Boolean(this.manualArtist.trim() && this.manualAlbum.trim())
+        Boolean(this.manualArtist.trim() && this.manualAlbum.trim()) &&
+        this.destinationState === 'not_found'
+    },
+    finalDestination() {
+      if (
+        this.selectedRelease &&
+        this.releaseDetailsReady &&
+        this.selectedRelease.artist?.trim() &&
+        this.selectedRelease.title?.trim()
+      ) {
+        return {
+          artist: this.selectedRelease.artist.trim(),
+          album: this.selectedRelease.title.trim(),
+        }
+      }
+      if (
+        this.manualConfirmed &&
+        this.selectedPlaylist &&
+        !this.selectedRelease &&
+        this.manualArtist.trim() &&
+        this.manualAlbum.trim()
+      ) {
+        return {
+          artist: this.manualArtist.trim(),
+          album: this.manualAlbum.trim(),
+        }
+      }
+      return null
     },
     isSearching() {
       return this.loadingPlaylists || this.loadingReleases
@@ -233,7 +283,8 @@ export default {
         this.selectedPlaylist && this.playlistReady &&
         this.releaseDetailsReady &&
         !this.releaseDetailsLoading &&
-        !this.trackCountError
+        !this.trackCountError &&
+        this.destinationState === 'not_found'
       )
     },
     downloadStatusText() {
@@ -254,7 +305,21 @@ export default {
       if (!this.releaseDetailsReady) {
         return 'Release details could not be loaded. Choose another release or retry.'
       }
+      if (this.destinationState === 'checking') {
+        return 'Checking whether the final library destination already exists…'
+      }
+      if (this.destinationState === 'exists') {
+        return 'This album already exists and cannot be queued.'
+      }
+      if (this.destinationState === 'unknown') {
+        return 'The library destination check failed; download remains blocked.'
+      }
       return this.trackCountError || 'Both selections are ready to download.'
+    }
+  },
+  watch: {
+    finalDestination(destination) {
+      this.destinationCheck.inspect(destination)
     }
   },
   data() {
@@ -263,6 +328,10 @@ export default {
       manualConfirmed: false,
       manualArtist: '',
       manualAlbum: '',
+      destinationCheck: null,
+      destinationState: 'idle',
+      destinationResult: null,
+      destinationError: null,
       hydrator: null,
       artist: '',
       album: '',
@@ -291,6 +360,17 @@ export default {
   },
   beforeUnmount() {
     this.hydrator?.reset()
+    this.destinationCheck?.dispose()
+  },
+  created() {
+    this.destinationCheck = createAlbumDestinationCheck(
+      async destination => (await api.albumDestination(destination)).data,
+      update => {
+        this.destinationState = update.state
+        this.destinationResult = update.result
+        this.destinationError = update.error
+      }
+    )
   },
   methods: {
     hydrateReleases() {
@@ -312,6 +392,7 @@ export default {
       this.hydrator.start(this.releases)
     },
     async searchAll() {
+      this.destinationCheck.reset()
       this.manualConfirmed = false
       this.manualPrompt = false
       this.hydrator?.reset()
@@ -393,6 +474,7 @@ export default {
       return 'Track count unknown'
     },
     selectRelease(rel) {
+      this.destinationCheck.reset()
       this.manualConfirmed = false
       this.manualPrompt = false
       this.selectedRelease = rel
@@ -418,6 +500,14 @@ export default {
       } finally {
         this.downloading = false
       }
+    },
+    destinationButtonLabel(readyLabel) {
+      if (this.releaseDetailsLoading) return 'Loading release details...'
+      if (this.downloading) return 'Adding to queue...'
+      if (this.destinationState === 'checking') return 'Checking library...'
+      if (this.destinationState === 'exists') return 'Album already exists'
+      if (this.destinationState === 'unknown') return 'Library check unavailable'
+      return readyLabel
     },
     async downloadSelected() {
       if (this.downloading) return
