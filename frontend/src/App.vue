@@ -1,6 +1,25 @@
 <template>
   <main class="app-shell">
-    <MusicSearch v-if="authenticated" />
+    <template v-if="authenticated">
+      <nav class="app-navigation" aria-label="Main navigation">
+        <button
+          type="button"
+          :aria-current="view === 'search' ? 'page' : undefined"
+          @click="selectView('search')"
+        >
+          Music
+        </button>
+        <button
+          type="button"
+          :aria-current="view === 'status' ? 'page' : undefined"
+          @click="selectView('status')"
+        >
+          System status
+        </button>
+      </nav>
+      <MusicSearch v-if="view === 'search'" />
+      <SystemStatus v-else />
+    </template>
     <form v-else class="panel" @submit.prevent="connect">
       <h1>Connect to Autodrome</h1>
       <p>Enter the API token configured by the server owner.</p>
@@ -13,12 +32,19 @@
 
 <script>
 import MusicSearch from './components/MusicSearch.vue'
+import SystemStatus from './components/SystemStatus.vue'
 import api, { setApiToken } from './services/api.js'
 
 export default {
-  components: { MusicSearch },
-  data: () => ({ authenticated: false, token: '', error: null }),
+  components: { MusicSearch, SystemStatus },
+  data: () => ({
+    authenticated: false,
+    token: '',
+    error: null,
+    view: window.location.pathname === '/status' ? 'status' : 'search',
+  }),
   async mounted() {
+    window.addEventListener('popstate', this.syncViewFromPath)
     try {
       await api.authenticate()
       this.authenticated = true
@@ -26,7 +52,18 @@ export default {
       this.error = 'Authentication required or server unavailable.'
     }
   },
+  beforeUnmount() {
+    window.removeEventListener('popstate', this.syncViewFromPath)
+  },
   methods: {
+    syncViewFromPath() {
+      this.view = window.location.pathname === '/status' ? 'status' : 'search'
+    },
+    selectView(view) {
+      if (view === this.view) return
+      this.view = view
+      window.history.pushState({}, '', view === 'status' ? '/status' : '/')
+    },
     async connect() {
       setApiToken(this.token)
       try {

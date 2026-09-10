@@ -22,6 +22,37 @@ async function startSearch(page, { artist = 'Test Artist', album = 'Test Album' 
   await page.getByRole('button', { name: 'Search music' }).click()
 }
 
+test('system status route renders partial diagnostics and every state', async ({ page }) => {
+  const backend = new ControlledBackend()
+  await backend.install(page)
+  await page.goto('/status')
+  const request = await backend.next('status')
+  await request.reply({
+    version: 'autodrome/test',
+    commit: 'abcdef1',
+    storage_error: 'Queue persistence is unavailable; retrying automatically.',
+    components: {
+      library: { status: 'ok', message: 'Writable.', free_bytes: 183 * 1024 ** 3 },
+      staging: { status: 'warning', message: 'Directory has not been created yet.' },
+      queue_storage: { status: 'error', message: 'Filesystem is read-only.' },
+      ffmpeg: { status: 'ok', message: 'ffmpeg version test' },
+      youtube: { status: 'error', message: 'Configured, but unreachable.' },
+      musicbrainz: { status: 'warning', message: 'Temporarily unreachable.' },
+      redis: { status: 'disabled', message: 'Optional cache is disabled.' },
+      worker: { status: 'ok', message: 'Worker is idle.', state: 'idle' },
+    },
+  })
+
+  await expect(page.getByRole('heading', { name: 'System status' })).toBeVisible()
+  const diagnostics = page.getByRole('region', { name: 'System diagnostics' })
+  await expect(diagnostics.getByText('OK', { exact: true })).toHaveCount(3)
+  await expect(diagnostics.getByText('Warning', { exact: true })).toHaveCount(2)
+  await expect(diagnostics.getByText('Error', { exact: true })).toHaveCount(2)
+  await expect(diagnostics.getByText('Disabled', { exact: true })).toHaveCount(1)
+  await expect(diagnostics.getByRole('article', { name: 'Library' })).toContainText('183 GiB')
+  await expect(page.getByRole('alert')).toContainText('retrying automatically')
+})
+
 test('happy path queues one fully checked download', async ({ page }) => {
   const backend = new ControlledBackend()
   await openApp(page, backend)

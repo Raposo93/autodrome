@@ -17,6 +17,7 @@ del producto. Se recomienda systemd para ejecución persistente y
 - Validación, optimización y MIME real de las portadas embebidas.
 - Preparación en staging y publicación atómica sin sobrescribir álbumes.
 - Redis opcional como caché; nunca se necesita para completar una descarga.
+- Diagnóstico seguro de almacenamiento, worker y dependencias desde `/status`.
 
 ## Requisitos
 
@@ -100,6 +101,22 @@ sigue disponible cuando se gestiona el backend por separado.
 
 No existe un comando CLI soportado para buscar o descargar álbumes.
 
+## Diagnóstico del sistema
+
+La navegación principal y la ruta directa `/status` muestran una comprobación
+de solo lectura de biblioteca, staging, escritura durable de cola, `ffmpeg`,
+YouTube, MusicBrainz, Redis y el worker. Cada resultado es independiente: una
+caída de proveedor no convierte la página completa en error y Redis desactivado
+es un estado normal. La comprobación de la cola crea y elimina un archivo
+temporal junto al estado, pero nunca modifica ni reemplaza el JSON durable.
+
+Las pruebas externas tienen timeout y se ejecutan solo al abrir o refrescar la
+vista. La comprobación de YouTube usa el endpoint público de discovery, no una
+búsqueda que consuma cuota; MusicBrainz conserva el límite global de inicio de
+una petición por segundo. La respuesta no incluye claves, credenciales, email de
+contacto ni rutas absolutas. Cuando `API_TOKEN` es obligatorio, `/api/status/`
+queda protegido por el mismo token que el resto de la API.
+
 ## Configuración
 
 La configuración principal vive en `.env`:
@@ -109,6 +126,8 @@ La configuración principal vive en `.env`:
   obligatorio.
 - `VERSION`: identificador del User-Agent; por defecto se propone
   `autodrome/dev` en el ejemplo.
+- `AUTODROME_COMMIT`: commit hexadecimal opcional que identifica el build en la
+  vista de diagnóstico. También se reconoce `GIT_COMMIT`.
 - `LIBRARY_PATH`: raíz de la biblioteca; usa preferiblemente una ruta absoluta.
 - `STAGING_PATH`: staging; por defecto,
   `LIBRARY_PATH/.autodrome-staging`.

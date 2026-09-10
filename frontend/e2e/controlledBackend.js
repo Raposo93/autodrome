@@ -59,6 +59,7 @@ export class ControlledBackend {
     const path = url.pathname
     const method = request.method()
     if (method === 'GET' && path === '/api/search/') return 'search'
+    if (method === 'GET' && path === '/api/status/') return 'status'
     if (method === 'GET' && path.startsWith('/api/search/releases/')) {
       return `release:${decodeURIComponent(path.slice('/api/search/releases/'.length))}`
     }
