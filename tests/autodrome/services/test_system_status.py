@@ -1,4 +1,3 @@
-import asyncio
 import errno
 import os
 import tempfile
@@ -41,8 +40,13 @@ class TestSystemStatusService(unittest.IsolatedAsyncioTestCase):
             redis_enabled=False,
         )
         self.http_client = MagicMock()
-        self.http_client.probe = AsyncMock(return_value=None)
-        self.http_client.get = AsyncMock(return_value={"artists": []})
+
+        async def provider_response(url, **kwargs):
+            if url == SystemStatusService.YOUTUBE_DISCOVERY_URL:
+                return {"id": "youtube:v3"}
+            return {"artists": []}
+
+        self.http_client.get = AsyncMock(side_effect=provider_response)
         self.redis_cache = FakeRedisCache()
         self.queue_manager = MagicMock()
         self.queue_manager.state_path = str(self.state_path)
@@ -87,12 +91,17 @@ class TestSystemStatusService(unittest.IsolatedAsyncioTestCase):
             ["library", "queue.json", "staging"],
         )
         self.assertEqual(self.redis_cache.calls, 0)
-        self.http_client.probe.assert_awaited_once()
-        self.http_client.get.assert_awaited_once()
+        self.assertEqual(self.http_client.get.await_count, 2)
+        self.http_client.get.assert_any_await(
+            SystemStatusService.YOUTUBE_DISCOVERY_URL,
+            params={"fields": "id"},
+            timeout=SystemStatusService.PROBE_TIMEOUT_SECONDS,
+            provider="YouTube",
+            context="checking service availability",
+        )
 
     async def test_external_failures_are_reported_independently(self):
         self.ffmpeg_version.side_effect = FileNotFoundError()
-        self.http_client.probe.side_effect = asyncio.TimeoutError()
         self.http_client.get.side_effect = RuntimeError("contact@example.test secret")
         self.settings.redis_enabled = True
         self.redis_cache.error = ConnectionError("redis://secret")
@@ -116,7 +125,22 @@ class TestSystemStatusService(unittest.IsolatedAsyncioTestCase):
         youtube = result["components"]["youtube"]
         self.assertEqual(youtube["status"], "error")
         self.assertIn("not configured", youtube["message"])
-        self.http_client.probe.assert_not_awaited()
+        requested_urls = [
+            call.args[0] for call in self.http_client.get.await_args_list
+        ]
+        self.assertNotIn(SystemStatusService.YOUTUBE_DISCOVERY_URL, requested_urls)
+
+    async def test_unexpected_youtube_discovery_response_is_not_reported_as_ok(self):
+        async def provider_response(url, **kwargs):
+            if url == SystemStatusService.YOUTUBE_DISCOVERY_URL:
+                return {"id": "another-api:v1"}
+            return {"artists": []}
+
+        self.http_client.get.side_effect = provider_response
+
+        result = await self.service().snapshot()
+
+        self.assertEqual(result["components"]["youtube"]["status"], "error")
 
     async def test_redis_enabled_and_reachable_is_ok(self):
         self.settings.redis_enabled = True

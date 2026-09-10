@@ -166,15 +166,18 @@ class SystemStatusService:
         if not self.settings.google_api_key:
             return self._component("error", "YouTube API key is not configured.")
         try:
-            await asyncio.wait_for(
-                self.http_client.probe(
+            response = await asyncio.wait_for(
+                self.http_client.get(
                     self.YOUTUBE_DISCOVERY_URL,
+                    params={"fields": "id"},
                     timeout=self.PROBE_TIMEOUT_SECONDS,
                     provider="YouTube",
                     context="checking service availability",
                 ),
                 timeout=self.PROBE_TIMEOUT_SECONDS,
             )
+            if not isinstance(response, dict) or response.get("id") != "youtube:v3":
+                raise ValueError("invalid YouTube discovery response")
         except Exception:
             return self._component(
                 "error",
