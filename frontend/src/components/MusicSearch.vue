@@ -420,6 +420,7 @@ export default {
       }
     },
     async downloadSelected() {
+      if (this.downloading) return
       if (!this.selectionReady) {
         this.downloadError = this.trackCountError || this.downloadStatusText
         return

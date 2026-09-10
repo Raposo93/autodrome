@@ -45,6 +45,10 @@ echo "Running frontend tests..."
 npm test --prefix frontend
 
 echo
+echo "Running frontend E2E smoke tests..."
+npm run test:e2e --prefix frontend
+
+echo
 echo "Building frontend..."
 npm run build --prefix frontend
 

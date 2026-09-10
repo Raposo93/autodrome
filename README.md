@@ -236,14 +236,22 @@ La versión optimizada solo vive en memoria y no modifica el original.
 
 ## Desarrollo
 
+Antes de ejecutar los E2E por primera vez, instala el Chromium administrado por
+Playwright (CI instala también sus dependencias de sistema):
+
+```bash
+npm exec --prefix frontend -- playwright install chromium
+```
+
 Ejecuta la validación completa antes de cada commit:
 
 ```bash
 ./check.sh
 ```
 
-El comando ejecuta comprobaciones Git, la suite backend, las pruebas del frontend
-y el build de Vite. Un resultado correcto termina con `All checks passed.`
+El comando ejecuta comprobaciones Git, la suite backend, las pruebas unitarias y
+E2E del frontend y el build de Vite. Un resultado correcto termina con
+`All checks passed.`
 
 Las dependencias Python están fijadas en `requirements.lock`. Si cambian
 `requirements.txt` o `requirements-dev.txt`, regenera el lock con:
