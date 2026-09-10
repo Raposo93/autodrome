@@ -16,7 +16,7 @@ class SearchController:
         self.yt_api = YTApi(http_client=self.http_client)
 
 
-    async def search(self, artist: str, album: str):
+    async def search(self, artist: str, album: str, youtube_limit: int = 10):
         start = time.monotonic()
         query = f"{artist} {album}".strip()
 
@@ -25,7 +25,9 @@ class SearchController:
         if query:
             playlists_results, releases_results = await asyncio.gather(
                 self._search_provider(
-                    "youtube", self.yt_api.search_playlist(query), errors
+                    "youtube",
+                    self.yt_api.search_playlist(query, limit=youtube_limit),
+                    errors,
                 ),
                 self._search_provider(
                     "musicbrainz",

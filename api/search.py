@@ -25,7 +25,11 @@ async def combined_search(
 ):
     try:
         controller = request.app.state.search_controller
-        results = await controller.search(search.artist or "", search.album or "")
+        results = await controller.search(
+            search.artist or "",
+            search.album or "",
+            youtube_limit=search.youtube_limit,
+        )
         if len(results.get("errors", {})) == 2:
             return JSONResponse(
                 status_code=502,

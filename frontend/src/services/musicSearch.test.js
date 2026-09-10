@@ -61,6 +61,41 @@ test('transport failure clears stale results and ends loading', async () => {
   assert.equal(state.loadingReleases, false)
 })
 
+test('each search sends its own YouTube result limit', async () => {
+  const calls = []
+  const { state, search } = setup(async (...args) => {
+    calls.push(args)
+    return { data: { playlists: [], releases: [], errors: {} } }
+  })
+
+  await search()
+  state.youtubeLimit = 50
+  await search()
+  state.youtubeLimit = 7
+  await search()
+
+  assert.deepEqual(calls, [
+    ['Artist', 'Album', 10],
+    ['Artist', 'Album', 50],
+    ['Artist', 'Album', 7],
+  ])
+})
+
+test('invalid YouTube result limits are rejected before the request', async () => {
+  let requests = 0
+  const { state, search } = setup(async () => {
+    requests += 1
+    return { data: {} }
+  })
+
+  for (const limit of [0, 51, 2.5, '10', '']) {
+    state.youtubeLimit = limit
+    await search()
+    assert.match(state.errorPlaylists, /whole number from 1 to 50/)
+  }
+  assert.equal(requests, 0)
+})
+
 
 test('only selected playlist is checked and stale selection results are ignored', async () => {
   const calls = []

@@ -47,6 +47,21 @@ class TestYTApi(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             playlist.url, "https://www.youtube.com/playlist?list=PL123"
         )
+        search_request = self.http_client.get.await_args_list[0]
+        self.assertEqual(search_request.kwargs["params"]["maxResults"], 10)
+
+    async def test_search_playlist_uses_requested_limit(self):
+        for limit in (1, 23, 50):
+            with self.subTest(limit=limit):
+                self.http_client.get.reset_mock()
+                self.http_client.get.return_value = {"items": []}
+
+                await self.api.search_playlist("test query", limit=limit)
+
+                search_request = self.http_client.get.await_args
+                self.assertEqual(
+                    search_request.kwargs["params"]["maxResults"], limit
+                )
 
     async def test_text_is_decoded_once_at_provider_boundary(self):
         cases = [

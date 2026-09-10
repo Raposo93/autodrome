@@ -21,8 +21,10 @@ export default {
   authenticate() {
     return apiClient.get('/auth')
   },
-  combinedSearch(artist, album) {
-    return apiClient.get('/search/', { params: { artist, album } })
+  combinedSearch(artist, album, youtubeLimit = 10) {
+    return apiClient.get('/search/', {
+      params: { artist, album, youtube_limit: youtubeLimit }
+    })
   },
 
   releaseDetails(releaseId) {

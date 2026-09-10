@@ -88,6 +88,7 @@ class SearchRequest(BaseModel):
 
     artist: Optional[NonEmptyText] = None
     album: Optional[NonEmptyText] = None
+    youtube_limit: int = Field(default=10, ge=1, le=50)
 
     @model_validator(mode="after")
     def require_search_term(self) -> "SearchRequest":

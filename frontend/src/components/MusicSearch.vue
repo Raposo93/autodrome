@@ -29,10 +29,31 @@
             autocomplete="off"
           />
         </label>
+        <label class="search-field">
+          <span>YouTube results</span>
+          <input
+            v-model.number="youtubeLimit"
+            type="number"
+            min="1"
+            max="50"
+            step="1"
+            inputmode="numeric"
+            aria-describedby="youtube-limit-error"
+            :aria-invalid="Boolean(youtubeLimitError)"
+          />
+          <small
+            v-if="youtubeLimitError"
+            id="youtube-limit-error"
+            class="search-field-error"
+            role="alert"
+          >
+            {{ youtubeLimitError }}
+          </small>
+        </label>
         <button
           class="search-button"
           type="submit"
-          :disabled="(!artist && !album) || isSearching"
+          :disabled="(!artist && !album) || isSearching || Boolean(youtubeLimitError)"
         >
           {{ isSearching ? 'Searching...' : 'Search music' }}
         </button>
@@ -158,6 +179,12 @@ export default {
     isSearching() {
       return this.loadingPlaylists || this.loadingReleases
     },
+    youtubeLimitError() {
+      return Number.isInteger(this.youtubeLimit) &&
+        this.youtubeLimit >= 1 && this.youtubeLimit <= 50
+        ? null
+        : 'Enter a whole number from 1 to 50.'
+    },
     trackCountError() {
       return trackCountError(this.selectedPlaylist, this.selectedRelease)
     },
@@ -199,6 +226,7 @@ export default {
       hydrator: null,
       artist: '',
       album: '',
+      youtubeLimit: 10,
       playlists: [],
       releases: [],
       loadingPlaylists: false,
@@ -258,9 +286,14 @@ export default {
       this.releaseDetailsReady = false
 
       if (!this.artist && !this.album) return
+      if (this.youtubeLimitError) {
+        this.errorPlaylists = this.youtubeLimitError
+        return
+      }
 
       const artist = this.artist.trim()
       const album = this.album.trim()
+      const youtubeLimit = this.youtubeLimit
 
       this.playlists = []
       this.releases = []
@@ -268,7 +301,7 @@ export default {
       this.loadingReleases = true
 
       try {
-        const response = await api.combinedSearch(artist, album)
+        const response = await api.combinedSearch(artist, album, youtubeLimit)
         this.playlists = response.data.playlists || []
         this.releases = response.data.releases || []
         this.errorPlaylists = response.data.errors?.youtube || null

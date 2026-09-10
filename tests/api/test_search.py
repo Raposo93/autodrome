@@ -30,7 +30,7 @@ class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-    async def test_valid_query_is_normalized(self):
+    async def test_valid_query_is_normalized_and_uses_default_youtube_limit(self):
         async with AsyncClient(
             transport=ASGITransport(app=self.app), base_url="http://test"
         ) as client:
@@ -40,7 +40,42 @@ class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"playlists": [], "releases": []})
-        self.app.state.search_controller.search.assert_awaited_once_with("Artist", "")
+        self.app.state.search_controller.search.assert_awaited_once_with(
+            "Artist", "", youtube_limit=10
+        )
+
+    async def test_custom_youtube_limit_is_forwarded(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            for youtube_limit in (1, 23, 50):
+                with self.subTest(youtube_limit=youtube_limit):
+                    self.app.state.search_controller.search.reset_mock()
+                    response = await client.get(
+                        "/api/search/",
+                        params={"artist": "Artist", "youtube_limit": youtube_limit},
+                    )
+
+                    self.assertEqual(response.status_code, 200)
+                    self.app.state.search_controller.search.assert_awaited_once_with(
+                        "Artist", "", youtube_limit=youtube_limit
+                    )
+
+    async def test_invalid_youtube_limit_is_rejected_without_searching(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            for youtube_limit in (0, 51, 1.5, "many"):
+                with self.subTest(youtube_limit=youtube_limit):
+                    self.app.state.search_controller.search.reset_mock()
+                    response = await client.get(
+                        "/api/search/",
+                        params={"artist": "Artist", "youtube_limit": youtube_limit},
+                    )
+
+                    self.assertEqual(response.status_code, 422)
+                    self.assertIn("youtube_limit", response.text)
+                    self.app.state.search_controller.search.assert_not_awaited()
 
     async def test_youtube_text_reaches_ui_normalized_once(self):
         http_client = MagicMock()

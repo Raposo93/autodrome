@@ -20,9 +20,9 @@ class YTApi:
         self.api_key = config.Config().google_api_key
 
 
-    async def search_playlist(self, query: str) -> List[Playlist]:
+    async def search_playlist(self, query: str, limit: int = 10) -> List[Playlist]:
         logger.debug(f"Searching playlists for query: {query}")
-        data = await self._fetch_search_results(query)
+        data = await self._fetch_search_results(query, limit)
         playlists = self._parse_playlists(data)
         
         counts = await self._get_track_counts([p.id for p in playlists])
@@ -31,13 +31,13 @@ class YTApi:
         
         return playlists
     
-    async def _fetch_search_results(self, query: str) -> dict:
+    async def _fetch_search_results(self, query: str, limit: int) -> dict:
         url = f"{self.BASE_URL}/search"
         params = {
             "part": "snippet",
             "q": query,
             "type": "playlist",
-            "maxResults": 10,
+            "maxResults": limit,
             "key": self.api_key,
         }
         data = await self.http_client.get(
