@@ -36,3 +36,8 @@ frontend/test-results/
 .vscode
 covers
 .coverage
+
+# Runtime/deploy local
+.cache/
+.npm/
+autodrome.pid
