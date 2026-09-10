@@ -153,6 +153,8 @@ Portadas:
   defecto.
 - `MAX_COVER_SOURCE_PIXELS`: límite duro de decodificación; 40 millones por
   defecto.
+- `MAX_COVER_UPLOAD_BYTES`: tamaño máximo de una portada alternativa recibida;
+  10 MiB por defecto.
 
 Red y frontend:
 
@@ -193,6 +195,15 @@ destino normalizado antes de habilitar la descarga. Si ya existe, muestra su rut
 relativa y el número de MP3 regulares que puede leer; si el filesystem no permite
 una respuesta fiable, conserva el estado como desconocido y bloquea el botón. Los
 términos originales de búsqueda nunca se usan como destino implícito.
+
+Si Cover Art Archive tiene una portada, se usa como fuente autoritativa sin
+mostrar alternativas. Si no la tiene, antes de encolar hay que elegir entre la
+miniatura exacta de la playlist, subir un JPEG/PNG/WebP o continuar sin portada.
+La miniatura de YouTube se identifica claramente como no autoritativa y se
+normaliza a 1:1 con relleno centrado, sin recortar ni deformar. Las imágenes se
+validan y optimizan antes de descargar audio. La fuente elegida y la referencia
+a los bytes ya preparados forman parte del trabajo, por lo que un reintento usa
+la misma decisión e imagen.
 
 ## Integridad y recuperación
 

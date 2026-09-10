@@ -168,6 +168,82 @@
       </div>
 
       <div
+        v-if="selectedPlaylist && selectedRelease && releaseDetailsReady"
+        class="cover-choice"
+        aria-labelledby="cover-choice-title"
+      >
+        <div v-if="hasAuthoritativeCover" class="cover-authoritative">
+          <img :src="selectedRelease.cover_url" alt="Selected MusicBrainz release cover" />
+          <div>
+            <strong id="cover-choice-title">Cover Art Archive artwork</strong>
+            <p>The authoritative release artwork will be used automatically.</p>
+          </div>
+        </div>
+        <template v-else>
+          <div class="cover-choice-heading">
+            <div>
+              <strong id="cover-choice-title">Choose cover artwork</strong>
+              <p>Cover Art Archive has no artwork for this release. Choose explicitly before queuing.</p>
+            </div>
+            <span v-if="coverPreparing">Preparing image…</span>
+          </div>
+          <div class="cover-options">
+            <button
+              type="button"
+              class="cover-option"
+              :class="{ 'cover-option--selected': coverSelection?.source === 'youtube_thumbnail' }"
+              :disabled="coverPreparing || !selectedPlaylist.thumbnail"
+              @click="prepareYoutubeCover"
+            >
+              <img
+                v-if="selectedPlaylist.thumbnail"
+                :src="selectedPlaylist.thumbnail"
+                alt="Selected YouTube playlist thumbnail preview"
+              />
+              <span>
+                <strong>Use playlist thumbnail</strong>
+                <small>Alternative artwork from the selected YouTube playlist; not authoritative.</small>
+              </span>
+            </button>
+            <label
+              class="cover-option cover-option--upload"
+              :class="{ 'cover-option--selected': coverSelection?.source === 'manual_upload' }"
+            >
+              <img v-if="manualCoverPreview" :src="manualCoverPreview" alt="Manual cover preview" />
+              <span>
+                <strong>Upload an image</strong>
+                <small>JPEG, PNG or WebP. The file is validated before audio is downloaded.</small>
+              </span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                :disabled="coverPreparing"
+                @change="prepareManualCover"
+              />
+            </label>
+            <button
+              type="button"
+              class="cover-option cover-option--none"
+              :class="{ 'cover-option--selected': coverSelection?.source === 'none' }"
+              :disabled="coverPreparing"
+              @click="chooseNoCover"
+            >
+              <span>
+                <strong>Continue without cover</strong>
+                <small>No artwork will be embedded in the album files.</small>
+              </span>
+            </button>
+          </div>
+          <p v-if="!selectedPlaylist.thumbnail" class="cover-choice-note">
+            This playlist has no thumbnail, so choose an upload or continue without cover.
+          </p>
+          <p v-if="coverError" class="feedback feedback--error" role="alert">
+            {{ coverError }} You can choose another cover option.
+          </p>
+        </template>
+      </div>
+
+      <div
         v-if="destinationState === 'exists'"
         class="destination-alert destination-alert--exists"
         role="alert"
@@ -278,12 +354,20 @@ export default {
     trackCountError() {
       return trackCountError(this.selectedPlaylist, this.selectedRelease)
     },
+    hasAuthoritativeCover() {
+      return Boolean(this.selectedRelease?.cover_url)
+    },
+    coverReady() {
+      return this.hasAuthoritativeCover || Boolean(this.coverSelection)
+    },
     selectionReady() {
       return Boolean(
         this.selectedPlaylist && this.playlistReady &&
         this.releaseDetailsReady &&
         !this.releaseDetailsLoading &&
         !this.trackCountError &&
+        this.coverReady &&
+        !this.coverPreparing &&
         this.destinationState === 'not_found'
       )
     },
@@ -304,6 +388,12 @@ export default {
       }
       if (!this.releaseDetailsReady) {
         return 'Release details could not be loaded. Choose another release or retry.'
+      }
+      if (this.coverPreparing) {
+        return 'Preparing and validating the selected cover image.'
+      }
+      if (!this.coverReady) {
+        return 'Cover Art Archive has no artwork. Choose a cover option to continue.'
       }
       if (this.destinationState === 'checking') {
         return 'Checking whether the final library destination already exists…'
@@ -351,6 +441,11 @@ export default {
       selectedRelease: null,
       releaseDetailsLoading: false,
       releaseDetailsReady: false,
+      coverSelection: null,
+      coverPreparing: false,
+      coverError: null,
+      coverGeneration: 0,
+      manualCoverPreview: null,
       downloading: false,
       downloadError: null,
       downloadSuccess: false,
@@ -361,6 +456,7 @@ export default {
   beforeUnmount() {
     this.hydrator?.reset()
     this.destinationCheck?.dispose()
+    this.revokeManualCoverPreview()
   },
   created() {
     this.destinationCheck = createAlbumDestinationCheck(
@@ -407,6 +503,7 @@ export default {
       this.selectedRelease = null
       this.releaseDetailsLoading = false
       this.releaseDetailsReady = false
+      this.resetCoverChoice()
 
       if (!this.artist && !this.album) return
       const youtubeSearchError = this.youtubeLimitError || this.youtubeMaxTracksError
@@ -449,6 +546,7 @@ export default {
     async selectPlaylist(pl) {
       this.manualConfirmed = false
       this.manualPrompt = false
+      this.resetCoverChoice()
       const generation = ++this.playlistGeneration
       this.selectedPlaylist = pl
       this.playlistReady = false
@@ -477,6 +575,7 @@ export default {
       this.destinationCheck.reset()
       this.manualConfirmed = false
       this.manualPrompt = false
+      this.resetCoverChoice()
       this.selectedRelease = rel
       this.releaseDetailsReady = Array.isArray(rel.tracks)
       this.releaseDetailsLoading = !this.releaseDetailsReady
@@ -492,6 +591,7 @@ export default {
           playlist_url: this.selectedPlaylist.url,
           track_count: this.selectedPlaylist.track_count,
           release_id: null, metadata_mode: 'manual', manual_confirmed: true,
+          cover_source: 'none',
           artist: this.manualArtist.trim(), album: this.manualAlbum.trim()
         })
         this.downloadSuccess = true
@@ -509,6 +609,87 @@ export default {
       if (this.destinationState === 'unknown') return 'Library check unavailable'
       return readyLabel
     },
+    resetCoverChoice() {
+      this.coverGeneration += 1
+      this.coverSelection = null
+      this.coverPreparing = false
+      this.coverError = null
+      this.revokeManualCoverPreview()
+    },
+    revokeManualCoverPreview() {
+      if (this.manualCoverPreview) {
+        URL.revokeObjectURL(this.manualCoverPreview)
+        this.manualCoverPreview = null
+      }
+    },
+    async prepareYoutubeCover() {
+      const thumbnailUrl = this.selectedPlaylist?.thumbnail
+      if (!thumbnailUrl || this.coverPreparing) return
+      const generation = ++this.coverGeneration
+      this.revokeManualCoverPreview()
+      this.coverSelection = null
+      this.coverPreparing = true
+      this.coverError = null
+      try {
+        const response = await api.prepareYoutubeCover(thumbnailUrl)
+        if (generation !== this.coverGeneration) return
+        this.coverSelection = {
+          source: 'youtube_thumbnail',
+          cover_id: response.data.cover_id,
+          cover_url: thumbnailUrl,
+        }
+      } catch (error) {
+        if (generation !== this.coverGeneration) return
+        this.coverError = error.response?.data?.detail || 'Could not prepare the YouTube thumbnail.'
+      } finally {
+        if (generation === this.coverGeneration) this.coverPreparing = false
+      }
+    },
+    async prepareManualCover(event) {
+      const file = event.target.files?.[0]
+      event.target.value = ''
+      if (!file || this.coverPreparing) return
+      const generation = ++this.coverGeneration
+      this.revokeManualCoverPreview()
+      this.manualCoverPreview = URL.createObjectURL(file)
+      this.coverSelection = null
+      this.coverPreparing = true
+      this.coverError = null
+      try {
+        const response = await api.prepareManualCover(file)
+        if (generation !== this.coverGeneration) return
+        this.coverSelection = {
+          source: 'manual_upload',
+          cover_id: response.data.cover_id,
+        }
+      } catch (error) {
+        if (generation !== this.coverGeneration) return
+        this.coverError = error.response?.data?.detail || 'Could not prepare the uploaded cover.'
+      } finally {
+        if (generation === this.coverGeneration) this.coverPreparing = false
+      }
+    },
+    chooseNoCover() {
+      this.coverGeneration += 1
+      this.revokeManualCoverPreview()
+      this.coverPreparing = false
+      this.coverError = null
+      this.coverSelection = { source: 'none' }
+    },
+    selectedCoverPayload() {
+      if (this.hasAuthoritativeCover) {
+        return { cover_source: 'cover_art_archive' }
+      }
+      return {
+        cover_source: this.coverSelection.source,
+        ...(this.coverSelection.cover_id
+          ? { cover_id: this.coverSelection.cover_id }
+          : {}),
+        ...(this.coverSelection.cover_url
+          ? { cover_url: this.coverSelection.cover_url }
+          : {}),
+      }
+    },
     async downloadSelected() {
       if (this.downloading) return
       if (!this.selectionReady) {
@@ -525,7 +706,8 @@ export default {
           artist: this.selectedRelease.artist,
           album: this.selectedRelease.title,
           release_id: this.selectedRelease.id,
-          track_count: this.selectedPlaylist.track_count ?? null
+          track_count: this.selectedPlaylist.track_count ?? null,
+          ...this.selectedCoverPayload(),
         })
         this.downloadSuccess = true
       } catch (e) {

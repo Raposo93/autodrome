@@ -62,6 +62,18 @@ export default {
     return apiClient.post('/download/destination', payload)
   },
 
+  prepareYoutubeCover(thumbnailUrl) {
+    return apiClient.post('/download/covers/youtube', {
+      thumbnail_url: thumbnailUrl,
+    })
+  },
+
+  prepareManualCover(file) {
+    const form = new FormData()
+    form.append('cover', file)
+    return apiClient.post('/download/covers/manual', form)
+  },
+
   download(payload) {
     return apiClient.post('/download/', payload)
   },

@@ -65,6 +65,8 @@ export class ControlledBackend {
     }
     if (method === 'POST' && path === '/api/download/preflight') return 'preflight'
     if (method === 'POST' && path === '/api/download/destination') return 'destination'
+    if (method === 'POST' && path === '/api/download/covers/youtube') return 'cover-youtube'
+    if (method === 'POST' && path === '/api/download/covers/manual') return 'cover-manual'
     if (method === 'POST' && path === '/api/download/') return 'download'
     const action = path.match(/^\/api\/download\/jobs\/([^/]+)\/(cancel|retry)$/)
     if (method === 'POST' && action) {
@@ -180,18 +182,21 @@ export const playlist = (id, trackCount = 2) => ({
   url: `https://youtube.test/playlist?list=${id}`,
   channel: `Channel ${id}`,
   track_count: trackCount,
+  thumbnail: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
 })
 
-export const release = (id, trackCount = 2) => ({
+export const release = (id, trackCount = 2, withCover = true) => ({
   id,
   title: `Release ${id}`,
   artist: `Artist ${id}`,
   date: '2026',
   track_count: trackCount,
+  cover_url: withCover ? `https://coverartarchive.org/release/${id}/front` : null,
 })
 
-export const releaseDetails = (id, trackCount = 2) => ({
+export const releaseDetails = (id, trackCount = 2, withCover = true) => ({
   id,
+  cover_url: withCover ? `https://coverartarchive.org/release/${id}/front` : null,
   tracks: Array.from({ length: trackCount }, (_, index) => ({
     title: `Track ${id}-${index + 1}`,
     artist: `Artist ${id}`,

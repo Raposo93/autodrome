@@ -108,6 +108,7 @@ test('happy path queues one fully checked download', async ({ page }) => {
     album: 'Release happy',
     release_id: 'happy',
     track_count: 2,
+    cover_source: 'cover_art_archive',
   })
   expect(backend.callCount('download')).toBe(1)
   await expect(page.locator('.feedback--error')).toHaveCount(0)
@@ -386,6 +387,7 @@ test('manual mode is explicit and does not acquire MusicBrainz metadata', async 
     release_id: null,
     metadata_mode: 'manual',
     manual_confirmed: true,
+    cover_source: 'none',
     artist: 'Edited Artist',
     album: 'Edited Album',
   })
@@ -394,4 +396,132 @@ test('manual mode is explicit and does not acquire MusicBrainz metadata', async 
   await expect(manualButton).toBeDisabled()
   await download.reply({ job_id: 'manual-job' }, 202)
   await expect(page.getByText('Download queued successfully.')).toBeVisible()
+})
+
+test('missing archive artwork requires and persists the selected playlist thumbnail', async ({ page }) => {
+  const backend = new ControlledBackend()
+  await openApp(page, backend)
+
+  await startSearch(page)
+  const search = await backend.next('search')
+  await search.reply({
+    playlists: [playlist('fallback')],
+    releases: [release('fallback', 2, false)],
+    errors: {},
+  })
+  const hydration = await backend.next('release:fallback')
+  await playlistsPanel(page).getByRole('button', { name: /Playlist fallback/ }).click()
+  const preflight = await backend.next('preflight')
+  await preflight.reply({ track_count: 2 })
+  await releasesPanel(page).getByRole('button', { name: /Release fallback/ }).click()
+  await hydration.reply(releaseDetails('fallback', 2, false))
+  const destination = await backend.next('destination')
+  await destination.reply({ state: 'not_found', exists: false })
+
+  await expect(page.getByText('Cover Art Archive has no artwork for this release', { exact: false })).toBeVisible()
+  await expect(page.getByText(/not authoritative/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Download & Tag' })).toBeDisabled()
+  await page.getByRole('button', { name: /Use playlist thumbnail/ }).click()
+  const cover = await backend.next('cover-youtube')
+  expect(cover.body).toEqual({
+    thumbnail_url: 'https://i.ytimg.com/vi/fallback/mqdefault.jpg',
+  })
+  await cover.reply({
+    cover_id: '12345678-1234-1234-1234-123456789abc',
+    mime_type: 'image/jpeg', size: 100, width: 480, height: 480,
+  }, 201)
+
+  const readyButton = page.getByRole('button', { name: 'Download & Tag' })
+  await expect(readyButton).toBeEnabled()
+  await readyButton.click()
+  const download = await backend.next('download')
+  expect(download.body).toEqual({
+    playlist_url: 'https://youtube.test/playlist?list=fallback',
+    artist: 'Artist fallback',
+    album: 'Release fallback',
+    release_id: 'fallback',
+    track_count: 2,
+    cover_source: 'youtube_thumbnail',
+    cover_id: '12345678-1234-1234-1234-123456789abc',
+    cover_url: 'https://i.ytimg.com/vi/fallback/mqdefault.jpg',
+  })
+  await download.reply({ job_id: 'fallback-job' }, 202)
+})
+
+test('failed and manual fallback covers remain explicit and recoverable', async ({ page }) => {
+  const backend = new ControlledBackend()
+  await openApp(page, backend)
+
+  await startSearch(page)
+  const search = await backend.next('search')
+  await search.reply({
+    playlists: [playlist('manual-cover')],
+    releases: [release('manual-cover', 2, false)],
+    errors: {},
+  })
+  const hydration = await backend.next('release:manual-cover')
+  await playlistsPanel(page).getByRole('button', { name: /Playlist manual-cover/ }).click()
+  const preflight = await backend.next('preflight')
+  await preflight.reply({ track_count: 2 })
+  await releasesPanel(page).getByRole('button', { name: /Release manual-cover/ }).click()
+  await hydration.reply(releaseDetails('manual-cover', 2, false))
+  const destination = await backend.next('destination')
+  await destination.reply({ state: 'not_found', exists: false })
+
+  await page.getByRole('button', { name: /Use playlist thumbnail/ }).click()
+  const youtubeCover = await backend.next('cover-youtube')
+  await youtubeCover.reject(502, { detail: 'YouTube thumbnail could not be downloaded.' })
+  await expect(page.getByRole('alert')).toContainText('choose another cover option')
+  await expect(page.getByRole('button', { name: 'Download & Tag' })).toBeDisabled()
+
+  await page.locator('.cover-option--upload input').setInputFiles({
+    name: 'cover.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('controlled image'),
+  })
+  const manualCover = await backend.next('cover-manual')
+  expect(String(manualCover.body)).toContain('controlled image')
+  await manualCover.reply({
+    cover_id: 'abcdefab-1234-1234-1234-abcdefabcdef',
+    mime_type: 'image/png', size: 100, width: 600, height: 600,
+  }, 201)
+
+  const readyButton = page.getByRole('button', { name: 'Download & Tag' })
+  await expect(readyButton).toBeEnabled()
+  await readyButton.click()
+  const download = await backend.next('download')
+  expect(download.body.cover_source).toBe('manual_upload')
+  expect(download.body.cover_id).toBe('abcdefab-1234-1234-1234-abcdefabcdef')
+  expect(download.body.cover_url).toBeUndefined()
+  await download.reply({ job_id: 'manual-cover-job' }, 202)
+})
+
+test('missing archive artwork can be consciously queued without a cover', async ({ page }) => {
+  const backend = new ControlledBackend()
+  await openApp(page, backend)
+
+  await startSearch(page)
+  const search = await backend.next('search')
+  await search.reply({
+    playlists: [playlist('none')],
+    releases: [release('none', 2, false)],
+    errors: {},
+  })
+  const hydration = await backend.next('release:none')
+  await playlistsPanel(page).getByRole('button', { name: /Playlist none/ }).click()
+  const preflight = await backend.next('preflight')
+  await preflight.reply({ track_count: 2 })
+  await releasesPanel(page).getByRole('button', { name: /Release none/ }).click()
+  await hydration.reply(releaseDetails('none', 2, false))
+  const destination = await backend.next('destination')
+  await destination.reply({ state: 'not_found', exists: false })
+
+  await page.getByRole('button', { name: /Continue without cover/ }).click()
+  await page.getByRole('button', { name: 'Download & Tag' }).click()
+  const download = await backend.next('download')
+  expect(download.body.cover_source).toBe('none')
+  expect(download.body.cover_id).toBeUndefined()
+  expect(backend.callCount('cover-youtube')).toBe(0)
+  expect(backend.callCount('cover-manual')).toBe(0)
+  await download.reply({ job_id: 'none-job' }, 202)
 })
