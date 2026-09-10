@@ -1,6 +1,14 @@
 <template>
   <div class="music-search">
     <header class="search-hero">
+      <button
+        class="view-switch"
+        type="button"
+        @click="$emit('show-status')"
+      >
+        System status
+      </button>
+
       <div class="hero-copy">
         <p class="eyebrow">Autodrome music library</p>
         <h1>Find the right album release</h1>
@@ -137,13 +145,26 @@
 
         <div
           class="selection-card"
-          :class="{ 'selection-card--ready': releaseDetailsReady }"
+          :class="{
+            'selection-card--ready': releaseDetailsReady,
+            'selection-card--with-cover': releaseDetailsReady && hasAuthoritativeCover,
+          }"
         >
-          <span class="selection-label">MusicBrainz release</span>
-          <strong>{{ selectedRelease?.title || 'Choose a release' }}</strong>
-          <span class="selection-meta">
-            {{ selectionTrackLabel(selectedRelease) }}
-          </span>
+          <div class="selection-card-copy">
+            <span class="selection-label">MusicBrainz release</span>
+            <strong>{{ selectedRelease?.title || 'Choose a release' }}</strong>
+            <span class="selection-meta">
+              {{ selectionTrackLabel(selectedRelease) }}<template
+                v-if="releaseDetailsReady && hasAuthoritativeCover"
+              > · Archive cover</template>
+            </span>
+          </div>
+          <img
+            v-if="releaseDetailsReady && hasAuthoritativeCover"
+            class="selection-cover"
+            :src="selectedRelease.cover_url"
+            alt="Cover Art Archive artwork selected automatically"
+          />
         </div>
       </div>
 
@@ -168,79 +189,70 @@
       </div>
 
       <div
-        v-if="selectedPlaylist && selectedRelease && releaseDetailsReady"
+        v-if="selectedPlaylist && selectedRelease && releaseDetailsReady && !hasAuthoritativeCover"
         class="cover-choice"
         aria-labelledby="cover-choice-title"
       >
-        <div v-if="hasAuthoritativeCover" class="cover-authoritative">
-          <img :src="selectedRelease.cover_url" alt="Selected MusicBrainz release cover" />
+        <div class="cover-choice-heading">
           <div>
-            <strong id="cover-choice-title">Cover Art Archive artwork</strong>
-            <p>The authoritative release artwork will be used automatically.</p>
+            <strong id="cover-choice-title">Choose cover artwork</strong>
+            <p>Cover Art Archive has no artwork for this release. Choose explicitly before queuing.</p>
           </div>
+          <span v-if="coverPreparing">Preparing image…</span>
         </div>
-        <template v-else>
-          <div class="cover-choice-heading">
-            <div>
-              <strong id="cover-choice-title">Choose cover artwork</strong>
-              <p>Cover Art Archive has no artwork for this release. Choose explicitly before queuing.</p>
-            </div>
-            <span v-if="coverPreparing">Preparing image…</span>
-          </div>
-          <div class="cover-options">
-            <button
-              type="button"
-              class="cover-option"
-              :class="{ 'cover-option--selected': coverSelection?.source === 'youtube_thumbnail' }"
-              :disabled="coverPreparing || !selectedPlaylist.thumbnail"
-              @click="prepareYoutubeCover"
-            >
-              <img
-                v-if="selectedPlaylist.thumbnail"
-                :src="selectedPlaylist.thumbnail"
-                alt="Selected YouTube playlist thumbnail preview"
-              />
-              <span>
-                <strong>Use playlist thumbnail</strong>
-                <small>Alternative artwork from the selected YouTube playlist; not authoritative.</small>
-              </span>
-            </button>
-            <label
-              class="cover-option cover-option--upload"
-              :class="{ 'cover-option--selected': coverSelection?.source === 'manual_upload' }"
-            >
-              <img v-if="manualCoverPreview" :src="manualCoverPreview" alt="Manual cover preview" />
-              <span>
-                <strong>Upload an image</strong>
-                <small>JPEG, PNG or WebP. The file is validated before audio is downloaded.</small>
-              </span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                :disabled="coverPreparing"
-                @change="prepareManualCover"
-              />
-            </label>
-            <button
-              type="button"
-              class="cover-option cover-option--none"
-              :class="{ 'cover-option--selected': coverSelection?.source === 'none' }"
+        <div class="cover-options">
+          <button
+            type="button"
+            class="cover-option"
+            :class="{ 'cover-option--selected': coverSelection?.source === 'youtube_thumbnail' }"
+            :disabled="coverPreparing || !selectedPlaylist.thumbnail"
+            @click="prepareYoutubeCover"
+          >
+            <img
+              v-if="selectedPlaylist.thumbnail"
+              :src="selectedPlaylist.thumbnail"
+              alt="Selected YouTube playlist thumbnail preview"
+            />
+            <span>
+              <strong>Use playlist thumbnail</strong>
+              <small>Alternative artwork from the selected YouTube playlist; not authoritative.</small>
+            </span>
+          </button>
+          <label
+            class="cover-option cover-option--upload"
+            :class="{ 'cover-option--selected': coverSelection?.source === 'manual_upload' }"
+          >
+            <img v-if="manualCoverPreview" :src="manualCoverPreview" alt="Manual cover preview" />
+            <span>
+              <strong>Upload an image</strong>
+              <small>JPEG, PNG or WebP. The file is validated before audio is downloaded.</small>
+            </span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
               :disabled="coverPreparing"
-              @click="chooseNoCover"
-            >
-              <span>
-                <strong>Continue without cover</strong>
-                <small>No artwork will be embedded in the album files.</small>
-              </span>
-            </button>
-          </div>
-          <p v-if="!selectedPlaylist.thumbnail" class="cover-choice-note">
-            This playlist has no thumbnail, so choose an upload or continue without cover.
-          </p>
-          <p v-if="coverError" class="feedback feedback--error" role="alert">
-            {{ coverError }} You can choose another cover option.
-          </p>
-        </template>
+              @change="prepareManualCover"
+            />
+          </label>
+          <button
+            type="button"
+            class="cover-option cover-option--none"
+            :class="{ 'cover-option--selected': coverSelection?.source === 'none' }"
+            :disabled="coverPreparing"
+            @click="chooseNoCover"
+          >
+            <span>
+              <strong>Continue without cover</strong>
+              <small>No artwork will be embedded in the album files.</small>
+            </span>
+          </button>
+        </div>
+        <p v-if="!selectedPlaylist.thumbnail" class="cover-choice-note">
+          This playlist has no thumbnail, so choose an upload or continue without cover.
+        </p>
+        <p v-if="coverError" class="feedback feedback--error" role="alert">
+          {{ coverError }} You can choose another cover option.
+        </p>
       </div>
 
       <div
@@ -299,6 +311,7 @@ import ReleasesList from './ReleasesList.vue'
 import Queue from './Queue.vue'
 
 export default {
+  emits: ['show-status'],
   components: {
     PlaylistsList,
     ReleasesList,

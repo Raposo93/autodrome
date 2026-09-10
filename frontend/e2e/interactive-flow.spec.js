@@ -44,6 +44,8 @@ test('system status route renders partial diagnostics and every state', async ({
   })
 
   await expect(page.getByRole('heading', { name: 'System status' })).toBeVisible()
+  await expect(page.locator('.status-hero').getByRole('button', { name: 'Music' })).toBeVisible()
+  await expect(page.locator('.app-navigation')).toHaveCount(0)
   const diagnostics = page.getByRole('region', { name: 'System diagnostics' })
   await expect(diagnostics.getByText('OK', { exact: true })).toHaveCount(3)
   await expect(diagnostics.getByText('Warning', { exact: true })).toHaveCount(2)
@@ -51,6 +53,43 @@ test('system status route renders partial diagnostics and every state', async ({
   await expect(diagnostics.getByText('Disabled', { exact: true })).toHaveCount(1)
   await expect(diagnostics.getByRole('article', { name: 'Library' })).toContainText('183 GiB')
   await expect(page.getByRole('alert')).toContainText('retrying automatically')
+})
+
+test('the ready desktop workflow fits without document scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 900 })
+  const backend = new ControlledBackend()
+  await openApp(page, backend)
+
+  await expect(page.locator('.search-hero').getByRole('button', { name: 'System status' })).toBeVisible()
+  await startSearch(page)
+  const search = await backend.next('search')
+  await search.reply({
+    playlists: [playlist('layout')],
+    releases: [release('layout')],
+    errors: {},
+  })
+
+  const hydration = await backend.next('release:layout')
+  await playlistsPanel(page).getByRole('button', { name: /Playlist layout/ }).click()
+  const preflight = await backend.next('preflight')
+  await releasesPanel(page).getByRole('button', { name: /Release layout/ }).click()
+  await preflight.reply({ track_count: 2 })
+  await hydration.reply(releaseDetails('layout'))
+  const destination = await backend.next('destination')
+  await destination.reply({ state: 'not_found', exists: false })
+
+  const readyButton = page.getByRole('button', { name: 'Download & Tag' })
+  await expect(readyButton).toBeEnabled()
+  await expect(page.locator('.selection-card--with-cover')).toContainText('Archive cover')
+  await expect(page.getByText('Cover Art Archive artwork', { exact: true })).toHaveCount(0)
+
+  const viewport = await page.evaluate(() => ({
+    height: window.innerHeight,
+    scrollHeight: document.documentElement.scrollHeight,
+  }))
+  expect(viewport.scrollHeight).toBeLessThanOrEqual(viewport.height)
+  const buttonBounds = await readyButton.boundingBox()
+  expect(buttonBounds.y + buttonBounds.height).toBeLessThanOrEqual(viewport.height)
 })
 
 test('happy path queues one fully checked download', async ({ page }) => {

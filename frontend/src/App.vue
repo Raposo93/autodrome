@@ -1,24 +1,11 @@
 <template>
   <main class="app-shell">
     <template v-if="authenticated">
-      <nav class="app-navigation" aria-label="Main navigation">
-        <button
-          type="button"
-          :aria-current="view === 'search' ? 'page' : undefined"
-          @click="selectView('search')"
-        >
-          Music
-        </button>
-        <button
-          type="button"
-          :aria-current="view === 'status' ? 'page' : undefined"
-          @click="selectView('status')"
-        >
-          System status
-        </button>
-      </nav>
-      <MusicSearch v-if="view === 'search'" />
-      <SystemStatus v-else />
+      <MusicSearch
+        v-if="view === 'search'"
+        @show-status="selectView('status')"
+      />
+      <SystemStatus v-else @show-music="selectView('search')" />
     </template>
     <form v-else class="panel" @submit.prevent="connect">
       <h1>Connect to Autodrome</h1>

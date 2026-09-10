@@ -1,6 +1,9 @@
 <template>
   <section class="system-status" aria-labelledby="system-status-title">
     <header class="status-hero">
+      <button class="view-switch" type="button" @click="$emit('show-music')">
+        Music
+      </button>
       <div>
         <p class="eyebrow">Diagnostics</p>
         <h1 id="system-status-title">System status</h1>
@@ -78,6 +81,7 @@ import {
 } from '../services/systemStatus.js'
 
 export default {
+  emits: ['show-music'],
   data: () => ({
     report: null,
     loading: false,
