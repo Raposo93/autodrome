@@ -48,6 +48,9 @@ class Config:
         self.max_cover_source_pixels = self._read_int(
             "MAX_COVER_SOURCE_PIXELS", 40_000_000, minimum=1
         )
+        self.max_cover_upload_bytes = self._read_int(
+            "MAX_COVER_UPLOAD_BYTES", 10 * 1024 * 1024, minimum=1
+        )
         self.queue_state_path = os.getenv(
             "QUEUE_STATE_PATH",
             os.path.join(self.library_path, ".autodrome-queue.json"),

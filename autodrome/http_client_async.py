@@ -129,7 +129,9 @@ class AsyncHttpClient:
         timeout: Optional[float] = None,
         provider: Optional[str] = None,
         context: str = "downloading binary content",
+        allow_redirects: bool = True,
     ) -> bytes:
+        request_options = {} if allow_redirects else {"allow_redirects": False}
         return await self._request(
             "get",
             url,
@@ -137,6 +139,7 @@ class AsyncHttpClient:
             timeout=timeout,
             provider=provider,
             context=context,
+            **request_options,
         )
 
     async def probe(

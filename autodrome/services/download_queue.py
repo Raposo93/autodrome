@@ -147,6 +147,11 @@ class DownloadQueueManager:
                         album=payload["album"],
                         release_id=payload["release_id"],
                         track_count=payload.get("track_count"),
+                        **{
+                            key: payload[key]
+                            for key in ("cover_source", "cover_id", "cover_url")
+                            if key in payload
+                        },
                         **({"metadata_mode": "manual", "manual_confirmed": payload.get("manual_confirmed", False)}
                            if payload.get("metadata_mode") == "manual" else {}),
                     )

@@ -77,6 +77,46 @@ class TestRequestModels(unittest.TestCase):
                     **{"artist": "Artist", "album": "Album", **change}
                 )
 
+    def test_cover_choice_is_explicit_and_validated(self):
+        request = DownloadRequest(**VALID_DOWNLOAD)
+        self.assertEqual(request.cover_source, "cover_art_archive")
+
+        cover_id = "12345678-1234-1234-1234-123456789abc"
+        youtube = DownloadRequest(
+            **VALID_DOWNLOAD,
+            cover_source="youtube_thumbnail",
+            cover_id=cover_id,
+            cover_url="https://i.ytimg.com/vi/video/mqdefault.jpg",
+        )
+        self.assertEqual(youtube.cover_source, "youtube_thumbnail")
+        self.assertEqual(
+            DownloadRequest(
+                **VALID_DOWNLOAD,
+                cover_source="manual_upload",
+                cover_id=cover_id,
+            ).cover_source,
+            "manual_upload",
+        )
+        self.assertEqual(
+            DownloadRequest(**VALID_DOWNLOAD, cover_source="none").cover_source,
+            "none",
+        )
+
+        invalid = (
+            {"cover_source": "youtube_thumbnail", "cover_id": cover_id},
+            {
+                "cover_source": "youtube_thumbnail",
+                "cover_id": cover_id,
+                "cover_url": "http://127.0.0.1/private",
+            },
+            {"cover_source": "manual_upload"},
+            {"cover_source": "none", "cover_id": cover_id},
+            {"cover_source": "cover_art_archive", "cover_id": cover_id},
+        )
+        for values in invalid:
+            with self.subTest(values=values), self.assertRaises(ValidationError):
+                DownloadRequest(**VALID_DOWNLOAD, **values)
+
 
 if __name__ == "__main__":
     unittest.main()

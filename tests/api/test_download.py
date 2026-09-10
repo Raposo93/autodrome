@@ -6,6 +6,8 @@ from httpx import ASGITransport, AsyncClient
 
 from api.download import album_destination, download, download_router
 from autodrome.models.requests import AlbumDestinationRequest, DownloadRequest
+from autodrome.http_client_async import UpstreamServiceError
+from autodrome.services.cover_selection import CoverSelectionError
 
 
 class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
@@ -113,6 +115,78 @@ class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 422)
         app.state.queue_manager.enqueue.assert_not_called()
+
+    async def test_cover_preparation_routes_return_persisted_selection(self):
+        app = FastAPI()
+        app.include_router(download_router, prefix="/api/download")
+        app.state.config = MagicMock(max_cover_upload_bytes=100)
+        app.state.cover_selection = MagicMock()
+        prepared = {
+            "cover_id": "12345678-1234-1234-1234-123456789abc",
+            "mime_type": "image/jpeg",
+            "size": 10,
+            "width": 50,
+            "height": 50,
+        }
+        app.state.cover_selection.store_manual.return_value = prepared
+        app.state.cover_selection.store_youtube = AsyncMock(return_value=prepared)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/download/covers/manual",
+                files={"cover": ("cover.jpg", b"image-data", "image/jpeg")},
+            )
+            self.assertEqual(response.status_code, 201)
+            self.assertEqual(response.json(), prepared)
+            app.state.cover_selection.store_manual.assert_called_once_with(
+                b"image-data"
+            )
+
+            thumbnail_url = "https://i.ytimg.com/vi/video/mqdefault.jpg"
+            response = await client.post(
+                "/api/download/covers/youtube",
+                json={"thumbnail_url": thumbnail_url},
+            )
+            self.assertEqual(response.status_code, 201)
+            app.state.cover_selection.store_youtube.assert_awaited_once_with(
+                thumbnail_url
+            )
+
+    async def test_cover_preparation_routes_expose_safe_actionable_errors(self):
+        app = FastAPI()
+        app.include_router(download_router, prefix="/api/download")
+        app.state.config = MagicMock(max_cover_upload_bytes=100)
+        app.state.cover_selection = MagicMock()
+        app.state.cover_selection.store_manual.side_effect = CoverSelectionError(
+            "Cover image must be a valid JPEG, PNG, or WebP file."
+        )
+        app.state.cover_selection.store_youtube = AsyncMock(
+            side_effect=UpstreamServiceError(
+                "YouTube", "downloading thumbnail", "private provider detail"
+            )
+        )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/download/covers/manual",
+                files={"cover": ("cover.jpg", b"bad", "image/jpeg")},
+            )
+            self.assertEqual(response.status_code, 422)
+            self.assertIn("valid JPEG", response.text)
+
+            response = await client.post(
+                "/api/download/covers/youtube",
+                json={
+                    "thumbnail_url": "https://i.ytimg.com/vi/video/mqdefault.jpg"
+                },
+            )
+            self.assertEqual(response.status_code, 502)
+            self.assertIn("Choose another cover option", response.text)
+            self.assertNotIn("private provider detail", response.text)
 
 
 if __name__ == "__main__":

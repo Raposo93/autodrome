@@ -15,6 +15,7 @@ from autodrome.controllers.search_controller import SearchController
 from autodrome.controllers.downloader_controller import DownloaderController
 from autodrome.services import websocket_manager
 from autodrome.services.download_queue import DownloadQueueManager
+from autodrome.services.cover_selection import CoverSelectionService
 from autodrome.services.redis_cache import NullCache, RedisCache
 from autodrome.services.system_status import SystemStatusService
 from autodrome.metadata_service import MetadataService
@@ -43,11 +44,17 @@ async def lifespan(app: FastAPI):
         http_client=http_client,
         metadata_service=metadata_service,
     )
+    organizer = Organizer()
+    cover_selection = CoverSelectionService(
+        http_client=http_client,
+        embedder=organizer.cover_embedder,
+    )
     downloader_controller = DownloaderController(
         downloader=YTDownloader(download_concurrency=conf.download_concurrency),
-        organizer=Organizer(),
+        organizer=organizer,
         metadata_service=metadata_service,
         http_client=http_client,
+        cover_selection=cover_selection,
     )
     ws_manager = websocket_manager.WebSocketManager()
     queue_manager = DownloadQueueManager(
@@ -66,6 +73,7 @@ async def lifespan(app: FastAPI):
     app.state.config = conf
     app.state.search_controller = search_controller
     app.state.downloader_controller = downloader_controller
+    app.state.cover_selection = cover_selection
     app.state.queue_manager = queue_manager
     app.state.system_status = system_status
 

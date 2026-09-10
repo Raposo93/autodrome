@@ -33,6 +33,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.max_embedded_cover_width, 1600)
         self.assertEqual(settings.max_embedded_cover_height, 1600)
         self.assertEqual(settings.max_cover_source_pixels, 40_000_000)
+        self.assertEqual(settings.max_cover_upload_bytes, 10 * 1024 * 1024)
         self.assertEqual(settings.download_concurrency, 1)
         self.assertFalse(settings.redis_enabled)
 

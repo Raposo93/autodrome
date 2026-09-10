@@ -531,6 +531,35 @@ class TestManualQueue(unittest.IsolatedAsyncioTestCase):
             finally:
                 await restored.stop()
 
+
+class TestCoverChoiceQueue(unittest.IsolatedAsyncioTestCase):
+    async def test_alternative_cover_choice_survives_retry_and_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "queue.json")
+            payload = {
+                **PAYLOAD,
+                "cover_source": "youtube_thumbnail",
+                "cover_id": "12345678-1234-1234-1234-123456789abc",
+                "cover_url": "https://i.ytimg.com/vi/video/mqdefault.jpg",
+            }
+            manager = DownloadQueueManager(AsyncMock(), AsyncMock(), path)
+            original = await manager.enqueue(payload)
+            await manager._transition(
+                manager._jobs[original], "failed", "temporary error"
+            )
+            retry = await manager.retry_job(original)
+            downloader = AsyncMock()
+            restored = DownloadQueueManager(downloader, AsyncMock(), path)
+            try:
+                restored.start()
+                await asyncio.wait_for(restored.queue.join(), 1)
+                downloader.download_and_tag.assert_awaited_once_with(
+                    **payload, progress=ANY
+                )
+                self.assertEqual(restored._jobs[retry].payload, payload)
+            finally:
+                await restored.stop()
+
 class TestQueueProgress(unittest.IsolatedAsyncioTestCase):
     setUp = TestDownloadQueueManager.setUp
     asyncTearDown = TestDownloadQueueManager.asyncTearDown

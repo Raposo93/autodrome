@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Optional, Tuple
+import os
+from typing import AbstractSet, Optional, Tuple
 
 from PIL import Image, ImageOps
 from mutagen.id3 import APIC, ID3, error
@@ -59,36 +60,16 @@ class CoverEmbedder:
             else max_source_pixels
         )
 
-    def prepare_cover(self, cover_image_path: str) -> PreparedCover:
-        try:
-            with Image.open(cover_image_path) as image:
-                image_format = image.format
-                mime_type = Image.MIME.get(image_format or "")
-                width, height = image.size
-                source_pixels = width * height
-                if (
-                    width <= 0
-                    or height <= 0
-                    or not mime_type
-                    or not mime_type.startswith("image/")
-                ):
-                    raise CoverPreparationError(
-                        f"Cover image has an unsupported format: {cover_image_path}"
-                    )
-                if source_pixels > self.max_source_pixels:
-                    raise CoverPreparationError(
-                        "Cover image exceeds the safe decoding limit: "
-                        f"{width}x{height} ({source_pixels} pixels), limit "
-                        f"{self.max_source_pixels} pixels"
-                    )
-                image.verify()
-        except CoverPreparationError:
-            raise
-        except Exception as e:
-            raise CoverPreparationError(
-                f"Cover image is damaged or unsupported: {cover_image_path}"
-            ) from e
-
+    def prepare_cover(
+        self,
+        cover_image_path: str,
+        *,
+        allowed_mime_types: Optional[AbstractSet[str]] = None,
+    ) -> PreparedCover:
+        mime_type, width, height = self._inspect_cover(
+            cover_image_path,
+            allowed_mime_types=allowed_mime_types,
+        )
         try:
             with open(cover_image_path, "rb") as image_file:
                 original_data = image_file.read()
@@ -124,6 +105,41 @@ class CoverEmbedder:
             )
 
         prepared = self._optimize_cover(cover_image_path, original_size)
+        self._log_prepared(prepared)
+        return prepared
+
+    def prepare_square_cover(
+        self,
+        cover_image_path: str,
+        *,
+        allowed_mime_types: Optional[AbstractSet[str]] = None,
+    ) -> PreparedCover:
+        """Center an image on deterministic square padding without cropping it."""
+        self._inspect_cover(
+            cover_image_path,
+            allowed_mime_types=allowed_mime_types,
+        )
+        try:
+            original_size = os.path.getsize(cover_image_path)
+            with Image.open(cover_image_path) as source:
+                oriented = ImageOps.exif_transpose(source)
+                oriented.load()
+                image = self._to_rgb(oriented)
+        except OSError as e:
+            raise CoverPreparationError(
+                f"Could not read cover image: {cover_image_path}"
+            ) from e
+        except Exception as e:
+            raise CoverPreparationError(
+                f"Cover image is damaged or unsupported: {cover_image_path}"
+            ) from e
+
+        side = min(max(image.size), self.max_width, self.max_height)
+        image.thumbnail((side, side), Image.Resampling.LANCZOS)
+        square = Image.new("RGB", (side, side), (27, 39, 43))
+        offset = ((side - image.width) // 2, (side - image.height) // 2)
+        square.paste(image, offset)
+        prepared = self._encode_to_limits(square, original_size)
         self._log_prepared(prepared)
         return prepared
 
@@ -168,9 +184,15 @@ class CoverEmbedder:
                 f"Could not optimize cover image: {cover_image_path}"
             ) from e
 
-        image.thumbnail(
-            (self.max_width, self.max_height), Image.Resampling.LANCZOS
-        )
+        return self._encode_to_limits(image, original_size, icc_profile)
+
+    def _encode_to_limits(
+        self,
+        image: Image.Image,
+        original_size: int,
+        icc_profile: Optional[bytes] = None,
+    ) -> PreparedCover:
+        image.thumbnail((self.max_width, self.max_height), Image.Resampling.LANCZOS)
         while True:
             for quality in (88, 82, 76, 70, 64, 58):
                 output = BytesIO()
@@ -207,6 +229,46 @@ class CoverEmbedder:
             f"original size {original_size} bytes, limit {self.max_bytes} bytes; "
             "replace the cover manually before retrying"
         )
+
+    def _inspect_cover(
+        self,
+        cover_image_path: str,
+        *,
+        allowed_mime_types: Optional[AbstractSet[str]] = None,
+    ) -> Tuple[str, int, int]:
+        try:
+            with Image.open(cover_image_path) as image:
+                image_format = image.format
+                mime_type = Image.MIME.get(image_format or "")
+                width, height = image.size
+                source_pixels = width * height
+                if (
+                    width <= 0
+                    or height <= 0
+                    or not mime_type
+                    or not mime_type.startswith("image/")
+                    or (
+                        allowed_mime_types is not None
+                        and mime_type not in allowed_mime_types
+                    )
+                ):
+                    raise CoverPreparationError(
+                        f"Cover image has an unsupported format: {cover_image_path}"
+                    )
+                if source_pixels > self.max_source_pixels:
+                    raise CoverPreparationError(
+                        "Cover image exceeds the safe decoding limit: "
+                        f"{width}x{height} ({source_pixels} pixels), limit "
+                        f"{self.max_source_pixels} pixels"
+                    )
+                image.verify()
+        except CoverPreparationError:
+            raise
+        except Exception as e:
+            raise CoverPreparationError(
+                f"Cover image is damaged or unsupported: {cover_image_path}"
+            ) from e
+        return mime_type, width, height
 
     @staticmethod
     def _to_rgb(image: Image.Image) -> Image.Image:

@@ -15,7 +15,7 @@ from autodrome.services.track_files import match_track_files
 from autodrome.logger import logger
 from autodrome import config
 from autodrome.services.tagger import Tagger
-from autodrome.services.cover_embedder import CoverEmbedder
+from autodrome.services.cover_embedder import CoverEmbedder, PreparedCover
 from autodrome.path_safety import resolve_album_path, validate_path_component
 
 conf = config.Config()
@@ -73,7 +73,9 @@ class Organizer:
         album: str,
         tracks: List[Track],
         cover_path: Optional[str] = None,
-        date: Optional[str] = None
+        date: Optional[str] = None,
+        *,
+        prepared_cover: Optional[PreparedCover] = None,
     ) -> None:
 
         files = sorted(f for f in os.listdir(folder_path) if f.lower().endswith(".mp3"))
@@ -86,7 +88,8 @@ class Organizer:
             )
 
         rename_plan = self._build_rename_plan(folder_path, files, tracks)
-        prepared_cover = None
+        if cover_path and prepared_cover is not None:
+            raise ValueError("Provide either a cover path or a prepared cover, not both")
         if cover_path:
             if not os.path.isfile(cover_path):
                 raise FileNotFoundError(f"Cover image not found: {cover_path}")

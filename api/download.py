@@ -1,10 +1,13 @@
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 
 from autodrome.models.requests import (
     AlbumDestinationRequest,
     DownloadRequest,
     PlaylistPreflightRequest,
+    YoutubeCoverRequest,
 )
+from autodrome.http_client_async import UpstreamServiceError
+from autodrome.services.cover_selection import CoverSelectionError
 
 download_router = APIRouter()
 
@@ -71,3 +74,28 @@ async def album_destination(payload: AlbumDestinationRequest, request: Request):
         payload.artist,
         payload.album,
     )
+
+
+@download_router.post("/covers/manual", status_code=status.HTTP_201_CREATED)
+async def upload_manual_cover(request: Request, cover: UploadFile = File(...)):
+    maximum = request.app.state.config.max_cover_upload_bytes
+    content = await cover.read(maximum + 1)
+    try:
+        return request.app.state.cover_selection.store_manual(content)
+    except CoverSelectionError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@download_router.post("/covers/youtube", status_code=status.HTTP_201_CREATED)
+async def prepare_youtube_cover(payload: YoutubeCoverRequest, request: Request):
+    try:
+        return await request.app.state.cover_selection.store_youtube(
+            payload.thumbnail_url
+        )
+    except CoverSelectionError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except UpstreamServiceError as error:
+        raise HTTPException(
+            status_code=502,
+            detail="Could not prepare the selected YouTube thumbnail. Choose another cover option.",
+        ) from error

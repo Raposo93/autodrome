@@ -119,6 +119,41 @@ def test_prepare_cover_rejects_damaged_image(tmp_path):
         embedder.prepare_cover(str(cover_path))
 
 
+def test_manual_cover_can_restrict_real_mime_independent_of_extension(tmp_path):
+    supported = tmp_path / "cover.bin"
+    unsupported = tmp_path / "cover.jpg"
+    save_image(supported, "WEBP")
+    save_image(unsupported, "BMP")
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    embedder = CoverEmbedder(max_bytes=100_000)
+
+    assert embedder.prepare_cover(
+        str(supported), allowed_mime_types=allowed
+    ).mime_type == "image/webp"
+    with pytest.raises(CoverPreparationError, match="unsupported format"):
+        embedder.prepare_cover(str(unsupported), allowed_mime_types=allowed)
+
+
+def test_square_cover_uses_centered_padding_without_distortion(tmp_path):
+    cover_path = tmp_path / "wide.png"
+    save_image(cover_path, "PNG", size=(80, 40), color="red")
+    embedder = CoverEmbedder(max_bytes=100_000)
+
+    prepared = embedder.prepare_square_cover(
+        str(cover_path),
+        allowed_mime_types={"image/jpeg", "image/png", "image/webp"},
+    )
+
+    assert prepared.dimensions == (80, 80)
+    assert prepared.mime_type == "image/jpeg"
+    with Image.open(BytesIO(prepared.data)) as square:
+        assert square.size == (80, 80)
+        top = square.getpixel((40, 5))
+        center = square.getpixel((40, 40))
+        assert top[0] < 80 and top[1] < 80 and top[2] < 80
+        assert center[0] > 180 and center[1] < 100 and center[2] < 100
+
+
 @mock.patch("autodrome.services.cover_embedder.MP3")
 def test_embed_cover_uses_prepared_bytes_and_mime(mock_mp3):
     audio = mock.MagicMock()

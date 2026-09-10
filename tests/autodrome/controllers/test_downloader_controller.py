@@ -15,6 +15,7 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
         self.downloader.download_playlist = AsyncMock()
 
         self.organizer = MagicMock()
+        self.organizer.cover_embedder.prepare_cover.return_value = "prepared-caa"
         self.organizer.create_staging_folder.return_value.__enter__.return_value = (
             "/tmp/autodrome-download"
         )
@@ -175,6 +176,90 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
         self.organizer.tag_and_rename.assert_not_called()
         self.organizer.validate_album.assert_not_called()
         self.organizer.move_to_library.assert_not_called()
+
+    async def test_cover_art_archive_keeps_existing_post_download_flow(self):
+        self.metadata_service.get_cover_art.return_value = "/tmp/caa.jpg"
+
+        async def download(*args, **kwargs):
+            self.metadata_service.get_cover_art.assert_not_awaited()
+            self.organizer.cover_embedder.prepare_cover.assert_not_called()
+
+        self.downloader.download_playlist.side_effect = download
+
+        await self.controller.download_and_tag(
+            "https://example.test/playlist",
+            "Artist",
+            "Album",
+            "release-1",
+            cover_source="cover_art_archive",
+        )
+
+        self.metadata_service.get_cover_art.assert_awaited_once_with("release-1")
+        self.organizer.cover_embedder.prepare_cover.assert_called_once_with(
+            "/tmp/caa.jpg"
+        )
+        self.assertEqual(
+            self.organizer.tag_and_rename.call_args.kwargs["prepared_cover"],
+            "prepared-caa",
+        )
+
+    async def test_alternative_cover_is_loaded_before_audio_and_reused(self):
+        cover_selection = MagicMock()
+        cover_selection.load_prepared.return_value = "prepared-alternative"
+        self.controller.cover_selection = cover_selection
+
+        async def download(*args, **kwargs):
+            cover_selection.load_prepared.assert_called_once_with("cover-id")
+
+        self.downloader.download_playlist.side_effect = download
+
+        await self.controller.download_and_tag(
+            "https://example.test/playlist",
+            "Artist",
+            "Album",
+            "release-1",
+            cover_source="youtube_thumbnail",
+            cover_id="cover-id",
+            cover_url="https://i.ytimg.com/vi/video/mqdefault.jpg",
+        )
+
+        self.metadata_service.get_cover_art.assert_not_awaited()
+        self.assertEqual(
+            self.organizer.tag_and_rename.call_args.kwargs["prepared_cover"],
+            "prepared-alternative",
+        )
+
+    async def test_invalid_alternative_cover_stops_before_staging_or_audio(self):
+        cover_selection = MagicMock()
+        cover_selection.load_prepared.side_effect = ValueError("cover unavailable")
+        self.controller.cover_selection = cover_selection
+
+        with self.assertRaisesRegex(ValueError, "cover unavailable"):
+            await self.controller.download_and_tag(
+                "https://example.test/playlist",
+                "Artist",
+                "Album",
+                "release-1",
+                cover_source="manual_upload",
+                cover_id="cover-id",
+            )
+
+        self.organizer.create_staging_folder.assert_not_called()
+        self.downloader.download_playlist.assert_not_awaited()
+
+    async def test_explicit_no_cover_does_not_query_cover_providers(self):
+        await self.controller.download_and_tag(
+            "https://example.test/playlist",
+            "Artist",
+            "Album",
+            "release-1",
+            cover_source="none",
+        )
+
+        self.metadata_service.get_cover_art.assert_not_awaited()
+        self.assertIsNone(
+            self.organizer.tag_and_rename.call_args.kwargs["prepared_cover"]
+        )
 
 
 if __name__ == "__main__":

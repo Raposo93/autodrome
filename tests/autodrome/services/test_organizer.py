@@ -224,6 +224,37 @@ def test_tag_and_rename_rejects_cover_before_modifying_tracks(monkeypatch):
         organizer.cover_embedder.embed_cover.assert_not_called()
 
 
+def test_tag_and_rename_reuses_an_already_prepared_cover_for_every_track(monkeypatch):
+    organizer = Organizer()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_dummy_mp3(tmpdir, "01 - Audio.mp3")
+        create_dummy_mp3(tmpdir, "02 - Audio.mp3")
+        tracks = [Track(1, "Song A"), Track(2, "Song B")]
+        prepared_cover = object()
+        monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
+        monkeypatch.setattr(
+            organizer.cover_embedder, "prepare_cover", mock.MagicMock()
+        )
+        monkeypatch.setattr(
+            organizer.cover_embedder, "embed_cover", mock.MagicMock()
+        )
+
+        organizer.tag_and_rename(
+            tmpdir,
+            "Artist",
+            "Album",
+            tracks,
+            prepared_cover=prepared_cover,
+        )
+
+        organizer.cover_embedder.prepare_cover.assert_not_called()
+        assert organizer.cover_embedder.embed_cover.call_args_list == [
+            mock.call(os.path.join(tmpdir, "01 - Song A.mp3"), prepared_cover),
+            mock.call(os.path.join(tmpdir, "02 - Song B.mp3"), prepared_cover),
+        ]
+
+
 def test_validate_album_accepts_readable_tagged_mp3s(monkeypatch):
     organizer = Organizer()
     tracks = [Track(1, "Song A"), Track(2, "Song B")]
