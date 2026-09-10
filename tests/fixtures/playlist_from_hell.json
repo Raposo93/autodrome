@@ -1,0 +1,61 @@
+{
+  "description": "A compact yt-dlp playlist covering unavailable entries, Unicode, duplicate titles and filename hazards.",
+  "playlist": {
+    "id": "playlist-from-hell",
+    "title": "Playlist from hell",
+    "entries": [
+      {
+        "id": "unicode",
+        "webpage_url": "https://youtube.test/watch?v=unicode",
+        "title": "Beyoncé 🚗 — ¿Qué? / intro:finale"
+      },
+      {
+        "id": "duplicate-a",
+        "webpage_url": "https://youtube.test/watch?v=duplicate-a",
+        "title": "Same title"
+      },
+      {
+        "id": "duplicate-b",
+        "webpage_url": "https://youtube.test/watch?v=duplicate-b",
+        "title": "Same title"
+      },
+      {
+        "id": "private",
+        "availability": "private",
+        "title": "Private upload"
+      },
+      {
+        "title": "[Deleted video]"
+      },
+      {
+        "title": "Entry without an ID or usable URL"
+      },
+      {
+        "id": "collision-slash",
+        "webpage_url": "https://youtube.test/watch?v=collision-slash",
+        "title": "Sanitized / collision"
+      },
+      {
+        "id": "collision-colon",
+        "webpage_url": "https://youtube.test/watch?v=collision-colon",
+        "title": "Sanitized : collision"
+      },
+      {
+        "id": "long-title",
+        "webpage_url": "https://youtube.test/watch?v=long-title",
+        "title": "A deliberately long title that stays below common filesystem limits while exercising realistic metadata and filename handling — movement one — movement two — movement three — movement four — movement five — finale"
+      }
+    ]
+  },
+  "expected": {
+    "unavailable_positions": [4, 5, 6],
+    "extractable_ids": [
+      "unicode",
+      "duplicate-a",
+      "duplicate-b",
+      "collision-slash",
+      "collision-colon",
+      "long-title"
+    ]
+  }
+}

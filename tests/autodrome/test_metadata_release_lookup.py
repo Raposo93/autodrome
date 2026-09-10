@@ -2,9 +2,39 @@ import unittest
 from unittest.mock import AsyncMock, call
 
 from autodrome.metadata_service import MetadataService
+from tests.fixtures import complex_release_fixture
 
 
 class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
+    async def test_complex_fixture_preserves_credits_identity_and_fallbacks(self):
+        fixture = complex_release_fixture()
+        http_client = AsyncMock()
+        http_client.get.side_effect = [
+            fixture["musicbrainz"],
+            fixture["cover_art"],
+        ]
+        service = MetadataService(http_client=http_client)
+
+        release = await service.get_release(fixture["musicbrainz"]["id"])
+
+        actual = {
+            "id": release.id,
+            "title": release.title,
+            "date": release.date,
+            "artist": release.artist,
+            "cover_url": release.cover_url,
+            "tracks": [track.to_dict() for track in release.tracks],
+        }
+        self.assertEqual(actual, fixture["expected_api"])
+        self.assertEqual(
+            [track.global_position for track in release.tracks],
+            [1, 2, 3, 4],
+        )
+        self.assertEqual(
+            [track.artist or release.artist for track in release.tracks],
+            ["Alice", "Bob feat. Carol", "Dvořák Ensemble", "Various Artists"],
+        )
+
     async def test_get_release_fetches_and_parses_musicbrainz_metadata(self):
         http_client = AsyncMock()
         release_data = {

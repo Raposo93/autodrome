@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { createReleaseHydration } from './releaseHydration.js'
+
+const complexReleaseFixture = JSON.parse(readFileSync(
+  new URL('../../../tests/fixtures/complex_release.json', import.meta.url),
+  'utf8',
+))
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
 function setup() {
@@ -57,4 +63,29 @@ test('isolated failure continues and selecting failed candidate retries', async 
   calls[2].resolve({ tracks: [] })
   await flush()
   assert.equal(updates.at(-1).hydration, 'ready')
+})
+
+test('shared complex release keeps track identities and artist fallbacks', async () => {
+  const release = complexReleaseFixture.expected_api
+  const updates = []
+  const hydrator = createReleaseHydration(
+    async id => ({ ...release, id }),
+    (id, value) => updates.push({ id, ...value }),
+  )
+
+  hydrator.start([{ id: release.id }])
+  await flush()
+
+  const hydrated = updates.find(update => update.hydration === 'ready')
+  assert.deepEqual(
+    hydrated.tracks.map(track => [track.disc_number, track.position, track.artist]),
+    [
+      [1, 1, 'Alice'],
+      [1, 2, 'Bob feat. Carol'],
+      [2, 1, 'Dvořák Ensemble'],
+      [2, 2, null],
+    ],
+  )
+  assert.equal(hydrated.artist, 'Various Artists')
+  assert.equal(hydrated.tracks.at(-1).title, 'Unknown')
 })

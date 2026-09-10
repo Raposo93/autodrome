@@ -1,0 +1,92 @@
+{
+  "description": "A two-disc compilation with collaborations, duplicate titles, Unicode and explicit fallbacks for missing release and track fields.",
+  "musicbrainz": {
+    "id": "complex-release",
+    "title": "Artists & edge cases 💿",
+    "artist-credit": [
+      {"name": "Various Artists"}
+    ],
+    "media": [
+      {
+        "position": 1,
+        "tracks": [
+          {
+            "number": "1",
+            "position": 1,
+            "title": "Água / Opening 💧",
+            "artist-credit": [
+              {"name": "Alice"}
+            ]
+          },
+          {
+            "number": "2",
+            "position": 2,
+            "title": "Same title",
+            "artist-credit": [
+              {"name": "Bob", "joinphrase": " feat. "},
+              {"name": "Carol"}
+            ]
+          }
+        ]
+      },
+      {
+        "position": 2,
+        "tracks": [
+          {
+            "number": "1",
+            "position": 1,
+            "title": "Same title",
+            "recording": {
+              "artist-credit": [
+                {"artist": {"name": "Dvořák Ensemble"}}
+              ]
+            }
+          },
+          {}
+        ]
+      }
+    ]
+  },
+  "cover_art": {"images": []},
+  "expected_api": {
+    "id": "complex-release",
+    "title": "Artists & edge cases 💿",
+    "date": "Unknown",
+    "artist": "Various Artists",
+    "cover_url": null,
+    "tracks": [
+      {
+        "number": 1,
+        "title": "Água / Opening 💧",
+        "disc_number": 1,
+        "position": 1,
+        "global_position": 1,
+        "artist": "Alice"
+      },
+      {
+        "number": 2,
+        "title": "Same title",
+        "disc_number": 1,
+        "position": 2,
+        "global_position": 2,
+        "artist": "Bob feat. Carol"
+      },
+      {
+        "number": 1,
+        "title": "Same title",
+        "disc_number": 2,
+        "position": 1,
+        "global_position": 3,
+        "artist": "Dvořák Ensemble"
+      },
+      {
+        "number": 2,
+        "title": "Unknown",
+        "disc_number": 2,
+        "position": 2,
+        "global_position": 4,
+        "artist": null
+      }
+    ]
+  }
+}

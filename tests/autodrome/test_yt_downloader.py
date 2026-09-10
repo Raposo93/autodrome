@@ -8,6 +8,7 @@ from autodrome.yt_downloader import (
     TrackDownloadError,
     YTDownloader,
 )
+from tests.fixtures import generated_playlist, playlist_from_hell
 
 
 class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
@@ -78,6 +79,65 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
                     await self.downloader.download_playlist("playlist", "unused", total)
                 self.downloader.download_track.assert_not_awaited()
                 self.downloader._check_downloaded_files.assert_not_awaited()
+
+    @patch("autodrome.yt_downloader.YoutubeDL")
+    async def test_playlist_from_hell_keeps_identity_and_fails_preflight(
+        self, youtube_dl
+    ):
+        fixture = playlist_from_hell()
+        extractor = MagicMock()
+        extractor.extract_info.return_value = fixture["playlist"]
+        youtube_dl.return_value.__enter__.return_value = extractor
+
+        manifest = self.downloader._extract_manifest("fixture://playlist-from-hell")
+
+        expected = fixture["expected"]
+        self.assertEqual(manifest["unavailable"], 3)
+        self.assertEqual(
+            [track["id"] for track in manifest["tracks"]],
+            expected["extractable_ids"],
+        )
+        self.assertEqual(
+            [track["position"] for track in manifest["tracks"]],
+            [
+                position
+                for position in range(1, len(fixture["playlist"]["entries"]) + 1)
+                if position not in expected["unavailable_positions"]
+            ],
+        )
+        self.assertNotEqual(manifest["tracks"][1]["id"], manifest["tracks"][2]["id"])
+        self.assertEqual(manifest["tracks"][1]["title"], manifest["tracks"][2]["title"])
+
+        self.downloader._extract_manifest = MagicMock(return_value=manifest)
+        with patch(
+            "autodrome.yt_downloader.asyncio.to_thread", new_callable=AsyncMock
+        ) as to_thread:
+            to_thread.side_effect = lambda function, *args: function(*args)
+            with self.assertRaisesRegex(RuntimeError, "unavailable or unextractable"):
+                await self.downloader.get_playlist_manifest(
+                    "fixture://playlist-from-hell"
+                )
+
+        self.assertEqual(self.downloader._manifests, {})
+
+    @patch("autodrome.yt_downloader.YoutubeDL")
+    def test_generated_playlist_boundaries_keep_numeric_identity(self, youtube_dl):
+        extractor = MagicMock()
+        youtube_dl.return_value.__enter__.return_value = extractor
+
+        for track_count in (99, 100, 101):
+            with self.subTest(track_count=track_count):
+                extractor.extract_info.return_value = generated_playlist(track_count)
+                manifest = self.downloader._extract_manifest(
+                    f"fixture://generated/{track_count}"
+                )
+
+                self.assertEqual(manifest["track_count"], track_count)
+                self.assertEqual(manifest["unavailable"], 0)
+                for position, track in enumerate(manifest["tracks"], start=1):
+                    self.assertEqual(track["position"], position)
+                    self.assertEqual(track["id"], f"audio-{position:03d}")
+                    self.assertTrue(track["url"].endswith(track["id"]))
 
     async def test_unknown_total_downloads_extracted_manifest(self):
         self.downloader.get_playlist_track_urls = AsyncMock(return_value=["first"])

@@ -5,7 +5,13 @@ from unittest import mock
 import pytest
 
 from autodrome.services.organizer import Organizer
+from autodrome.metadata_service import MetadataService
 from autodrome.models.track import Track
+from tests.fixtures import (
+    generated_musicbrainz_release,
+    generated_playlist,
+    playlist_from_hell,
+)
 
 def create_dummy_mp3(folder: str, filename: str):
     path = os.path.join(folder, filename)
@@ -109,6 +115,41 @@ def test_tag_and_rename_uses_unambiguous_multidisc_names(monkeypatch):
             "01-01 - First.mp3",
             "02-01 - First.mp3",
         ]
+
+
+def test_adversarial_titles_remain_distinct_after_sanitization(tmp_path, monkeypatch):
+    fixture = playlist_from_hell()
+    entries_by_id = {
+        entry.get("id"): entry for entry in fixture["playlist"]["entries"]
+    }
+    tracks = []
+    valid_positions = [
+        position
+        for position in range(1, len(fixture["playlist"]["entries"]) + 1)
+        if position not in fixture["expected"]["unavailable_positions"]
+    ]
+    for position, track_id in zip(
+        valid_positions, fixture["expected"]["extractable_ids"], strict=True
+    ):
+        entry = entries_by_id[track_id]
+        tracks.append(Track(position, entry["title"]))
+        (tmp_path / f"{position:02d} - Source.mp3").write_text(
+            track_id, encoding="utf-8"
+        )
+
+    organizer = Organizer()
+    monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
+    organizer.tag_and_rename(str(tmp_path), "Artist", "Album", tracks)
+
+    files = sorted(tmp_path.iterdir())
+    assert len(files) == len(tracks)
+    assert {path.read_text(encoding="utf-8") for path in files} == set(
+        fixture["expected"]["extractable_ids"]
+    )
+    assert any("Beyoncé 🚗" in path.name for path in files)
+    assert sum(path.name.endswith("Same title.mp3") for path in files) == 2
+    assert sum("Sanitized _ collision.mp3" in path.name for path in files) == 2
+    assert any("deliberately long title" in path.name for path in files)
 
 
 def test_tag_and_rename_prepares_cover_once_before_modifying_tracks(monkeypatch):
@@ -390,12 +431,16 @@ def test_publication_failure_leaves_no_partial_album(monkeypatch):
 
 @pytest.mark.parametrize("count,multidisc", [(99, False), (100, False), (101, False), (101, True)])
 def test_audio_identity_survives_rename_tag_and_validation(tmp_path, monkeypatch, count, multidisc):
-    tracks = []
-    for index in range(1, count + 1):
-        disc = 2 if multidisc and index > 60 else 1
-        position = index - 60 if disc == 2 else index
-        tracks.append(Track(position, f"Track {index}", disc, position, index))
-        (tmp_path / f"{index:02d} - Audio {index}.mp3").write_text(str(index))
+    raw_release = generated_musicbrainz_release(
+        count,
+        first_disc_tracks=60 if multidisc else None,
+    )
+    tracks = MetadataService(mock.AsyncMock())._parse_tracks(raw_release)
+    playlist = generated_playlist(count)
+    for index, entry in enumerate(playlist["entries"], start=1):
+        (tmp_path / f"{index:02d} - Source.mp3").write_text(
+            entry["id"], encoding="utf-8"
+        )
     tagged = {}
 
     class Audio(dict):
@@ -405,25 +450,35 @@ def test_audio_identity_survives_rename_tag_and_validation(tmp_path, monkeypatch
             pass
 
     def load_audio(path, **kwargs):
-        identity = int(open(path).read())
+        with open(path, encoding="utf-8") as audio_file:
+            identity = audio_file.read()
         return tagged.setdefault(identity, Audio())
 
     monkeypatch.setattr("autodrome.services.tagger.MP3", load_audio)
     monkeypatch.setattr("autodrome.services.organizer.MP3", load_audio)
     monkeypatch.setattr("autodrome.services.organizer.ID3", lambda path: mock.Mock(getall=lambda name: []))
     organizer = Organizer()
-    organizer.tag_and_rename(str(tmp_path), "Artist", "Album", tracks)
+    organizer.tag_and_rename(
+        str(tmp_path), "Boundary Album Artist", "Boundary Album", tracks
+    )
     for track in tracks:
-        audio = tagged[track.global_position]
+        identity = f"audio-{track.global_position:03d}"
+        audio = tagged[identity]
         assert audio["title"] == track.title
+        assert audio["artist"] == track.artist
+        assert audio["albumartist"] == "Boundary Album Artist"
         assert audio["tracknumber"] == str(track.number)
         if multidisc:
             assert audio["discnumber"] == str(track.disc_number)
         prefix = f"{track.disc_number:02d}-{track.position:02d}" if multidisc else f"{track.number:02d}"
-        assert (tmp_path / f"{prefix} - {track.title}.mp3").read_text() == str(track.global_position)
+        assert (tmp_path / f"{prefix} - {track.title}.mp3").read_text(
+            encoding="utf-8"
+        ) == identity
         for key, value in list(audio.items()):
             audio[key] = [value]  # EasyID3 reads return lists.
-    organizer.validate_album(str(tmp_path), "Artist", "Album", tracks)
+    organizer.validate_album(
+        str(tmp_path), "Boundary Album Artist", "Boundary Album", tracks
+    )
 
 
 @pytest.mark.parametrize("files", [
