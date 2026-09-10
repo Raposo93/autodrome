@@ -24,10 +24,10 @@ export default {
   systemStatus() {
     return apiClient.get('/status/')
   },
-  combinedSearch(artist, album, youtubeLimit = 10, youtubeMaxTracks = null) {
-    const params = { artist, album, youtube_limit: youtubeLimit }
-    if (youtubeMaxTracks !== null && youtubeMaxTracks !== undefined) {
-      params.youtube_max_tracks = youtubeMaxTracks
+  combinedSearch(artist, album, resultLimit = 10, maxTracks = null) {
+    const params = { artist, album, result_limit: resultLimit }
+    if (maxTracks !== null && maxTracks !== undefined) {
+      params.max_tracks = maxTracks
     }
     return apiClient.get('/search/', {
       params

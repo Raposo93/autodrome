@@ -62,7 +62,7 @@ test('happy path queues one fully checked download', async ({ page }) => {
   expect(search.query).toEqual({
     artist: 'Test Artist',
     album: 'Test Album',
-    youtube_limit: '10',
+    result_limit: '10',
   })
   await search.reply({
     playlists: [playlist('happy')],
@@ -144,16 +144,16 @@ test('a new search owns the UI while old hydration and preflight finish', async 
 
   await page.getByLabel('Artist').fill('New Artist')
   await page.getByLabel('Album').fill('New Album')
-  await page.getByLabel('YouTube results').fill('3')
-  await page.getByLabel('Max tracks').check()
-  await page.getByLabel('Maximum tracks').fill('5')
+  await page.getByLabel('Results per source').fill('3')
+  await page.getByLabel('Max tracks per result').check()
+  await page.getByLabel('Maximum tracks per result').fill('5')
   await page.getByRole('button', { name: 'Search music' }).click()
   const newSearch = await backend.next('search')
   expect(newSearch.query).toEqual({
     artist: 'New Artist',
     album: 'New Album',
-    youtube_limit: '3',
-    youtube_max_tracks: '5',
+    result_limit: '3',
+    max_tracks: '5',
   })
   await newSearch.reply({
     playlists: [playlist('new')],

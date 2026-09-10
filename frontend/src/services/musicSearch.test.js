@@ -62,7 +62,7 @@ test('transport failure clears stale results and ends loading', async () => {
   assert.equal(state.loadingReleases, false)
 })
 
-test('each search sends its own YouTube result limit', async () => {
+test('each search sends its own shared result limit', async () => {
   const calls = []
   const { state, search } = setup(async (...args) => {
     calls.push(args)
@@ -70,9 +70,9 @@ test('each search sends its own YouTube result limit', async () => {
   })
 
   await search()
-  state.youtubeLimit = 50
+  state.resultLimit = 50
   await search()
-  state.youtubeLimit = 7
+  state.resultLimit = 7
   await search()
 
   assert.deepEqual(calls, [
@@ -82,7 +82,7 @@ test('each search sends its own YouTube result limit', async () => {
   ])
 })
 
-test('invalid YouTube result limits are rejected before the request', async () => {
+test('invalid shared result limits are rejected before the request', async () => {
   let requests = 0
   const { state, search } = setup(async () => {
     requests += 1
@@ -90,9 +90,10 @@ test('invalid YouTube result limits are rejected before the request', async () =
   })
 
   for (const limit of [0, 51, 2.5, '10', '']) {
-    state.youtubeLimit = limit
+    state.resultLimit = limit
     await search()
     assert.match(state.errorPlaylists, /whole number from 1 to 50/)
+    assert.match(state.errorReleases, /whole number from 1 to 50/)
   }
   assert.equal(requests, 0)
 })
@@ -106,9 +107,9 @@ test('maximum-track filtering is optional and scoped to each search', async () =
 
   await search()
   state.maxTracksEnabled = true
-  state.youtubeMaxTracks = 30
+  state.maxTracks = 30
   await search()
-  state.youtubeMaxTracks = 12
+  state.maxTracks = 12
   await search()
   state.maxTracksEnabled = false
   await search()
@@ -125,7 +126,7 @@ test('enabled maximum-track filter requires a positive whole number', async () =
   state.maxTracksEnabled = true
 
   for (const maxTracks of [0, -1, 2.5, '30', '']) {
-    state.youtubeMaxTracks = maxTracks
+    state.maxTracks = maxTracks
     await search()
     assert.match(state.errorPlaylists, /positive whole number/)
   }

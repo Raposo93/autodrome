@@ -22,8 +22,8 @@ class SearchController:
         self,
         artist: str,
         album: str,
-        youtube_limit: int = 10,
-        youtube_max_tracks: Optional[int] = None,
+        result_limit: int = 10,
+        max_tracks: Optional[int] = None,
     ):
         start = time.monotonic()
         query = f"{artist} {album}".strip()
@@ -36,32 +36,43 @@ class SearchController:
                     "youtube",
                     self.yt_api.search_playlist(
                         query,
-                        limit=youtube_limit,
-                        max_tracks=youtube_max_tracks,
+                        limit=result_limit,
+                        max_tracks=max_tracks,
                     ),
                     errors,
                 ),
                 self._search_provider(
                     "musicbrainz",
-                    self.metadata_service.search_releases(artist, album),
+                    self.metadata_service.search_releases(
+                        artist,
+                        album,
+                        limit=result_limit,
+                        max_tracks=max_tracks,
+                    ),
                     errors,
                 ),
             )
 
-        playlists = self._sort_by_track_count(
-            [p.__dict__ for p in playlists_results]
+        playlists = self._filter_sort_and_limit(
+            [p.__dict__ for p in playlists_results],
+            result_limit,
+            max_tracks,
         )
-        releases = self._sort_by_track_count([
-            {
-                "id": r.id,
-                "title": r.title,
-                "date": r.date,
-                "artist": r.artist,
-                "cover_url": r.cover_url,
-                "track_count": r.track_count,
-            }
-            for r in releases_results
-        ])
+        releases = self._filter_sort_and_limit(
+            [
+                {
+                    "id": r.id,
+                    "title": r.title,
+                    "date": r.date,
+                    "artist": r.artist,
+                    "cover_url": r.cover_url,
+                    "track_count": r.track_count,
+                }
+                for r in releases_results
+            ],
+            result_limit,
+            max_tracks,
+        )
         elapsed = time.monotonic() - start
         logger.info(f"SearchController: completed search for '{query}' in {elapsed:.2f} seconds")
         return {
@@ -95,6 +106,25 @@ class SearchController:
             return (1, 0)
 
         return sorted(items, key=sort_key)
+
+    @classmethod
+    def _filter_sort_and_limit(cls, items, limit, max_tracks):
+        if max_tracks is not None:
+            items = [
+                item
+                for item in items
+                if not cls._exceeds_track_limit(item.get("track_count"), max_tracks)
+            ]
+        return cls._sort_by_track_count(items)[:limit]
+
+    @staticmethod
+    def _exceeds_track_limit(track_count, max_tracks):
+        return (
+            isinstance(track_count, int)
+            and not isinstance(track_count, bool)
+            and track_count >= 0
+            and track_count > max_tracks
+        )
 
     async def get_release_details(self, release_id: str):
         start = time.monotonic()

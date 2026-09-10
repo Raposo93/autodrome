@@ -138,11 +138,29 @@ class SearchRequest(BaseModel):
 
     artist: Optional[NonEmptyText] = None
     album: Optional[NonEmptyText] = None
-    youtube_limit: int = Field(default=10, ge=1, le=50)
+    result_limit: Optional[int] = Field(default=None, ge=1, le=50)
+    max_tracks: Optional[int] = Field(default=None, ge=1)
+    youtube_limit: Optional[int] = Field(default=None, ge=1, le=50)
     youtube_max_tracks: Optional[int] = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def require_search_term(self) -> "SearchRequest":
         if self.artist is None and self.album is None:
             raise ValueError("At least one of artist or album is required")
+        if self.youtube_limit is not None:
+            if (
+                self.result_limit is not None
+                and self.result_limit != self.youtube_limit
+            ):
+                raise ValueError("Conflicting result limits")
+            self.result_limit = self.youtube_limit
+        elif self.result_limit is None:
+            self.result_limit = 10
+        if self.youtube_max_tracks is not None:
+            if (
+                self.max_tracks is not None
+                and self.max_tracks != self.youtube_max_tracks
+            ):
+                raise ValueError("Conflicting maximum-track filters")
+            self.max_tracks = self.youtube_max_tracks
         return self

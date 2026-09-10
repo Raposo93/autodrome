@@ -180,6 +180,12 @@ el manifiesto de YouTube al seleccionar una playlist; un fallo o una cantidad
 incompatible bloquea la selección. El manifiesto se reutiliza hasta dos minutos
 y se vuelve a validar en el backend antes de descargar.
 
+**Results per source** limita por igual las playlists de YouTube y los releases
+de MusicBrainz. Al activar **Max tracks per result**, ambas listas excluyen los
+candidatos cuyo número conocido de pistas supera el máximo; los candidatos sin
+recuento conocido se conservan para no confundir metadata incompleta con una
+incompatibilidad confirmada.
+
 Se recomienda seleccionar una playlist y su release de MusicBrainz. Si no existe
 un release adecuado, selecciona la playlist y pulsa **Download without MusicBrainz**.
 Acepta la explicación e introduce los nombres definitivos de **Artist** y **Album**;

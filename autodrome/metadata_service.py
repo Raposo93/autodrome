@@ -8,6 +8,8 @@ from autodrome.models.release import Release
 from autodrome.http_client_async import AsyncHttpClient, UpstreamServiceError
 
 class MetadataService:
+    MAX_SEARCH_RESULTS = 50
+
     def __init__(
         self,
         http_client: AsyncHttpClient,
@@ -18,10 +20,25 @@ class MetadataService:
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.cover_dir = os.path.abspath(os.path.join(self.base_dir, '..', 'covers'))
 
-    async def search_releases(self, artist: Optional[str], album: Optional[str]) -> List[Release]:
+    async def search_releases(
+        self,
+        artist: Optional[str],
+        album: Optional[str],
+        limit: int = 10,
+        max_tracks: Optional[int] = None,
+    ) -> List[Release]:
+        self._validate_search_options(limit, max_tracks)
         query = self._build_mb_query(artist, album)
-        data = await self._fetch_releases_data(query)
-        return self._parse_releases(data, artist)
+        candidate_limit = self.MAX_SEARCH_RESULTS if max_tracks is not None else limit
+        data = await self._fetch_releases_data(query, candidate_limit)
+        releases = self._parse_releases(data, artist)
+        if max_tracks is not None:
+            releases = [
+                release
+                for release in releases
+                if not self._exceeds_track_limit(release.track_count, max_tracks)
+            ]
+        return releases[:limit]
 
     def _cache_release(self, release: Release) -> None:
         cache_data = {
@@ -196,14 +213,49 @@ class MetadataService:
             terms.append(f"artist:{artist}")
         return " AND ".join(terms)
 
-    async def _fetch_releases_data(self, query:str) -> Dict[str, Any]:
+    async def _fetch_releases_data(
+        self, query: str, limit: int = 10
+    ) -> Dict[str, Any]:
         url = "https://musicbrainz.org/ws/2/release/"
-        params = {"query": query, "fmt": "json", "limit": 10}
+        params = {"query": query, "fmt": "json", "limit": limit}
         return await self.http_client.get(
             url,
             params=params,
             provider="MusicBrainz",
             context="searching releases",
+        )
+
+    def _validate_search_options(
+        self,
+        limit: int,
+        max_tracks: Optional[int],
+    ) -> None:
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= self.MAX_SEARCH_RESULTS
+        ):
+            raise ValueError(
+                "MusicBrainz result limit must be between 1 and "
+                f"{self.MAX_SEARCH_RESULTS}"
+            )
+        if (
+            max_tracks is not None
+            and (
+                not isinstance(max_tracks, int)
+                or isinstance(max_tracks, bool)
+                or max_tracks < 1
+            )
+        ):
+            raise ValueError("MusicBrainz maximum tracks must be a positive integer")
+
+    @staticmethod
+    def _exceeds_track_limit(track_count, max_tracks: int) -> bool:
+        return (
+            isinstance(track_count, int)
+            and not isinstance(track_count, bool)
+            and track_count >= 0
+            and track_count > max_tracks
         )
 
     async def _get_tracks(self, release_id: str) -> List[Track]:

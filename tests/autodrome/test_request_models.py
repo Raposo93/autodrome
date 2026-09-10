@@ -64,6 +64,26 @@ class TestRequestModels(unittest.TestCase):
         with self.assertRaises(ValidationError):
             SearchRequest(artist="   ")
 
+    def test_search_options_are_shared_and_accept_legacy_names(self):
+        request = SearchRequest(
+            artist="Artist", result_limit=15, max_tracks=20
+        )
+        self.assertEqual(request.result_limit, 15)
+        self.assertEqual(request.max_tracks, 20)
+
+        legacy = SearchRequest(
+            artist="Artist", youtube_limit=12, youtube_max_tracks=18
+        )
+        self.assertEqual(legacy.result_limit, 12)
+        self.assertEqual(legacy.max_tracks, 18)
+
+        for values in (
+            {"result_limit": 10, "youtube_limit": 11},
+            {"max_tracks": 10, "youtube_max_tracks": 11},
+        ):
+            with self.subTest(values=values), self.assertRaises(ValidationError):
+                SearchRequest(artist="Artist", **values)
+
     def test_album_destination_requires_safe_final_metadata(self):
         request = AlbumDestinationRequest(artist="  Artist  ", album="Album")
         self.assertEqual(request.artist, "Artist")

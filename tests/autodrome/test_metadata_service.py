@@ -58,6 +58,71 @@ class TestMetadataService(unittest.IsolatedAsyncioTestCase):
         self.service._get_cover_url.assert_not_awaited()
         self.service.redis_cache.get_release.assert_not_called()
         self.service.redis_cache.set_release.assert_not_called()
+        self.http_client.get.assert_awaited_once_with(
+            "https://musicbrainz.org/ws/2/release/",
+            params={
+                "query": "release:Test Album AND artist:Test Artist",
+                "fmt": "json",
+                "limit": 10,
+            },
+            provider="MusicBrainz",
+            context="searching releases",
+        )
+
+    async def test_search_releases_applies_shared_limit_and_track_filter(self):
+        self.http_client.get.return_value = {
+            "releases": [
+                {
+                    "id": "too-long",
+                    "title": "Long",
+                    "artist-credit": [{"name": "Artist"}],
+                    "track-count": 34,
+                },
+                {
+                    "id": "short",
+                    "title": "Short",
+                    "artist-credit": [{"name": "Artist"}],
+                    "track-count": 10,
+                },
+                {
+                    "id": "unknown",
+                    "title": "Unknown",
+                    "artist-credit": [{"name": "Artist"}],
+                },
+                {
+                    "id": "also-valid",
+                    "title": "Also valid",
+                    "artist-credit": [{"name": "Artist"}],
+                    "track-count": 20,
+                },
+            ]
+        }
+
+        releases = await self.service.search_releases(
+            "Artist", "Album", limit=2, max_tracks=20
+        )
+
+        self.assertEqual([release.id for release in releases], ["short", "unknown"])
+        self.http_client.get.assert_awaited_once_with(
+            "https://musicbrainz.org/ws/2/release/",
+            params={
+                "query": "release:Album AND artist:Artist",
+                "fmt": "json",
+                "limit": 50,
+            },
+            provider="MusicBrainz",
+            context="searching releases",
+        )
+
+    async def test_search_releases_rejects_invalid_shared_options(self):
+        for values in (
+            {"limit": 0},
+            {"limit": 51},
+            {"max_tracks": 0},
+        ):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                await self.service.search_releases("Artist", "Album", **values)
+        self.http_client.get.assert_not_awaited()
 
     async def test_search_releases_ignores_invalid_track_count(self):
         self.http_client.get.return_value = {

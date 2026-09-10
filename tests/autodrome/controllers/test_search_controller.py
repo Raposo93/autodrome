@@ -41,7 +41,9 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
             await musicbrainz_started.wait()
             return []
 
-        async def musicbrainz(artist, album):
+        async def musicbrainz(artist, album, limit, max_tracks):
+            self.assertEqual(limit, 10)
+            self.assertIsNone(max_tracks)
             musicbrainz_started.set()
             await youtube_started.wait()
             return []
@@ -51,7 +53,7 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
         result = await asyncio.wait_for(controller.search("Artist", "Album"), 1)
         self.assertEqual(result, {"playlists": [], "releases": [], "errors": {}})
 
-    async def test_search_forwards_youtube_options_only_to_youtube(self):
+    async def test_search_forwards_shared_options_to_both_providers(self):
         controller = SearchController(http_client=MagicMock())
         controller.yt_api.search_playlist = AsyncMock(return_value=[])
         controller.metadata_service.search_releases = AsyncMock(return_value=[])
@@ -59,15 +61,15 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
         await controller.search(
             "Artist",
             "Album",
-            youtube_limit=37,
-            youtube_max_tracks=28,
+            result_limit=37,
+            max_tracks=28,
         )
 
         controller.yt_api.search_playlist.assert_awaited_once_with(
             "Artist Album", limit=37, max_tracks=28
         )
         controller.metadata_service.search_releases.assert_awaited_once_with(
-            "Artist", "Album"
+            "Artist", "Album", limit=37, max_tracks=28
         )
 
     async def test_unexpected_provider_failure_preserves_other_results(self):
@@ -132,6 +134,36 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [release["id"] for release in result["releases"]],
             ["release-3", "release-1", "release-4", "release-2"],
+        )
+
+    async def test_shared_limit_and_track_filter_apply_to_both_result_sets(self):
+        controller = SearchController(http_client=MagicMock())
+        controller.yt_api.search_playlist = AsyncMock(
+            return_value=[
+                Playlist("playlist-1", "One", "Channel", "url-1", None, 8),
+                Playlist("playlist-2", "Two", "Channel", "url-2", None, 30),
+                Playlist("playlist-3", "Three", "Channel", "url-3", None, None),
+            ]
+        )
+        controller.metadata_service.search_releases = AsyncMock(
+            return_value=[
+                Release("release-1", "One", "2020", "Artist", None, track_count=7),
+                Release("release-2", "Two", "2020", "Artist", None, track_count=34),
+                Release("release-3", "Three", "2020", "Artist", None, track_count=None),
+            ]
+        )
+
+        result = await controller.search(
+            "Artist", "Album", result_limit=2, max_tracks=20
+        )
+
+        self.assertEqual(
+            [playlist["id"] for playlist in result["playlists"]],
+            ["playlist-1", "playlist-3"],
+        )
+        self.assertEqual(
+            [release["id"] for release in result["releases"]],
+            ["release-1", "release-3"],
         )
 
     async def test_selected_release_returns_full_details(self):

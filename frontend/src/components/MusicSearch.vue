@@ -30,54 +30,54 @@
           />
         </label>
         <label class="search-field">
-          <span>YouTube results</span>
+          <span>Results per source</span>
           <input
-            v-model.number="youtubeLimit"
+            v-model.number="resultLimit"
             type="number"
             min="1"
             max="50"
             step="1"
             inputmode="numeric"
-            aria-describedby="youtube-limit-error"
-            :aria-invalid="Boolean(youtubeLimitError)"
+            aria-describedby="result-limit-error"
+            :aria-invalid="Boolean(resultLimitError)"
           />
           <small
-            v-if="youtubeLimitError"
-            id="youtube-limit-error"
+            v-if="resultLimitError"
+            id="result-limit-error"
             class="search-field-error"
             role="alert"
           >
-            {{ youtubeLimitError }}
+            {{ resultLimitError }}
           </small>
         </label>
         <div class="search-field">
-          <label class="search-checkbox" for="youtube-max-tracks-enabled">
+          <label class="search-checkbox" for="max-tracks-enabled">
             <input
-              id="youtube-max-tracks-enabled"
+              id="max-tracks-enabled"
               v-model="maxTracksEnabled"
               type="checkbox"
             />
-            <span>Max tracks</span>
+            <span>Max tracks per result</span>
           </label>
           <input
-            id="youtube-max-tracks"
-            v-model.number="youtubeMaxTracks"
+            id="max-tracks"
+            v-model.number="maxTracks"
             type="number"
             min="1"
             step="1"
             inputmode="numeric"
-            aria-label="Maximum tracks"
-            aria-describedby="youtube-max-tracks-error"
+            aria-label="Maximum tracks per result"
+            aria-describedby="max-tracks-error"
             :disabled="!maxTracksEnabled"
-            :aria-invalid="Boolean(youtubeMaxTracksError)"
+            :aria-invalid="Boolean(maxTracksError)"
           />
           <small
-            v-if="youtubeMaxTracksError"
-            id="youtube-max-tracks-error"
+            v-if="maxTracksError"
+            id="max-tracks-error"
             class="search-field-error"
             role="alert"
           >
-            {{ youtubeMaxTracksError }}
+            {{ maxTracksError }}
           </small>
         </div>
         <button
@@ -86,7 +86,7 @@
           :disabled="
             (!artist && !album) ||
             isSearching ||
-            Boolean(youtubeLimitError || youtubeMaxTracksError)
+            Boolean(resultLimitError || maxTracksError)
           "
         >
           {{ isSearching ? 'Searching...' : 'Search music' }}
@@ -339,15 +339,15 @@ export default {
     isSearching() {
       return this.loadingPlaylists || this.loadingReleases
     },
-    youtubeLimitError() {
-      return Number.isInteger(this.youtubeLimit) &&
-        this.youtubeLimit >= 1 && this.youtubeLimit <= 50
+    resultLimitError() {
+      return Number.isInteger(this.resultLimit) &&
+        this.resultLimit >= 1 && this.resultLimit <= 50
         ? null
         : 'Enter a whole number from 1 to 50.'
     },
-    youtubeMaxTracksError() {
+    maxTracksError() {
       if (!this.maxTracksEnabled) return null
-      return Number.isInteger(this.youtubeMaxTracks) && this.youtubeMaxTracks >= 1
+      return Number.isInteger(this.maxTracks) && this.maxTracks >= 1
         ? null
         : 'Enter a positive whole number.'
     },
@@ -425,9 +425,9 @@ export default {
       hydrator: null,
       artist: '',
       album: '',
-      youtubeLimit: 10,
+      resultLimit: 10,
       maxTracksEnabled: false,
-      youtubeMaxTracks: 30,
+      maxTracks: 30,
       playlists: [],
       releases: [],
       loadingPlaylists: false,
@@ -506,16 +506,17 @@ export default {
       this.resetCoverChoice()
 
       if (!this.artist && !this.album) return
-      const youtubeSearchError = this.youtubeLimitError || this.youtubeMaxTracksError
-      if (youtubeSearchError) {
-        this.errorPlaylists = youtubeSearchError
+      const searchOptionError = this.resultLimitError || this.maxTracksError
+      if (searchOptionError) {
+        this.errorPlaylists = searchOptionError
+        this.errorReleases = searchOptionError
         return
       }
 
       const artist = this.artist.trim()
       const album = this.album.trim()
-      const youtubeLimit = this.youtubeLimit
-      const youtubeMaxTracks = this.maxTracksEnabled ? this.youtubeMaxTracks : null
+      const resultLimit = this.resultLimit
+      const maxTracks = this.maxTracksEnabled ? this.maxTracks : null
 
       this.playlists = []
       this.releases = []
@@ -526,8 +527,8 @@ export default {
         const response = await api.combinedSearch(
           artist,
           album,
-          youtubeLimit,
-          youtubeMaxTracks
+          resultLimit,
+          maxTracks
         )
         this.playlists = response.data.playlists || []
         this.releases = response.data.releases || []
