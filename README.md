@@ -215,6 +215,16 @@ de confirmar que el álbum final no existe; Autodrome rechazará un destino ya
 publicado en vez de sobrescribirlo. Conserva o mueve aparte cualquier staging que
 necesites para diagnóstico antes de reintentar.
 
+Un cierre abrupto (`SIGKILL`, caída del host o pérdida del proceso) no ejecuta el
+cleanup cooperativo. Al arrancar de nuevo, un job que quedó durablemente en
+`running` pasa a `interrupted` y nunca se repite de forma automática; los jobs
+que seguían en `queued` sí conservan su orden y continúan. El staging parcial se
+mantiene con la política predeterminada para poder diagnosticarlo. Si el proceso
+cayó después del rename final pero antes de guardar `succeeded`, el álbum puede
+estar completo aunque el job figure como `interrupted`: revisa primero biblioteca
+y staging y no uses **Retry** sobre un álbum ya publicado. La protección de
+destino impedirá sobrescribirlo.
+
 La portada original queda en `covers/<release-id>.jpg`. Si se rechaza, sustituye
 ese archivo por una imagen JPEG, PNG o WebP válida y vuelve a solicitar el álbum.
 La versión optimizada solo vive en memoria y no modifica el original.
