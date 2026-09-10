@@ -32,7 +32,7 @@ del producto. Se recomienda systemd para ejecución persistente y
 
 ## Instalación desde un clon limpio
 
-Desde la raíz del repositorio:
+Para desarrollo o ejecución manual, desde la raíz del repositorio:
 
 ```bash
 python3.14 -m venv .venv
@@ -48,38 +48,201 @@ ejecutar la aplicación.
 
 ## Servicio systemd (recomendado)
 
-Completa la instalación anterior y ejecuta `npm run build --prefix frontend`.
-La unidad de ejemplo [deploy/autodrome.service](deploy/autodrome.service) usa
-`/opt/autodrome` y el usuario/grupo no-root `autodrome`. Puedes usar otro usuario
-existente y otra ruta: ajusta `User`, `Group`, `WorkingDirectory`, `EnvironmentFile`
-y `ExecStart` en la copia de la unidad. Ese usuario necesita lectura del código,
-el entorno y `.env`, y escritura en la biblioteca, staging, cola, `covers/` y
-`autodrome.log` dentro del proyecto. Protege `.env` con permisos `600`.
+La unidad de ejemplo [deploy/autodrome.service](deploy/autodrome.service) asume
+una instalación completa en `/opt/autodrome` y un usuario/grupo no-root
+`autodrome`. `/opt/autodrome` debe contener el código, `.venv`, `.env` y el
+frontend compilado en `frontend/dist`; no copies únicamente el script de
+arranque.
+
+Puedes usar otro usuario existente u otra ruta, pero entonces ajusta `User`,
+`Group`, `WorkingDirectory`, `EnvironmentFile` y `ExecStart` en la copia de la
+unidad.
+
+### Instalación persistente en `/opt/autodrome`
+
+Crea primero el usuario del servicio. El ejemplo usa un usuario de sistema sin
+shell interactiva:
+
+```bash
+sudo useradd --system --user-group --home-dir /opt/autodrome \
+  --shell /usr/sbin/nologin autodrome
+```
+
+Si ya existe, no vuelvas a crearlo. Compruébalo con `id autodrome`.
+
+Se recomienda que el checkout pertenezca al usuario administrador que realiza
+`git pull`, no al usuario del servicio. Así Git no necesita excepciones
+`safe.directory` y el proceso de Autodrome no puede modificar su propio código.
+Desde una cuenta administrativa normal:
+
+```bash
+sudo install -d -o "$USER" -g "$(id -gn)" -m 0755 /opt/autodrome
+git clone https://github.com/Raposo93/autodrome.git /opt/autodrome
+cd /opt/autodrome
+
+python3.14 -m venv .venv
+.venv/bin/python -m pip install -r requirements.lock
+npm ci --prefix frontend
+npm run build --prefix frontend
+cp .env.example .env
+```
+
+Edita `/opt/autodrome/.env` y configura al menos `GOOGLE_API_KEY`,
+`CONTACT_EMAIL` y una ruta absoluta para `LIBRARY_PATH`.
+
+El servicio necesita leer `.env`, escribir en `covers/` y abrir
+`autodrome.log`. Prepara esos recursos sin dar permiso de escritura sobre todo
+el checkout:
+
+```bash
+sudo chown "$USER":autodrome /opt/autodrome/.env
+chmod 640 /opt/autodrome/.env
+
+sudo chown -R autodrome:autodrome /opt/autodrome/covers
+sudo chmod 0750 /opt/autodrome/covers
+
+sudo install -o autodrome -g autodrome -m 0640 /dev/null \
+  /opt/autodrome/autodrome.log
+```
+
+El usuario `autodrome` también necesita lectura y escritura en `LIBRARY_PATH`,
+`STAGING_PATH` y `QUEUE_STATE_PATH`. La forma concreta de concederlos depende de
+si la biblioteca es exclusiva del servicio o compartida con otros usuarios.
+
+Antes de instalar la unidad, prueba el mismo arranque que usará systemd:
+
+```bash
+sudo -u autodrome /opt/autodrome/start_autodrome.sh --production
+```
+
+Si arranca correctamente, detén la prueba con `Ctrl+C`. Un fallo aquí suele ser
+de configuración, dependencias o permisos y es más fácil de diagnosticar antes
+de introducir systemd.
+
+Instala y verifica la unidad:
 
 ```bash
 sudo install -m 644 deploy/autodrome.service /etc/systemd/system/autodrome.service
+sudo systemd-analyze verify /etc/systemd/system/autodrome.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now autodrome
 systemctl status autodrome
 journalctl -u autodrome -f
+```
+
+Operación habitual:
+
+```bash
 sudo systemctl stop autodrome
 sudo systemctl start autodrome
 sudo systemctl restart autodrome
+systemctl status autodrome
+journalctl -u autodrome -b
+journalctl -xeu autodrome.service
 ```
 
 El proceso permanece en foreground, arranca sin login y se reinicia tras fallos
-con una espera de cinco segundos. Al parar, se espera a que termine o se interrumpa
-la operación de audio activa; no se inicia otra pista. Si no termina en 120 segundos,
-systemd elimina todo el grupo de procesos. La cola conserva el último estado durable
-y los trabajos inciertos pasan a `interrupted` al reiniciar; revisa staging y biblioteca
-antes de reintentarlos. Los logs están en journal y en `autodrome.log`.
+con una espera de cinco segundos. Al parar, se espera a que termine o se
+interrumpa la operación de audio activa; no se inicia otra pista. Si no termina
+en 120 segundos, systemd elimina todo el grupo de procesos. La cola conserva el
+último estado durable y los trabajos inciertos pasan a `interrupted` al
+reiniciar; revisa staging y biblioteca antes de reintentarlos. Los logs están en
+journal y en `autodrome.log`.
 
-Para actualizar: detén el servicio, ejecuta `git pull`, instala las dependencias
-bloqueadas con `.venv/bin/python -m pip install -r requirements.lock` y
-`npm ci --prefix frontend`, reconstruye con `npm run build --prefix frontend` y
-vuelve a arrancar. Si cambia la unidad, actualiza su copia y ejecuta
-`sudo systemctl daemon-reload` antes de arrancar. Ejecuta las instalaciones y el
-build con el usuario propietario, sin `sudo`.
+### Biblioteca compartida
+
+La unidad distribuida usa `UMask=0077`, adecuada cuando los archivos creados por
+Autodrome deben quedar privados para el usuario del servicio. Si `LIBRARY_PATH`
+forma parte de una biblioteca administrada también por otra cuenta o por otros
+servicios, usa un grupo compartido y una umask deliberada en vez de cambiar la
+propiedad de toda la biblioteca a `autodrome`.
+
+Por ejemplo, con un grupo `media`:
+
+```bash
+sudo groupadd media
+sudo usermod -aG media "$USER"
+sudo usermod -aG media autodrome
+sudo chgrp -R media /ruta/a/la/biblioteca
+sudo find /ruta/a/la/biblioteca -type d -exec chmod 2775 {} +
+sudo find /ruta/a/la/biblioteca -type f -exec chmod 0664 {} +
+```
+
+Revisa el alcance antes de aplicar cambios recursivos sobre una biblioteca
+existente. Los directorios con bit `setgid` hacen que los nuevos archivos y
+subdirectorios hereden el grupo compartido.
+
+Crea un override de systemd para que Autodrome use ese grupo y genere contenido
+compartible:
+
+```bash
+sudo mkdir -p /etc/systemd/system/autodrome.service.d
+sudo tee /etc/systemd/system/autodrome.service.d/override.conf >/dev/null <<'EOF'
+[Service]
+UMask=0002
+SupplementaryGroups=media
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl restart autodrome
+```
+
+`UMask=0002` produce normalmente directorios `775` y archivos `664`; usa
+`UMask=0007` si solo el propietario y el grupo deben tener acceso. Si cambias la
+umask después de haber descargado contenido, los permisos existentes no cambian
+automáticamente.
+
+Comprueba la configuración efectiva, incluidos los overrides:
+
+```bash
+systemctl show autodrome -p UMask -p SupplementaryGroups
+systemctl cat autodrome
+```
+
+Para diagnosticar un problema de permisos sobre la cola o la biblioteca:
+
+```bash
+sudo -u autodrome test -r /opt/autodrome/.env && echo '.env readable'
+sudo -u autodrome test -w /ruta/a/la/biblioteca && echo 'library writable'
+namei -l /ruta/a/la/biblioteca/.autodrome-queue.json
+```
+
+### Biblioteca en otro filesystem
+
+Si la biblioteca vive en un disco o montaje independiente, puedes hacer que
+systemd espere explícitamente a ese filesystem. Añade al mismo override:
+
+```ini
+[Unit]
+RequiresMountsFor=/ruta/a/la/biblioteca
+```
+
+Después ejecuta `sudo systemctl daemon-reload` y reinicia el servicio. Esto evita
+que Autodrome intente arrancar durante el boot antes de que su biblioteca esté
+montada.
+
+### Actualización
+
+Detén el servicio y actualiza con el usuario propietario del checkout, sin
+`sudo` para Git, `.venv`, npm o el build:
+
+```bash
+sudo systemctl stop autodrome
+cd /opt/autodrome
+git pull
+.venv/bin/python -m pip install -r requirements.lock
+npm ci --prefix frontend
+npm run build --prefix frontend
+sudo systemctl start autodrome
+```
+
+Si cambia `deploy/autodrome.service`, vuelve a instalar la unidad y recarga
+systemd antes de arrancar:
+
+```bash
+sudo install -m 644 deploy/autodrome.service /etc/systemd/system/autodrome.service
+sudo systemctl daemon-reload
+```
 
 ## Arranque y parada
 
