@@ -139,6 +139,25 @@ class AsyncHttpClient:
             context=context,
         )
 
+    async def probe(
+        self,
+        url: str,
+        timeout: Optional[float] = None,
+        provider: Optional[str] = None,
+        context: str = "checking service availability",
+    ) -> None:
+        async def discard_response(_response) -> None:
+            return None
+
+        await self._request(
+            "head",
+            url,
+            discard_response,
+            timeout=timeout,
+            provider=provider,
+            context=context,
+        )
+
     async def _request(
         self,
         method_name: str,

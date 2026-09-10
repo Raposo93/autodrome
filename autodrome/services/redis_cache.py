@@ -23,6 +23,9 @@ class NullCache:
     def get_release(self, release_id: str) -> Optional[Dict[str, Any]]:
         return None
 
+    def ping(self) -> bool:
+        return False
+
 
 class RedisCache:
     """Best-effort Redis cache whose failures never block the primary workflow."""
@@ -39,7 +42,12 @@ class RedisCache:
             port=port,
             db=db,
             decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
         )
+
+    def ping(self) -> bool:
+        return bool(self.client.ping())
 
     def set_release(self, release_id: str, release_data: Dict[str, Any]) -> None:
         """Guarda en Redis la info de un release como JSON serializado."""

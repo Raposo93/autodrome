@@ -42,6 +42,13 @@ class TestRedisCache(unittest.TestCase):
         self.assertTrue(any("Could not retrieve" in entry for entry in logs.output))
         self.assertTrue(any("Could not save" in entry for entry in logs.output))
 
+    def test_ping_reports_client_availability(self):
+        client = MagicMock()
+        client.ping.return_value = True
+
+        self.assertTrue(RedisCache(client=client).ping())
+        self.assertFalse(NullCache().ping())
+
 
 if __name__ == "__main__":
     unittest.main()

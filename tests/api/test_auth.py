@@ -19,6 +19,19 @@ class TestApiAuthentication(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.headers["www-authenticate"], "Bearer")
 
+    async def test_system_status_requires_token_on_external_host(self):
+        app.state.system_status = AsyncMock()
+        with patch.object(conf, "api_host", "0.0.0.0"), patch.object(
+            conf, "api_token", "a" * 32
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.get("/api/status/")
+
+        self.assertEqual(response.status_code, 401)
+        app.state.system_status.snapshot.assert_not_awaited()
+
     async def test_history_mutations_require_token_on_external_host(self):
         app.state.queue_manager = AsyncMock()
         with patch.object(conf, "api_host", "0.0.0.0"), patch.object(conf, "api_token", "a" * 32):

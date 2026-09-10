@@ -68,6 +68,22 @@ class TestAsyncHttpClient(unittest.IsolatedAsyncioTestCase):
         )
         response.raise_for_status.assert_called_once_with()
 
+    async def test_probe_checks_reachability_without_reading_a_body(self):
+        response = MagicMock()
+        self.session.head.return_value = async_response_context(response)
+
+        result = await self.client.probe(
+            "https://example.test/discovery", timeout=3, provider="YouTube"
+        )
+
+        self.assertIsNone(result)
+        self.session.head.assert_called_once_with(
+            "https://example.test/discovery",
+            headers=self.client.headers,
+            timeout=3,
+        )
+        response.raise_for_status.assert_called_once_with()
+
     async def test_get_retries_429_with_exponential_backoff(self):
         sleep = AsyncMock()
         client = AsyncHttpClient(session=self.session, sleep=sleep)
