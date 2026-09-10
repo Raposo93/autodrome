@@ -118,8 +118,9 @@ La configuración principal vive en `.env`:
   defecto.
 - `PRESERVE_FAILED_STAGING`: conserva (`true`) o elimina (`false`) los trabajos
   fallidos; por defecto, `true`.
-- `DOWNLOAD_CONCURRENCY`: actualmente debe ser `1`; las descargas de un álbum
-  siguen siendo secuenciales.
+- `DOWNLOAD_CONCURRENCY`: descargas de pistas simultáneas dentro de un álbum,
+  entre `1` y `4`; por defecto, `1`. Valores altos aumentan la carga de CPU,
+  disco y ffmpeg, y pueden provocar throttling del proveedor.
 - `LOG_LEVEL`: nivel de log; por defecto, `INFO`.
 - `REDIS_ENABLED`: activa la caché Redis local; por defecto, `false`. Cuando
   está desactivada no se crea ningún cliente ni se intenta conectar a Redis.
@@ -228,7 +229,8 @@ aplicar actualizaciones automáticas.
 
 ## Limitaciones de la primera release
 
-- Un backend y un álbum activo; pistas secuenciales (`DOWNLOAD_CONCURRENCY=1`).
+- Un backend y un álbum activo; concurrencia de pistas limitada a `1–4`
+  (`DOWNLOAD_CONCURRENCY=1` por defecto).
 - Los trabajos en espera se pueden cancelar; las descargas activas no se interrumpen.
 - Las playlists pueden cambiar tras el preflight. Un fallo posterior impide publicar
   el álbum y conserva el contexto; no se completa con pistas ausentes.

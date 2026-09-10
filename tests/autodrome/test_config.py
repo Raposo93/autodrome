@@ -72,9 +72,30 @@ class TestConfig(unittest.TestCase):
 
         self.assertFalse(settings.optimize_oversized_covers)
 
-    def test_parallel_download_configuration_is_rejected_for_now(self):
-        with self.assertRaisesRegex(ConfigurationError, "DOWNLOAD_CONCURRENCY"):
-            self.build_config({**REQUIRED_ENV, "DOWNLOAD_CONCURRENCY": "2"})
+    def test_limited_track_download_concurrency_can_be_configured(self):
+        for concurrency in (1, 2, 4):
+            with self.subTest(concurrency=concurrency):
+                settings = self.build_config(
+                    {
+                        **REQUIRED_ENV,
+                        "DOWNLOAD_CONCURRENCY": str(concurrency),
+                    }
+                )
+                self.assertEqual(settings.download_concurrency, concurrency)
+
+    def test_track_download_concurrency_outside_supported_range_is_rejected(self):
+        for concurrency in ("0", "5", "1.5", "many"):
+            with self.subTest(concurrency=concurrency):
+                with self.assertRaisesRegex(
+                    ConfigurationError,
+                    "DOWNLOAD_CONCURRENCY",
+                ):
+                    self.build_config(
+                        {
+                            **REQUIRED_ENV,
+                            "DOWNLOAD_CONCURRENCY": concurrency,
+                        }
+                    )
 
     def test_missing_critical_configuration_is_actionable(self):
         settings = self.build_config({})

@@ -7,6 +7,7 @@ from typing import Callable, List, Optional, Tuple
 
 from yt_dlp import YoutubeDL
 
+from autodrome.config import MAX_DOWNLOAD_CONCURRENCY
 from autodrome.logger import logger
 from autodrome.models.progress import report_progress, ProgressCallback
 
@@ -39,10 +40,14 @@ class YTDownloader:
     ):
         if track_download_attempts < 1:
             raise ValueError("track_download_attempts must be at least 1")
-        if download_concurrency != 1:
+        if (
+            not isinstance(download_concurrency, int)
+            or isinstance(download_concurrency, bool)
+            or not 1 <= download_concurrency <= MAX_DOWNLOAD_CONCURRENCY
+        ):
             raise ValueError(
-                "download_concurrency must remain 1 until parallel publication "
-                "is supported"
+                "download_concurrency must be between 1 and "
+                f"{MAX_DOWNLOAD_CONCURRENCY}"
             )
         self._manifests = {}
         self.manifest_ttl_seconds = 120
@@ -70,21 +75,65 @@ class YTDownloader:
         self.validate_manifest(track_urls, total)
 
         hook = self._build_progress_hook(total or len(track_urls))
-        failures = []
-        completed = 0
-        for index, track_url in enumerate(track_urls, start=1):
-            await report_progress(progress, "downloading", index, len(track_urls), completed)
-            try:
-                await self.download_track(track_url, dest, index, hook)
-                completed += 1
-                await report_progress(progress, "downloading", index, len(track_urls), completed)
-            except TrackDownloadError as e:
-                failures.append((e.index, e.url, e.reason))
+        failures = await self._download_tracks(
+            track_urls,
+            dest,
+            hook,
+            progress,
+        )
 
         if failures:
             raise PlaylistDownloadError(failures)
 
         await self._check_downloaded_files(dest)
+
+    async def _download_tracks(
+        self,
+        track_urls: List[str],
+        dest: str,
+        hook: Callable,
+        progress: Optional[ProgressCallback],
+    ) -> List[Tuple[int, str, str]]:
+        semaphore = asyncio.Semaphore(self.download_concurrency)
+        progress_lock = asyncio.Lock()
+        completed = 0
+
+        async def update_progress(index: int, *, finished: bool = False) -> None:
+            nonlocal completed
+            async with progress_lock:
+                if finished:
+                    completed += 1
+                await report_progress(
+                    progress,
+                    "downloading",
+                    index,
+                    len(track_urls),
+                    completed,
+                )
+
+        async def download_one(index: int, track_url: str):
+            async with semaphore:
+                await update_progress(index)
+                try:
+                    await self.download_track(track_url, dest, index, hook)
+                except TrackDownloadError as error:
+                    return (error.index, error.url, error.reason)
+                await update_progress(index, finished=True)
+                return None
+
+        tasks = [
+            asyncio.create_task(download_one(index, track_url))
+            for index, track_url in enumerate(track_urls, start=1)
+        ]
+        try:
+            results = await asyncio.gather(*tasks)
+        except (asyncio.CancelledError, Exception):
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+
+        return [failure for failure in results if failure is not None]
 
     @staticmethod
     def validate_manifest(track_urls, total=None):

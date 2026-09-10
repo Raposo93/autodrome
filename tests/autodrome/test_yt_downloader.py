@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -106,9 +107,168 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.url, "https://youtube.test/track")
         self.assertEqual(raised.exception.reason, "unavailable")
 
-    def test_parallel_downloads_are_not_enabled_by_configuration_stub(self):
-        with self.assertRaisesRegex(ValueError, "must remain 1"):
-            YTDownloader(download_concurrency=2)
+    def test_download_concurrency_accepts_only_one_through_four(self):
+        for concurrency in (1, 2, 4):
+            with self.subTest(concurrency=concurrency):
+                self.assertEqual(
+                    YTDownloader(download_concurrency=concurrency).download_concurrency,
+                    concurrency,
+                )
+        for concurrency in (0, 5, 1.5, True):
+            with self.subTest(concurrency=concurrency):
+                with self.assertRaisesRegex(ValueError, "between 1 and 4"):
+                    YTDownloader(download_concurrency=concurrency)
+
+    async def test_configured_concurrency_is_an_effective_limit(self):
+        track_urls = [f"track-{index}" for index in range(1, 6)]
+        for concurrency in (1, 2, 4):
+            with self.subTest(concurrency=concurrency):
+                downloader = YTDownloader(download_concurrency=concurrency)
+                downloader.get_playlist_track_urls = AsyncMock(
+                    return_value=track_urls
+                )
+                downloader._check_downloaded_files = AsyncMock()
+                active = 0
+                max_active = 0
+                started_indices = []
+                limit_reached = asyncio.Event()
+                release = asyncio.Event()
+
+                async def download_track(url, dest, index, hook):
+                    nonlocal active, max_active
+                    active += 1
+                    max_active = max(max_active, active)
+                    started_indices.append(index)
+                    if active == concurrency:
+                        limit_reached.set()
+                    await release.wait()
+                    active -= 1
+
+                downloader.download_track = AsyncMock(side_effect=download_track)
+                operation = asyncio.create_task(
+                    downloader.download_playlist("playlist", "unused", total=5)
+                )
+                await asyncio.wait_for(limit_reached.wait(), timeout=1)
+                await asyncio.sleep(0)
+
+                self.assertEqual(max_active, concurrency)
+                self.assertEqual(started_indices, list(range(1, concurrency + 1)))
+                release.set()
+                await asyncio.wait_for(operation, timeout=1)
+                self.assertEqual(
+                    [call.args[2] for call in downloader.download_track.await_args_list],
+                    [1, 2, 3, 4, 5],
+                )
+
+    async def test_parallel_completion_reports_original_indices_in_finish_order(self):
+        downloader = YTDownloader(download_concurrency=3)
+        downloader.get_playlist_track_urls = AsyncMock(
+            return_value=["first", "second", "third"]
+        )
+        downloader._check_downloaded_files = AsyncMock()
+        releases = {index: asyncio.Event() for index in (1, 2, 3)}
+        reported = {index: asyncio.Event() for index in (1, 2, 3)}
+        all_started = asyncio.Event()
+        started = []
+        progress_events = []
+
+        async def download_track(url, dest, index, hook):
+            started.append(index)
+            if len(started) == 3:
+                all_started.set()
+            await releases[index].wait()
+
+        async def progress(phase, current, total, completed):
+            progress_events.append((phase, current, total, completed))
+            if phase == "downloading" and completed:
+                reported[current].set()
+
+        downloader.download_track = AsyncMock(side_effect=download_track)
+        operation = asyncio.create_task(
+            downloader.download_playlist(
+                "playlist",
+                "unused",
+                total=3,
+                progress=progress,
+            )
+        )
+        await asyncio.wait_for(all_started.wait(), timeout=1)
+        for index in (3, 1, 2):
+            releases[index].set()
+            await asyncio.wait_for(reported[index].wait(), timeout=1)
+        await asyncio.wait_for(operation, timeout=1)
+
+        completion_events = [
+            (current, completed)
+            for phase, current, total, completed in progress_events
+            if phase == "downloading" and completed
+        ]
+        self.assertEqual(completion_events, [(3, 1), (1, 2), (2, 3)])
+
+    async def test_parallel_failures_are_aggregated_after_started_tracks_finish(self):
+        downloader = YTDownloader(download_concurrency=3)
+        downloader.get_playlist_track_urls = AsyncMock(
+            return_value=["first", "second", "third"]
+        )
+        downloader._check_downloaded_files = AsyncMock()
+        successful_track_started = asyncio.Event()
+        release_successful_track = asyncio.Event()
+        failures_ready = asyncio.Event()
+        failure_count = 0
+
+        async def download_track(url, dest, index, hook):
+            nonlocal failure_count
+            if index in {1, 3}:
+                failure_count += 1
+                if failure_count == 2:
+                    failures_ready.set()
+                raise TrackDownloadError(index, url, f"failure-{index}")
+            successful_track_started.set()
+            await release_successful_track.wait()
+
+        downloader.download_track = AsyncMock(side_effect=download_track)
+        operation = asyncio.create_task(
+            downloader.download_playlist("playlist", "unused", total=3)
+        )
+        await asyncio.wait_for(successful_track_started.wait(), timeout=1)
+        await asyncio.wait_for(failures_ready.wait(), timeout=1)
+        self.assertFalse(operation.done())
+
+        release_successful_track.set()
+        with self.assertRaises(PlaylistDownloadError) as raised:
+            await asyncio.wait_for(operation, timeout=1)
+
+        self.assertEqual(
+            raised.exception.failures,
+            [(1, "first", "failure-1"), (3, "third", "failure-3")],
+        )
+        downloader._check_downloaded_files.assert_not_awaited()
+
+    async def test_parallel_tracks_keep_independent_retries(self):
+        downloader = YTDownloader(
+            track_download_attempts=2,
+            download_concurrency=2,
+        )
+        downloader.get_playlist_track_urls = AsyncMock(
+            return_value=["first", "second"]
+        )
+        downloader._check_downloaded_files = AsyncMock()
+        attempts = {1: 0, 2: 0}
+
+        def blocking(url, dest, index, hook):
+            attempts[index] += 1
+            if index == 1 and attempts[index] == 1:
+                raise RuntimeError("temporary")
+
+        downloader._download_track_blocking = MagicMock(side_effect=blocking)
+        with patch(
+            "autodrome.yt_downloader.asyncio.to_thread",
+            new_callable=AsyncMock,
+        ) as to_thread:
+            to_thread.side_effect = lambda function, *args: function(*args)
+            await downloader.download_playlist("playlist", "unused", total=2)
+
+        self.assertEqual(attempts, {1: 2, 2: 1})
 
     @patch("autodrome.yt_downloader.YoutubeDL")
     def test_extract_track_urls_uses_playlist_metadata(self, youtube_dl):
@@ -263,7 +423,6 @@ class TestPlaylistPreflight(unittest.IsolatedAsyncioTestCase):
 
 class TestDownloadShutdown(unittest.IsolatedAsyncioTestCase):
     async def test_shutdown_drains_blocking_audio_operation_without_retry(self):
-        import asyncio
         import threading
         downloader = YTDownloader()
         started = threading.Event()
@@ -292,6 +451,49 @@ class TestDownloadShutdown(unittest.IsolatedAsyncioTestCase):
             downloader._download_track_blocking.assert_called_once()
         finally:
             released.set()
+
+    async def test_playlist_shutdown_cancels_waiters_and_drains_active_tracks(self):
+        downloader = YTDownloader(download_concurrency=2)
+        downloader.get_playlist_track_urls = AsyncMock(
+            return_value=["first", "second", "third"]
+        )
+        downloader._check_downloaded_files = AsyncMock()
+        active_started = asyncio.Event()
+        all_cancelled = asyncio.Event()
+        release_cleanup = asyncio.Event()
+        started = []
+        cancelled = []
+        drained = []
+
+        async def download_track(url, dest, index, hook):
+            started.append(index)
+            if len(started) == 2:
+                active_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.append(index)
+                if len(cancelled) == 2:
+                    all_cancelled.set()
+                await release_cleanup.wait()
+                drained.append(index)
+                raise
+
+        downloader.download_track = AsyncMock(side_effect=download_track)
+        operation = asyncio.create_task(
+            downloader.download_playlist("playlist", "unused", total=3)
+        )
+        await asyncio.wait_for(active_started.wait(), timeout=1)
+        operation.cancel()
+        await asyncio.wait_for(all_cancelled.wait(), timeout=1)
+
+        self.assertFalse(operation.done())
+        self.assertEqual(started, [1, 2])
+        release_cleanup.set()
+        with self.assertRaises(asyncio.CancelledError):
+            await asyncio.wait_for(operation, timeout=1)
+        self.assertEqual(set(drained), {1, 2})
+        downloader._check_downloaded_files.assert_not_awaited()
 
 class TestTrackProgress(unittest.IsolatedAsyncioTestCase):
     async def test_retries_report_only_one_completed_track(self):

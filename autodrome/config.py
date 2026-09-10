@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 from autodrome.logger import logger
 
 
+MAX_DOWNLOAD_CONCURRENCY = 4
+
+
 class ConfigurationError(RuntimeError):
     pass
 
@@ -50,7 +53,10 @@ class Config:
             os.path.join(self.library_path, ".autodrome-queue.json"),
         )
         self.download_concurrency = self._read_int(
-            "DOWNLOAD_CONCURRENCY", 1, minimum=1, maximum=1
+            "DOWNLOAD_CONCURRENCY",
+            1,
+            minimum=1,
+            maximum=MAX_DOWNLOAD_CONCURRENCY,
         )
         self.musicbrainz_timeout_seconds = self._read_float(
             "MUSICBRAINZ_TIMEOUT_SECONDS", 20, minimum=0, exclusive=True

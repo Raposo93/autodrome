@@ -6,6 +6,7 @@ from autodrome.metadata_service import MetadataService
 from autodrome.models.release import Release
 from autodrome.models.track import Track
 from autodrome.services.redis_cache import RedisCache
+from autodrome.yt_downloader import PlaylistDownloadError
 
 
 class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
@@ -156,6 +157,23 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
 
         self.organizer.tag_and_rename.assert_called_once()
         self.organizer.validate_album.assert_called_once()
+        self.organizer.move_to_library.assert_not_called()
+
+    async def test_partial_track_failure_prevents_tagging_and_publication(self):
+        self.downloader.download_playlist.side_effect = PlaylistDownloadError(
+            [(2, "https://youtube.test/second", "provider rejected track")]
+        )
+
+        with self.assertRaises(PlaylistDownloadError):
+            await self.controller.download_and_tag(
+                "https://example.test/playlist",
+                "Artist",
+                "Album",
+                "release-1",
+            )
+
+        self.organizer.tag_and_rename.assert_not_called()
+        self.organizer.validate_album.assert_not_called()
         self.organizer.move_to_library.assert_not_called()
 
 
