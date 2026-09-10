@@ -230,6 +230,10 @@ ejecutarse en CI compartido ni inferirse solo de la configuración systemd. Sigu
 el procedimiento y conserva las evidencias descritas en
 [`docs/reboot-acceptance.md`](docs/reboot-acceptance.md).
 
+El benchmark experimental de concurrencia también es exclusivo de un host
+desechable y una biblioteca bajo `/tmp`; consulta
+[`docs/download-concurrency-benchmark.md`](docs/download-concurrency-benchmark.md).
+
 La portada original queda en `covers/<release-id>.jpg`. Si se rechaza, sustituye
 ese archivo por una imagen JPEG, PNG o WebP válida y vuelve a solicitar el álbum.
 La versión optimizada solo vive en memoria y no modifica el original.
