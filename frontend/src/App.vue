@@ -2,10 +2,12 @@
   <main class="app-shell">
     <template v-if="authenticated">
       <MusicSearch
-        v-if="view === 'search'"
+        v-if="view !== 'status'"
+        :view="view"
+        @navigate="selectView"
         @show-status="selectView('status')"
       />
-      <SystemStatus v-else @show-music="selectView('search')" />
+      <SystemStatus v-else @show-music="selectView('dashboard')" />
     </template>
     <form v-else class="panel" @submit.prevent="connect">
       <h1>Connect to Autodrome</h1>
@@ -22,13 +24,20 @@ import MusicSearch from './components/MusicSearch.vue'
 import SystemStatus from './components/SystemStatus.vue'
 import api, { setApiToken } from './services/api.js'
 
+function viewFromPath(path) {
+  if (path === '/status') return 'status'
+  if (path === '/new/review') return 'review'
+  if (path === '/new') return 'select'
+  return 'dashboard'
+}
+
 export default {
   components: { MusicSearch, SystemStatus },
   data: () => ({
     authenticated: false,
     token: '',
     error: null,
-    view: window.location.pathname === '/status' ? 'status' : 'search',
+    view: viewFromPath(window.location.pathname),
   }),
   async mounted() {
     window.addEventListener('popstate', this.syncViewFromPath)
@@ -44,12 +53,18 @@ export default {
   },
   methods: {
     syncViewFromPath() {
-      this.view = window.location.pathname === '/status' ? 'status' : 'search'
+      this.view = viewFromPath(window.location.pathname)
     },
     selectView(view) {
       if (view === this.view) return
       this.view = view
-      window.history.pushState({}, '', view === 'status' ? '/status' : '/')
+      const paths = {
+        dashboard: '/',
+        select: '/new',
+        review: '/new/review',
+        status: '/status',
+      }
+      window.history.pushState({}, '', paths[view] || '/')
     },
     async connect() {
       setApiToken(this.token)

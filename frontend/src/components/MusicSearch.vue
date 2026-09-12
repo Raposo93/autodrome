@@ -1,12 +1,40 @@
 <template>
   <div class="music-search">
-    <header class="search-hero">
+    <section v-if="view === 'dashboard'" class="dashboard-view">
+      <header class="dashboard-hero">
+        <button
+          class="view-switch"
+          type="button"
+          @click="$emit('show-status')"
+        >
+          System status
+        </button>
+        <div class="hero-copy">
+          <p class="eyebrow">Autodrome music library</p>
+          <h1>Download dashboard</h1>
+          <p class="hero-description">
+            Follow active downloads, manage the queue and start a new album
+            when you are ready.
+          </p>
+        </div>
+        <button class="new-download-button" type="button" @click="beginNewDownload">
+          <span aria-hidden="true">+</span> New download
+        </button>
+      </header>
+
+      <p v-if="dashboardNotice" class="dashboard-notice" role="status">
+        {{ dashboardNotice }}
+      </p>
+      <Queue />
+    </section>
+
+    <header v-if="view === 'select'" class="search-hero">
       <button
         class="view-switch"
         type="button"
-        @click="$emit('show-status')"
+        @click="navigate('dashboard')"
       >
-        System status
+        Dashboard
       </button>
 
       <div class="hero-copy">
@@ -102,7 +130,11 @@
       </form>
     </header>
 
-    <section class="workspace-grid" aria-label="Search results and queue">
+    <section
+      v-if="view === 'select'"
+      class="workspace-grid workspace-grid--select"
+      aria-label="Search results"
+    >
       <PlaylistsList
         :playlists="playlists"
         :selected="selectedPlaylist"
@@ -120,13 +152,55 @@
         :default-img="defaultReleaseImg"
         @select="selectRelease"
       />
-      <Queue />
     </section>
 
-    <section class="download-panel" aria-labelledby="download-title">
+    <section
+      v-if="view === 'select' && (selectedPlaylist || selectedRelease)"
+      class="selection-preview"
+      aria-labelledby="selection-preview-title"
+    >
+      <div>
+        <p class="panel-kicker">Current selection</p>
+        <h2 id="selection-preview-title">Build a download</h2>
+        <p>{{ selectStatusText }}</p>
+      </div>
+      <div class="selection-preview-items">
+        <span :class="{ 'selection-preview-item--ready': selectedPlaylist }">
+          <strong>YouTube</strong>
+          {{ selectedPlaylist?.title || 'Playlist missing' }}
+        </span>
+        <span :class="{ 'selection-preview-item--ready': selectedRelease }">
+          <strong>MusicBrainz</strong>
+          {{ selectedRelease?.title || 'Optional for manual metadata' }}
+        </span>
+      </div>
+      <button
+        v-if="selectedPlaylist"
+        class="continue-button"
+        type="button"
+        :disabled="!canReview"
+        @click="goToReview"
+      >
+        {{ releaseDetailsLoading ? 'Loading release details…' : 'Continue to review' }}
+      </button>
+    </section>
+
+    <header v-if="view === 'review'" class="review-hero">
+      <div>
+        <p class="eyebrow">New download · Review</p>
+        <h1>Check before you queue</h1>
+        <p>Confirm identity, destination and cover choices before Autodrome writes to the library.</p>
+      </div>
+      <div class="review-navigation">
+        <button type="button" @click="navigate('select')">← Back to selections</button>
+        <button type="button" @click="navigate('dashboard')">Dashboard</button>
+      </div>
+    </header>
+
+    <section v-if="view === 'review'" class="download-panel" aria-labelledby="download-title">
       <div class="download-heading">
         <p class="eyebrow">Current selection</p>
-        <h2 id="download-title">Download &amp; tag</h2>
+        <h2 id="download-title">Review download</h2>
       </div>
 
       <div class="selection-pair">
@@ -137,6 +211,7 @@
           <span class="selection-label">YouTube playlist</span>
           <strong>{{ selectedPlaylist?.title || 'Choose a playlist' }}</strong>
           <span class="selection-meta">
+            {{ selectedPlaylist?.channel || 'Unknown channel' }} ·
             {{ selectionTrackLabel(selectedPlaylist) }}
           </span>
         </div>
@@ -154,6 +229,8 @@
             <span class="selection-label">MusicBrainz release</span>
             <strong>{{ selectedRelease?.title || 'Choose a release' }}</strong>
             <span class="selection-meta">
+              {{ selectedRelease?.artist || 'Unknown artist' }} ·
+              {{ selectedRelease?.date || 'Date unknown' }} ·
               {{ selectionTrackLabel(selectedRelease) }}<template
                 v-if="releaseDetailsReady && hasAuthoritativeCover"
               > · Archive cover</template>
@@ -256,6 +333,15 @@
       </div>
 
       <div
+        v-if="destinationState === 'not_found' && destinationResult?.relative_path"
+        class="destination-alert destination-alert--ready"
+        role="status"
+      >
+        <strong>Library destination is available.</strong>
+        <span>Path: {{ destinationResult.relative_path }}</span>
+        <span>The final no-overwrite guard remains active during publication.</span>
+      </div>
+      <div
         v-if="destinationState === 'exists'"
         class="destination-alert destination-alert--exists"
         role="alert"
@@ -278,7 +364,7 @@
         <span>Download remains blocked; the backend no-overwrite guard is unchanged.</span>
       </div>
 
-      <div class="download-action">
+      <div v-if="selectedRelease" class="download-action">
         <p>{{ downloadStatusText }}</p>
         <button
           class="download-button"
@@ -291,9 +377,6 @@
         <div class="download-feedback" aria-live="polite">
           <span v-if="downloadError" class="feedback feedback--error">
             {{ downloadError }}
-          </span>
-          <span v-if="downloadSuccess" class="feedback feedback--success">
-            Download queued successfully.
           </span>
         </div>
       </div>
@@ -311,13 +394,33 @@ import ReleasesList from './ReleasesList.vue'
 import Queue from './Queue.vue'
 
 export default {
-  emits: ['show-status'],
+  emits: ['navigate', 'show-status'],
+  props: {
+    view: {
+      type: String,
+      default: 'dashboard',
+    },
+  },
   components: {
     PlaylistsList,
     ReleasesList,
     Queue
   },
   computed: {
+    canReview() {
+      return Boolean(
+        this.selectedPlaylist && this.playlistReady && !this.playlistError &&
+        (!this.selectedRelease || (this.releaseDetailsReady && !this.releaseDetailsLoading))
+      )
+    },
+    selectStatusText() {
+      if (this.playlistError) return this.playlistError
+      if (this.selectedPlaylist && !this.playlistReady) return 'Checking the selected playlist before review…'
+      if (!this.selectedPlaylist) return 'Choose a YouTube playlist before continuing.'
+      if (this.selectedRelease && this.releaseDetailsLoading) return 'Loading the selected release tracklist…'
+      if (this.selectedRelease && this.releaseDetailsReady) return 'Playlist and release are ready for final review.'
+      return 'Continue to review this playlist or choose a MusicBrainz release first.'
+    },
     manualReady() {
       return this.manualConfirmed && this.playlistReady && !this.selectedRelease &&
         Boolean(this.manualArtist.trim() && this.manualAlbum.trim()) &&
@@ -421,6 +524,11 @@ export default {
     }
   },
   watch: {
+    view(nextView) {
+      if (nextView === 'review' && !this.selectedPlaylist) {
+        this.navigate('select')
+      }
+    },
     finalDestination(destination) {
       this.destinationCheck.inspect(destination)
     }
@@ -461,7 +569,7 @@ export default {
       manualCoverPreview: null,
       downloading: false,
       downloadError: null,
-      downloadSuccess: false,
+      dashboardNotice: null,
       defaultPlaylistImg: '/default__no_cover.jpg',
       defaultReleaseImg: '/default__no_cover.jpg'
     }
@@ -470,6 +578,11 @@ export default {
     this.hydrator?.reset()
     this.destinationCheck?.dispose()
     this.revokeManualCoverPreview()
+  },
+  mounted() {
+    if (this.view === 'review' && !this.selectedPlaylist) {
+      this.navigate('select')
+    }
   },
   created() {
     this.destinationCheck = createAlbumDestinationCheck(
@@ -482,6 +595,49 @@ export default {
     )
   },
   methods: {
+    navigate(view) {
+      this.$emit('navigate', view)
+    },
+    beginNewDownload() {
+      this.clearWorkflow()
+      this.dashboardNotice = null
+      this.navigate('select')
+    },
+    goToReview() {
+      if (!this.canReview) return
+      this.downloadError = null
+      this.navigate('review')
+    },
+    clearWorkflow() {
+      this.destinationCheck.reset()
+      this.manualConfirmed = false
+      this.manualPrompt = false
+      this.manualArtist = ''
+      this.manualAlbum = ''
+      this.hydrator?.reset()
+      this.playlistGeneration += 1
+      this.playlistReady = false
+      this.playlistError = null
+      this.artist = ''
+      this.album = ''
+      this.playlists = []
+      this.releases = []
+      this.loadingPlaylists = false
+      this.loadingReleases = false
+      this.errorPlaylists = null
+      this.errorReleases = null
+      this.selectedPlaylist = null
+      this.selectedRelease = null
+      this.releaseDetailsLoading = false
+      this.releaseDetailsReady = false
+      this.downloadError = null
+      this.resetCoverChoice()
+    },
+    completeDownload() {
+      this.dashboardNotice = 'Download queued successfully.'
+      this.clearWorkflow()
+      this.navigate('dashboard')
+    },
     hydrateReleases() {
       if (!this.hydrator) {
         this.hydrator = createReleaseHydration(
@@ -511,7 +667,6 @@ export default {
       this.errorPlaylists = null
       this.errorReleases = null
       this.downloadError = null
-      this.downloadSuccess = false
       this.selectedPlaylist = null
       this.selectedRelease = null
       this.releaseDetailsLoading = false
@@ -599,7 +754,6 @@ export default {
       if (!this.manualReady || this.downloading) return
       this.downloading = true
       this.downloadError = null
-      this.downloadSuccess = false
       try {
         await api.download({
           playlist_url: this.selectedPlaylist.url,
@@ -608,7 +762,7 @@ export default {
           cover_source: 'none',
           artist: this.manualArtist.trim(), album: this.manualAlbum.trim()
         })
-        this.downloadSuccess = true
+        this.completeDownload()
       } catch (error) {
         this.downloadError = error.response?.data?.detail || 'Manual download failed'
       } finally {
@@ -712,7 +866,6 @@ export default {
       }
       this.downloading = true
       this.downloadError = null
-      this.downloadSuccess = false
 
       try {
         await api.download({
@@ -723,7 +876,7 @@ export default {
           track_count: this.selectedPlaylist.track_count ?? null,
           ...this.selectedCoverPayload(),
         })
-        this.downloadSuccess = true
+        this.completeDownload()
       } catch (e) {
         this.downloadError = e.response?.data?.detail || "Download failed"
         console.error(e)

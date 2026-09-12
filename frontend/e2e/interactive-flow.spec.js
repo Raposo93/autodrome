@@ -13,13 +13,27 @@ const queuePanel = page => page.getByRole('region', { name: 'Download queue' })
 async function openApp(page, backend) {
   await backend.install(page)
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Find the right album release' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Download dashboard' })).toBeVisible()
+  await expect(queuePanel(page)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Review download' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Download & Tag' })).toHaveCount(0)
 }
 
 async function startSearch(page, { artist = 'Test Artist', album = 'Test Album' } = {}) {
+  if (await page.getByLabel('Artist').count() === 0) {
+    await page.getByRole('button', { name: /New download/ }).click()
+  }
+  await expect(page.getByRole('heading', { name: 'Find the right album release' })).toBeVisible()
   await page.getByLabel('Artist').fill(artist)
   await page.getByLabel('Album').fill(album)
   await page.getByRole('button', { name: 'Search music' }).click()
+}
+
+async function continueToReview(page) {
+  const button = page.getByRole('button', { name: 'Continue to review' })
+  await expect(button).toBeEnabled()
+  await button.click()
+  await expect(page.getByRole('heading', { name: 'Check before you queue' })).toBeVisible()
 }
 
 test('system status route renders partial diagnostics and every state', async ({ page }) => {
@@ -58,13 +72,44 @@ test('system status route renders partial diagnostics and every state', async ({
   await expect(page.getByRole('alert')).toContainText('retrying automatically')
 })
 
+test('dashboard reveals the download flow without reopening it on refresh', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const backend = new ControlledBackend()
+  await openApp(page, backend)
+
+  await expect(page.getByLabel('Artist')).toHaveCount(0)
+  await expect(queuePanel(page).getByRole('button', { name: 'Clear finished jobs' })).toHaveCount(0)
+  await page.getByRole('button', { name: /New download/ }).click()
+  await expect(page).toHaveURL(/\/new$/)
+  await expect(page.getByLabel('Maximum tracks per result')).toBeDisabled()
+  await page.getByLabel('Max tracks per result').check()
+  await expect(page.getByLabel('Maximum tracks per result')).toBeEnabled()
+
+  await page.locator('.search-hero').getByRole('button', { name: 'Dashboard' }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(queuePanel(page)).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Download dashboard' })).toBeVisible()
+  await expect(page.getByLabel('Artist')).toHaveCount(0)
+})
+
+test('a stale review URL falls back to a fresh selection screen', async ({ page }) => {
+  const backend = new ControlledBackend()
+  await backend.install(page)
+  await page.goto('/new/review')
+
+  await expect(page).toHaveURL(/\/new$/)
+  await expect(page.getByRole('heading', { name: 'Find the right album release' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Review download' })).toHaveCount(0)
+})
+
 test('the ready desktop workflow fits without document scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 900 })
   const backend = new ControlledBackend()
   await openApp(page, backend)
 
-  await expect(page.locator('.search-hero').getByRole('button', { name: 'System status' })).toBeVisible()
   await startSearch(page)
+  await expect(page.locator('.search-hero').getByRole('button', { name: 'Dashboard' })).toBeVisible()
   const search = await backend.next('search')
   await search.reply({
     playlists: [playlist('layout')],
@@ -80,6 +125,7 @@ test('the ready desktop workflow fits without document scrolling', async ({ page
   await hydration.reply(releaseDetails('layout'))
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
+  await continueToReview(page)
 
   const readyButton = page.getByRole('button', { name: 'Download & Tag' })
   await expect(readyButton).toBeEnabled()
@@ -121,7 +167,7 @@ test('happy path queues one fully checked download', async ({ page }) => {
   })
   await releasesPanel(page).getByRole('button', { name: /Release happy/ }).click()
 
-  const downloadButton = page.getByRole('button', { name: 'Loading release details...' })
+  const downloadButton = page.getByRole('button', { name: 'Loading release details…' })
   await expect(downloadButton).toBeDisabled()
   expect(backend.callCount('download')).toBe(0)
 
@@ -137,6 +183,7 @@ test('happy path queues one fully checked download', async ({ page }) => {
     album: 'Release happy', relative_path: 'Artist happy/Release happy',
     mp3_count: 0, file_count: 0,
   })
+  await continueToReview(page)
   const readyButton = page.getByRole('button', { name: 'Download & Tag' })
   await expect(readyButton).toBeEnabled()
 
@@ -210,8 +257,8 @@ test('a new search owns the UI while old hydration and preflight finish', async 
   const newHydration = await backend.next('release:new')
   await newHydration.reply(releaseDetails('new'))
 
-  await expect(page.getByText('Choose a playlist', { exact: true })).toBeVisible()
-  await expect(page.getByText('Choose a release', { exact: true })).toBeVisible()
+  await expect(page.locator('.selection-preview')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Continue to review' })).toHaveCount(0)
   await expect(releasesPanel(page)).toContainText('Track new-1')
   await expect(releasesPanel(page)).not.toContainText('Track old-1')
   expect(backend.callCount('download')).toBe(0)
@@ -245,8 +292,17 @@ test('rapid playlist and release changes ignore stale completions', async ({ pag
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
 
-  await expect(page.getByText('Playlist p2', { exact: true })).toHaveCount(2)
-  await expect(page.getByText('Release r2', { exact: true })).toHaveCount(2)
+  await expect(page.getByText('Playlist p2', { exact: true })).toHaveCount(1)
+  await expect(page.getByText('Release r2', { exact: true })).toHaveCount(1)
+  await expect(page.locator('.selection-preview')).toContainText('Playlist p2')
+  await expect(page.locator('.selection-preview')).toContainText('Release r2')
+  await continueToReview(page)
+  await page.getByRole('button', { name: 'Back to selections' }).click()
+  await expect(page.getByText('Playlist p2', { exact: true })).toHaveCount(1)
+  await expect(page.getByText('Release r2', { exact: true })).toHaveCount(1)
+  await expect(page.locator('.selection-preview')).toContainText('Playlist p2')
+  await expect(page.locator('.selection-preview')).toContainText('Release r2')
+  await continueToReview(page)
   await expect(page.getByText('Both selections are ready to download.')).toBeVisible()
   await expect(page.getByText('stale playlist mismatch')).toHaveCount(0)
   expect(backend.callCount('download')).toBe(0)
@@ -280,6 +336,7 @@ test('existing albums are explained and blocked before enqueue', async ({ page }
     album: 'Release existing', relative_path: 'Artist existing/Release existing',
     mp3_count: 13, file_count: 14,
   })
+  await continueToReview(page)
 
   const warning = page.getByRole('alert')
   await expect(warning).toContainText('already appears to exist')
@@ -318,7 +375,9 @@ test('late destination results cannot contaminate a newer release', async ({ pag
     mp3_count: 2, file_count: 2,
   })
 
-  await expect(page.getByText('Release current', { exact: true })).toHaveCount(2)
+  await expect(page.getByText('Release current', { exact: true })).toHaveCount(1)
+  await expect(page.locator('.selection-preview')).toContainText('Release current')
+  await continueToReview(page)
   await expect(page.getByText('Both selections are ready to download.')).toBeVisible()
   await expect(page.getByText('Artist old/Release old')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Download & Tag' })).toBeEnabled()
@@ -345,23 +404,13 @@ test('queue actions are single-shot, selection-safe, and restored on reentry', a
   await backend.waitForSocket(1)
   backend.broadcastQueue()
   await expect(queuePanel(page)).toContainText('Downloading and converting audio · track 2 of 4 · 1 completed')
-
-  await startSearch(page)
-  const search = await backend.next('search')
-  await search.reply({ playlists: [playlist('first'), playlist('second')], releases: [], errors: {} })
-  await playlistsPanel(page).getByRole('button', { name: /Playlist first/ }).click()
-  const firstPreflight = await backend.next('preflight')
-  await firstPreflight.reply({ track_count: 2 })
+  await expect(queuePanel(page).getByRole('button', { name: 'Clear finished jobs' })).toBeVisible()
 
   const retryButton = queuePanel(page).getByRole('button', { name: 'Retry' }).first()
   await retryButton.dispatchEvent('click')
   await retryButton.dispatchEvent('click')
   const retry = await backend.next('retry:failed-job')
   expect(backend.callCount('retry:failed-job')).toBe(1)
-
-  await playlistsPanel(page).getByRole('button', { name: /Playlist second/ }).click()
-  const secondPreflight = await backend.next('preflight')
-  await secondPreflight.reply({ track_count: 2 })
   await retry.reply({ job_id: 'retry-job', retry_of: 'failed-job' }, 202)
   backend.setQueue([
     ...initialQueue,
@@ -370,7 +419,6 @@ test('queue actions are single-shot, selection-safe, and restored on reentry', a
       album: 'Failed Album', status: 'queued', metadata_mode: 'musicbrainz',
     },
   ])
-  await expect(page.getByText('Playlist second', { exact: true })).toHaveCount(2)
 
   const queuedItem = queuePanel(page).getByText('Queued Artist — Queued Album').locator('..').locator('..')
   const cancelButton = queuedItem.getByRole('button', { name: 'Cancel' })
@@ -387,6 +435,18 @@ test('queue actions are single-shot, selection-safe, and restored on reentry', a
   backend.executeQueuedJobs()
   expect(backend.executedJobs).not.toContain('queued-job')
   expect(backend.queue.find(job => job.job_id === 'queued-job').status).toBe('cancelled')
+
+  await startSearch(page)
+  const search = await backend.next('search')
+  await search.reply({ playlists: [playlist('first'), playlist('second')], releases: [], errors: {} })
+  await expect(queuePanel(page)).toHaveCount(0)
+  await playlistsPanel(page).getByRole('button', { name: /Playlist second/ }).click()
+  const preflight = await backend.next('preflight')
+  await preflight.reply({ track_count: 2 })
+  await expect(page.getByText('Playlist second', { exact: true })).toHaveCount(1)
+  await expect(page.locator('.selection-preview')).toContainText('Playlist second')
+  await page.locator('.search-hero').getByRole('button', { name: 'Dashboard' }).click()
+  await expect(queuePanel(page)).toBeVisible()
 
   const nextConnection = backend.waitForSocket(backend.connectionCount + 1)
   await page.reload()
@@ -408,6 +468,7 @@ test('manual mode is explicit and does not acquire MusicBrainz metadata', async 
   await playlistsPanel(page).getByRole('button', { name: /Playlist manual/ }).click()
   const preflight = await backend.next('preflight')
   await preflight.reply({ track_count: 3 })
+  await continueToReview(page)
 
   await page.getByRole('button', { name: 'Download without MusicBrainz' }).click()
   await expect(page.getByRole('alert')).toContainText('There will be no MusicBrainz date')
@@ -459,6 +520,7 @@ test('missing archive artwork requires and persists the selected playlist thumbn
   await hydration.reply(releaseDetails('fallback', 2, false))
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
+  await continueToReview(page)
 
   await expect(page.getByText('Cover Art Archive has no artwork for this release', { exact: false })).toBeVisible()
   await expect(page.getByText(/not authoritative/)).toBeVisible()
@@ -509,6 +571,7 @@ test('failed and manual fallback covers remain explicit and recoverable', async 
   await hydration.reply(releaseDetails('manual-cover', 2, false))
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
+  await continueToReview(page)
 
   await page.getByRole('button', { name: /Use playlist thumbnail/ }).click()
   const youtubeCover = await backend.next('cover-youtube')
@@ -557,6 +620,7 @@ test('missing archive artwork can be consciously queued without a cover', async 
   await hydration.reply(releaseDetails('none', 2, false))
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
+  await continueToReview(page)
 
   await page.getByRole('button', { name: /Continue without cover/ }).click()
   await page.getByRole('button', { name: 'Download & Tag' }).click()

@@ -5,16 +5,21 @@
         <p class="panel-kicker">Activity</p>
         <h2 id="queue-title">Download queue</h2>
       </div>
-      <span class="panel-count">{{ queueCount }}</span>
+      <div class="panel-header-actions">
+        <span v-if="busy" role="status">Saving queue changes…</span>
+        <button
+          v-if="hasFinishedJobs"
+          type="button"
+          :disabled="busy"
+          @click="clearHistory"
+        >
+          Clear finished jobs
+        </button>
+        <span class="panel-count">{{ queueCount }}</span>
+      </div>
     </header>
 
     <div class="panel-body">
-      <div class="queue-toolbar">
-        <button type="button" :disabled="busy || !hasFinishedJobs" @click="clearHistory">
-          Clear finished jobs
-        </button>
-        <span v-if="busy" role="status">Saving queue changes…</span>
-      </div>
       <p v-if="storageError" class="queue-error" role="alert">{{ storageError }}</p>
       <p v-if="actionError" class="queue-error" role="alert">{{ actionError }}</p>
       <ul v-if="queueMessages.length" class="queue-list">
@@ -159,14 +164,18 @@ export default {
 </script>
 
 <style scoped>
-.queue-toolbar, .queue-actions {
+.panel-header-actions, .queue-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
-.queue-toolbar {
-  margin-bottom: 1rem;
+.panel-header-actions {
   align-items: center;
+  justify-content: flex-end;
+}
+.panel-header-actions > span:not(.panel-count) {
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 .queue-actions {
   grid-column: 2;
