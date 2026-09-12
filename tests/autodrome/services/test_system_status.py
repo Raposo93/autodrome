@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from autodrome.services.system_status import SystemStatusService
+from autodrome.services.ytdlp_runtime import UnsupportedDenoVersion
 
 
 class FakeRedisCache:
@@ -38,6 +39,7 @@ class TestSystemStatusService(unittest.IsolatedAsyncioTestCase):
             staging_path=str(self.staging),
             google_api_key="private-youtube-key",
             redis_enabled=False,
+            yt_dlp_deno_path=None,
         )
         self.http_client = MagicMock()
 
@@ -55,6 +57,8 @@ class TestSystemStatusService(unittest.IsolatedAsyncioTestCase):
         self.queue_manager.worker_task.done.return_value = False
         self.queue_manager.snapshot.return_value = []
         self.ffmpeg_version = AsyncMock(return_value="ffmpeg version test")
+        self.deno_version = AsyncMock(return_value="deno 2.9.5")
+        self.yt_dlp_versions = MagicMock(return_value=("2026.8.19", "0.8.0"))
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -66,6 +70,8 @@ class TestSystemStatusService(unittest.IsolatedAsyncioTestCase):
             redis_cache=self.redis_cache,
             queue_manager=self.queue_manager,
             ffmpeg_version=self.ffmpeg_version,
+            deno_version=self.deno_version,
+            yt_dlp_versions=self.yt_dlp_versions,
         )
 
     async def test_snapshot_reports_available_components_without_touching_queue_state(self):
@@ -80,6 +86,10 @@ class TestSystemStatusService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["components"]["staging"]["status"], "ok")
         self.assertEqual(result["components"]["queue_storage"]["status"], "ok")
         self.assertEqual(result["components"]["ffmpeg"]["message"], "ffmpeg version test")
+        self.assertEqual(result["components"]["yt_dlp"]["status"], "ok")
+        self.assertIn("2026.8.19", result["components"]["yt_dlp"]["message"])
+        self.assertEqual(result["components"]["js_runtime"]["status"], "ok")
+        self.assertEqual(result["components"]["js_runtime"]["message"], "deno 2.9.5")
         self.assertEqual(result["components"]["youtube"]["status"], "ok")
         self.assertEqual(result["components"]["musicbrainz"]["status"], "ok")
         self.assertEqual(result["components"]["redis"]["status"], "disabled")
@@ -99,6 +109,33 @@ class TestSystemStatusService(unittest.IsolatedAsyncioTestCase):
             provider="YouTube",
             context="checking service availability",
         )
+
+    async def test_missing_runtime_is_a_warning_separate_from_youtube_connectivity(self):
+        self.deno_version.side_effect = FileNotFoundError("deno")
+
+        result = await self.service().snapshot()
+
+        self.assertEqual(result["components"]["js_runtime"]["status"], "warning")
+        self.assertIn("service user", result["components"]["js_runtime"]["message"])
+        self.assertEqual(result["components"]["youtube"]["status"], "ok")
+
+    async def test_missing_ejs_is_visible_without_hiding_installed_ytdlp(self):
+        self.yt_dlp_versions.return_value = ("2026.8.19", None)
+
+        result = await self.service().snapshot()
+
+        self.assertEqual(result["components"]["yt_dlp"]["status"], "warning")
+        self.assertIn("EJS support is missing", result["components"]["yt_dlp"]["message"])
+
+    async def test_unsupported_deno_version_is_an_actionable_warning(self):
+        self.deno_version.side_effect = UnsupportedDenoVersion("2.2.9")
+
+        result = await self.service().snapshot()
+
+        runtime = result["components"]["js_runtime"]
+        self.assertEqual(runtime["status"], "warning")
+        self.assertIn("2.2.9", runtime["message"])
+        self.assertIn("2.3.0 or newer", runtime["message"])
 
     async def test_external_failures_are_reported_independently(self):
         self.ffmpeg_version.side_effect = FileNotFoundError()

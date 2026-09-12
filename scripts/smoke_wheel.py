@@ -121,6 +121,7 @@ def smoke(wheel: Path, *, install_dependencies: bool = False) -> None:
                 "from importlib.metadata import version; "
                 "from autodrome.config import Config; "
                 "from autodrome.web import app; "
+                "assert version('yt-dlp-ejs'); "
                 "assert str(app.url_path_for('websocket_endpoint')) == '/ws'; "
                 "print(version('autodrome')); print(Config().version)",
             ],

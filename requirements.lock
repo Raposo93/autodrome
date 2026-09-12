@@ -27,6 +27,8 @@ attrs==26.1.0
     # via aiohttp
 boolean-py==5.0
     # via license-expression
+brotli==1.2.0
+    # via yt-dlp
 build==1.6.0
     # via pip-tools
 cachecontrol==0.14.4
@@ -39,6 +41,7 @@ certifi==2026.7.22
     #   httpx
     #   requests
     #   sentry-sdk
+    #   yt-dlp
 charset-normalizer==3.5.1
     # via requests
 click==8.5.0
@@ -114,7 +117,9 @@ multidict==6.7.1
     #   aiohttp
     #   yarl
 mutagen==1.48.1
-    # via -r requirements.txt
+    # via
+    #   -r requirements.txt
+    #   yt-dlp
 packageurl-python==0.17.6
     # via cyclonedx-python-lib
 packaging==26.3
@@ -146,6 +151,8 @@ propcache==0.5.2
     #   yarl
 py-serializable==2.1.0
     # via cyclonedx-python-lib
+pycryptodomex==3.23.0
+    # via yt-dlp
 pydantic==2.13.5
     # via
     #   fastapi
@@ -192,6 +199,7 @@ requests==2.34.2
     #   -r requirements.txt
     #   cachecontrol
     #   pip-audit
+    #   yt-dlp
 rich==15.0.0
     # via
     #   pip-audit
@@ -237,6 +245,7 @@ urllib3==2.7.0
     # via
     #   requests
     #   sentry-sdk
+    #   yt-dlp
 uvicorn==0.52.4
     # via
     #   -r requirements.txt
@@ -248,13 +257,17 @@ uvloop==0.22.1
 watchfiles==1.2.0
     # via uvicorn
 websockets==17.1
-    # via uvicorn
+    # via
+    #   uvicorn
+    #   yt-dlp
 wheel==0.48.0
     # via pip-tools
 yarl==1.24.5
     # via aiohttp
 yt-dlp==2026.8.19
     # via -r requirements.txt
+yt-dlp-ejs==0.8.0
+    # via yt-dlp
 
 # The following packages are considered to be unsafe in a requirements file:
 pip==26.2.1

@@ -22,8 +22,30 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(options["quiet"])
-        self.assertTrue(options["no_warnings"])
+        self.assertNotIn("no_warnings", options)
         self.assertFalse(hasattr(self.downloader, "_download_with_subprocess"))
+
+    @patch("autodrome.yt_downloader.YoutubeDL")
+    def test_manifest_and_download_share_explicit_deno_policy(self, youtube_dl):
+        downloader = YTDownloader(deno_path="/opt/deno/bin/deno")
+        extractor = MagicMock()
+        extractor.extract_info.return_value = {"entries": []}
+        youtube_dl.return_value.__enter__.return_value = extractor
+
+        downloader._extract_manifest("https://youtube.test/playlist")
+        manifest_options = youtube_dl.call_args.args[0]
+        with tempfile.TemporaryDirectory() as destination:
+            downloader._download_track_blocking(
+                "https://youtube.test/track",
+                destination,
+                1,
+                MagicMock(),
+            )
+        download_options = youtube_dl.call_args.args[0]
+
+        expected = {"deno": {"path": "/opt/deno/bin/deno"}}
+        self.assertEqual(manifest_options["js_runtimes"], expected)
+        self.assertEqual(download_options["js_runtimes"], expected)
 
     async def test_download_playlist_downloads_track_urls_sequentially(self):
         self.downloader.get_playlist_track_urls = AsyncMock(
@@ -104,7 +126,7 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
         expected = fixture["expected"]
         extraction_options = youtube_dl.call_args.args[0]
         self.assertTrue(extraction_options["quiet"])
-        self.assertTrue(extraction_options["no_warnings"])
+        self.assertNotIn("no_warnings", extraction_options)
         self.assertEqual(manifest["unavailable"], 3)
         self.assertEqual(
             [track["id"] for track in manifest["tracks"]],

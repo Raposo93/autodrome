@@ -56,7 +56,10 @@ async def lifespan(app: FastAPI):
         storage_dir=conf.cover_storage_path,
     )
     downloader_controller = DownloaderController(
-        downloader=YTDownloader(download_concurrency=conf.download_concurrency),
+        downloader=YTDownloader(
+            download_concurrency=conf.download_concurrency,
+            deno_path=conf.yt_dlp_deno_path,
+        ),
         organizer=organizer,
         metadata_service=metadata_service,
         http_client=http_client,

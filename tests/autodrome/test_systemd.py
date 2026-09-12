@@ -12,6 +12,10 @@ def test_systemd_service_uses_installed_entrypoint_and_bounded_shutdown():
     assert service['ExecStart'].endswith('/.venv/bin/autodrome')
     assert 'start_autodrome.sh' not in service['ExecStart']
     assert service['EnvironmentFile'].endswith('/.env')
+    assert service['Environment'].endswith(
+        'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin'
+    )
+    assert '/home/' not in service['Environment']
     assert service['Restart'] == 'on-failure'
     assert int(service['RestartSec']) >= 5
     assert service['KillMode'] == 'mixed'

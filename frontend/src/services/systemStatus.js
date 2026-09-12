@@ -3,6 +3,8 @@ const componentDefinitions = [
   ['staging', 'Staging'],
   ['queue_storage', 'Queue state'],
   ['ffmpeg', 'ffmpeg'],
+  ['yt_dlp', 'yt-dlp'],
+  ['js_runtime', 'JS runtime'],
   ['youtube', 'YouTube'],
   ['musicbrainz', 'MusicBrainz'],
   ['redis', 'Redis'],

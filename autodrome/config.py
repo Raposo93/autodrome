@@ -65,6 +65,7 @@ class Config:
             minimum=1,
             maximum=MAX_DOWNLOAD_CONCURRENCY,
         )
+        self.yt_dlp_deno_path = os.getenv("YT_DLP_DENO_PATH", "").strip() or None
         self.musicbrainz_timeout_seconds = self._read_float(
             "MUSICBRAINZ_TIMEOUT_SECONDS", 20, minimum=0, exclusive=True
         )

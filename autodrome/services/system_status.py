@@ -3,8 +3,15 @@ import errno
 import os
 import shutil
 import tempfile
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
+
+from autodrome.services.ytdlp_runtime import (
+    DENO_MINIMUM_VERSION_TEXT,
+    UnsupportedDenoVersion,
+    read_deno_version,
+)
 
 
 Component = Dict[str, Any]
@@ -27,16 +34,21 @@ class SystemStatusService:
         redis_cache,
         queue_manager,
         ffmpeg_version: Optional[Callable[[], Awaitable[str]]] = None,
+        deno_version: Optional[Callable[[], Awaitable[str]]] = None,
+        yt_dlp_versions: Optional[Callable[[], tuple[str, Optional[str]]]] = None,
     ) -> None:
         self.settings = settings
         self.http_client = http_client
         self.redis_cache = redis_cache
         self.queue_manager = queue_manager
         self._ffmpeg_version = ffmpeg_version or self._read_ffmpeg_version
+        self._deno_version = deno_version or self._read_deno_version
+        self._yt_dlp_versions = yt_dlp_versions or self._read_yt_dlp_versions
 
     async def snapshot(self) -> Dict[str, Any]:
-        ffmpeg, youtube, musicbrainz, redis = await asyncio.gather(
+        ffmpeg, js_runtime, youtube, musicbrainz, redis = await asyncio.gather(
             self._check_ffmpeg(),
+            self._check_js_runtime(),
             self._check_youtube(),
             self._check_musicbrainz(),
             self._check_redis(),
@@ -59,6 +71,11 @@ class SystemStatusService:
                     "Queue storage diagnostic failed.",
                 ),
                 "ffmpeg": ffmpeg,
+                "yt_dlp": self._safe_sync_check(
+                    self._check_yt_dlp,
+                    "yt-dlp diagnostic failed.",
+                ),
+                "js_runtime": js_runtime,
                 "youtube": youtube,
                 "musicbrainz": musicbrainz,
                 "redis": redis,
@@ -161,6 +178,46 @@ class SystemStatusService:
         except Exception:
             return self._component("error", "ffmpeg version check failed.")
         return self._component("ok", version)
+
+    def _check_yt_dlp(self) -> Component:
+        try:
+            yt_dlp_version, ejs_version = self._yt_dlp_versions()
+        except PackageNotFoundError:
+            return self._component("error", "yt-dlp is not installed.")
+        if ejs_version is None:
+            return self._component(
+                "warning",
+                f"yt-dlp {yt_dlp_version}; EJS support is missing. "
+                "Reinstall Autodrome's Python dependencies.",
+            )
+        return self._component(
+            "ok",
+            f"yt-dlp {yt_dlp_version} · EJS {ejs_version}",
+        )
+
+    async def _check_js_runtime(self) -> Component:
+        try:
+            runtime_version = await asyncio.wait_for(
+                self._deno_version(),
+                timeout=self.PROBE_TIMEOUT_SECONDS,
+            )
+        except FileNotFoundError:
+            return self._component(
+                "warning",
+                "No supported JavaScript runtime is available. Install Deno "
+                f"{DENO_MINIMUM_VERSION_TEXT} or newer for the service user.",
+            )
+        except UnsupportedDenoVersion as error:
+            return self._component(
+                "warning",
+                f"deno {error.version} is too old; install Deno "
+                f"{DENO_MINIMUM_VERSION_TEXT} or newer.",
+            )
+        except asyncio.TimeoutError:
+            return self._component("warning", "Deno version check timed out.")
+        except Exception:
+            return self._component("warning", "Deno version check failed.")
+        return self._component("ok", runtime_version)
 
     async def _check_youtube(self) -> Component:
         if not self.settings.google_api_key:
@@ -294,6 +351,21 @@ class SystemStatusService:
         if not first_line:
             raise RuntimeError("ffmpeg returned no version")
         return first_line[0][:200]
+
+    async def _read_deno_version(self) -> str:
+        return await read_deno_version(
+            self.settings.yt_dlp_deno_path,
+            timeout=self.PROBE_TIMEOUT_SECONDS,
+        )
+
+    @staticmethod
+    def _read_yt_dlp_versions() -> tuple[str, Optional[str]]:
+        yt_dlp_version = version("yt-dlp")
+        try:
+            ejs_version = version("yt-dlp-ejs")
+        except PackageNotFoundError:
+            ejs_version = None
+        return yt_dlp_version, ejs_version
 
     @staticmethod
     def _build_commit() -> Optional[str]:

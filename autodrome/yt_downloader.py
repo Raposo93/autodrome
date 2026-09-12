@@ -10,6 +10,7 @@ from yt_dlp import YoutubeDL
 from autodrome.config import MAX_DOWNLOAD_CONCURRENCY
 from autodrome.logger import logger
 from autodrome.models.progress import report_progress, ProgressCallback
+from autodrome.services.ytdlp_runtime import js_runtime_options
 
 
 class PlaylistDownloadError(RuntimeError):
@@ -37,6 +38,7 @@ class YTDownloader:
         self,
         track_download_attempts: int = 2,
         download_concurrency: int = 1,
+        deno_path: Optional[str] = None,
     ):
         if track_download_attempts < 1:
             raise ValueError("track_download_attempts must be at least 1")
@@ -53,6 +55,10 @@ class YTDownloader:
         self.manifest_ttl_seconds = 120
         self.track_download_attempts = track_download_attempts
         self.download_concurrency = download_concurrency
+        self.deno_path = deno_path
+
+    def _base_ydl_options(self) -> dict:
+        return js_runtime_options(self.deno_path)
 
     async def download_playlist(
         self,
@@ -212,10 +218,10 @@ class YTDownloader:
 
     def _extract_manifest(self, url: str):
         options = {
+            **self._base_ydl_options(),
             "extract_flat": "in_playlist",
             "skip_download": True,
             "quiet": True,
-            "no_warnings": True,
         }
         with YoutubeDL(options) as ydl:
             playlist = ydl.extract_info(url, download=False)
@@ -272,6 +278,7 @@ class YTDownloader:
 
     def _build_ydl_opts(self, dest: Path, hook: Callable, index: int) -> dict:
         return {
+            **self._base_ydl_options(),
             'socket_timeout': 20,
             'format': 'bestaudio/best',
             'postprocessors': [{
@@ -282,7 +289,6 @@ class YTDownloader:
             'outtmpl': str(dest / f'{index:02d} - %(title)s.%(ext)s'),
             'progress_hooks': [hook],
             'quiet': True,
-            'no_warnings': True,
             'ignoreerrors': False,
             'noplaylist': True,
         }

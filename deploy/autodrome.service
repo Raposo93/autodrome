@@ -9,7 +9,7 @@ User=autodrome
 Group=autodrome
 WorkingDirectory=/opt/autodrome
 EnvironmentFile=/opt/autodrome/.env
-Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONUNBUFFERED=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 ExecStart=/opt/autodrome/.venv/bin/autodrome
 Restart=on-failure
 RestartSec=5

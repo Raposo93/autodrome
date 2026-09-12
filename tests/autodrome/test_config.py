@@ -36,6 +36,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.max_cover_upload_bytes, 10 * 1024 * 1024)
         self.assertEqual(settings.cover_storage_path, "covers/selected")
         self.assertEqual(settings.download_concurrency, 1)
+        self.assertIsNone(settings.yt_dlp_deno_path)
         self.assertFalse(settings.redis_enabled)
         self.assertIsNone(settings.log_file)
         self.assertEqual(settings.log_max_bytes, 10 * 1024 * 1024)
@@ -135,6 +136,13 @@ class TestConfig(unittest.TestCase):
                             "DOWNLOAD_CONCURRENCY": concurrency,
                         }
                     )
+
+    def test_explicit_deno_path_is_trimmed(self):
+        settings = self.build_config(
+            {**REQUIRED_ENV, "YT_DLP_DENO_PATH": "  /opt/deno/bin/deno  "}
+        )
+
+        self.assertEqual(settings.yt_dlp_deno_path, "/opt/deno/bin/deno")
 
     def test_missing_critical_configuration_is_actionable(self):
         with patch("autodrome.config.default_runtime_version", return_value=None):

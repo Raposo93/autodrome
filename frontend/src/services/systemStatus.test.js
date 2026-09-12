@@ -16,12 +16,17 @@ test('components use a stable display order and preserve their details', () => {
   const entries = statusEntries({
     worker: { status: 'ok', state: 'idle' },
     library: { status: 'ok', free_bytes: 1024 },
+    js_runtime: { status: 'warning', message: 'Deno missing' },
+    yt_dlp: { status: 'ok', message: 'yt-dlp test' },
     redis: { status: 'disabled' },
   })
 
-  assert.deepEqual(entries.map(entry => entry.key), ['library', 'redis', 'worker'])
+  assert.deepEqual(
+    entries.map(entry => entry.key),
+    ['library', 'yt_dlp', 'js_runtime', 'redis', 'worker'],
+  )
   assert.equal(entries[0].free_bytes, 1024)
-  assert.equal(entries[2].state, 'idle')
+  assert.equal(entries[4].state, 'idle')
 })
 
 test('free space uses binary units without inventing invalid values', () => {

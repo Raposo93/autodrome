@@ -23,6 +23,7 @@ del producto. Producción arranca mediante el comando instalado `autodrome`;
 
 - Python 3.14 y soporte para `venv`.
 - `ffmpeg` disponible en `PATH`.
+- Deno 2.3.0 o posterior, recomendado para soporte completo de YouTube.
 - Una clave de YouTube Data API v3.
 - Para construir desde el repositorio: Node.js 22, npm y Bash 5 o posterior.
 - Redis en `127.0.0.1:6379` es opcional y está desactivado por defecto. Para
@@ -100,6 +101,25 @@ Edita `/opt/autodrome/.env` y configura al menos `GOOGLE_API_KEY`,
 `CONTACT_EMAIL` y una ruta absoluta para `LIBRARY_PATH`. `VERSION` es opcional
 en una instalación desde wheel: si se omite, se usa la versión instalada del
 paquete.
+
+El wheel instala también la versión compatible de `yt-dlp-ejs`, pero no
+descarga ni administra Deno. Instala una versión fijada de Deno 2.3.0 o
+posterior siguiendo la [documentación oficial](https://docs.deno.com/runtime/getting_started/installation/)
+y deja el ejecutable en `/usr/local/bin/deno` para que la unidad incluida lo
+encuentre. No dependas de una instalación bajo el home de tu usuario
+interactivo: el servicio se ejecuta como `autodrome` con un `PATH` explícito.
+Comprueba exactamente ese entorno antes de arrancar:
+
+```bash
+sudo -u autodrome env \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin \
+  deno --version
+```
+
+Si el runtime vive en otra ubicación, configura en `.env` la ruta absoluta al
+binario (o a su directorio), por ejemplo
+`YT_DLP_DENO_PATH=/opt/deno/bin/deno`. Autodrome no necesita ejecutarse como
+root para usarlo.
 
 El usuario `autodrome` también necesita lectura y escritura en `LIBRARY_PATH`,
 `STAGING_PATH` y `QUEUE_STATE_PATH`. La forma concreta de concederlos depende de
@@ -260,7 +280,10 @@ No existe un comando CLI soportado para buscar o descargar álbumes.
 
 La navegación principal y la ruta directa `/status` muestran una comprobación
 de solo lectura de biblioteca, staging, escritura durable de cola, `ffmpeg`,
-YouTube, MusicBrainz, Redis y el worker. Cada resultado es independiente: una
+yt-dlp/EJS, Deno, YouTube, MusicBrainz, Redis y el worker. La conectividad de la
+API de YouTube y la capacidad local de ejecutar sus challenges JavaScript son
+resultados separados. Deno ausente o demasiado antiguo aparece como warning,
+sin fingir que el proceso está caído. Cada resultado es independiente: una
 caída de proveedor no convierte la página completa en error y Redis desactivado
 es un estado normal. La comprobación de la cola crea y elimina un archivo
 temporal junto al estado, pero nunca modifica ni reemplaza el JSON durable.
@@ -296,6 +319,9 @@ La configuración principal vive en `.env`:
 - `DOWNLOAD_CONCURRENCY`: descargas de pistas simultáneas dentro de un álbum,
   entre `1` y `4`; por defecto, `1`. Valores altos aumentan la carga de CPU,
   disco y ffmpeg, y pueden provocar throttling del proveedor.
+- `YT_DLP_DENO_PATH`: ruta opcional al ejecutable Deno o a su directorio. Si se
+  omite, yt-dlp y `/status` lo resuelven con el mismo `PATH` del proceso. La
+  política se aplica igual al preflight y a la descarga.
 - `LOG_LEVEL`: nivel de log; por defecto, `INFO`.
 - `LOG_FILE`: ruta opcional para duplicar el log en un archivo rotatorio. Vacío
   por defecto. Si se configura, el usuario del servicio necesita permiso de
