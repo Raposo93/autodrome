@@ -185,18 +185,25 @@ export const playlist = (id, trackCount = 2) => ({
   thumbnail: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
 })
 
-export const release = (id, trackCount = 2, withCover = true) => ({
+export const release = (id, trackCount = 2, withCover = true, edition = {}) => ({
   id,
   title: `Release ${id}`,
   artist: `Artist ${id}`,
   date: '2026',
   track_count: trackCount,
+  country: 'US',
+  media_format: 'CD',
+  medium_count: 1,
   cover_url: withCover ? `https://coverartarchive.org/release/${id}/front` : null,
+  ...edition,
 })
 
 export const releaseDetails = (id, trackCount = 2, withCover = true) => ({
   id,
   cover_url: withCover ? `https://coverartarchive.org/release/${id}/front` : null,
+  country: 'US',
+  media_format: 'CD',
+  medium_count: 1,
   tracks: Array.from({ length: trackCount }, (_, index) => ({
     title: `Track ${id}-${index + 1}`,
     artist: `Artist ${id}`,

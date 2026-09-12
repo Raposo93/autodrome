@@ -170,8 +170,9 @@ class TestArtistCredits(unittest.IsolatedAsyncioTestCase):
         client = AsyncMock()
         client.get.side_effect = [{
             "id": "release", "title": "Compilation", "date": "2026",
+            "country": "XE",
             "artist-credit": [{"name": "Alice", "joinphrase": " & "}, {"name": "Bob"}],
-            "media": [{"tracks": [
+            "media": [{"format": "Digital Media", "tracks": [
                 {"title": "One", "artist-credit": [{"name": "Credited Alice", "artist": {"name": "Canonical Alice"}}]},
                 {"title": "Two", "artist-credit": [{"name": "Bob", "joinphrase": " feat. "}, {"name": "Carol"}]},
                 {"title": "Three", "recording": {"artist-credit": [{"artist": {"name": "Dave"}}]}},
@@ -181,11 +182,17 @@ class TestArtistCredits(unittest.IsolatedAsyncioTestCase):
         service = MetadataService(client, cache)
         release = await service.get_release("release")
         self.assertEqual(release.artist, "Alice & Bob")
+        self.assertEqual(release.country, "XE")
+        self.assertEqual(release.media_format, "Digital Media")
+        self.assertEqual(release.medium_count, 1)
         self.assertEqual([t.artist for t in release.tracks], ["Credited Alice", "Bob feat. Carol", "Dave", None])
         cached = cache.set_release.call_args.args[1]
         cache.get_release.return_value = cached
         restored = await service.get_release("release")
         self.assertEqual([t.to_dict() for t in restored.tracks], [t.to_dict() for t in release.tracks])
+        self.assertEqual(restored.country, "XE")
+        self.assertEqual(restored.media_format, "Digital Media")
+        self.assertEqual(restored.medium_count, 1)
         for track in cached["tracks"]:
             track.pop("artist")
         old = await service.get_release("release")

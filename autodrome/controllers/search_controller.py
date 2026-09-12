@@ -67,6 +67,9 @@ class SearchController:
                     "artist": r.artist,
                     "cover_url": r.cover_url,
                     "track_count": r.track_count,
+                    "country": r.country,
+                    "media_format": r.media_format,
+                    "medium_count": r.medium_count,
                 }
                 for r in releases_results
             ],
@@ -155,6 +158,9 @@ class SearchController:
             "artist": release.artist,
             "cover_url": release.cover_url,
             "track_count": len(release.tracks),
+            "country": release.country,
+            "media_format": release.media_format,
+            "medium_count": release.medium_count,
             "tracks": [track.to_dict() for track in release.tracks],
         }
         

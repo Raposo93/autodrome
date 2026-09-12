@@ -11,6 +11,9 @@ class Release:
         cover_url: Optional[str],
         tracks: Optional[List[dict]] = None,
         track_count: Optional[int] = None,
+        country: Optional[str] = None,
+        media_format: Optional[str] = None,
+        medium_count: Optional[int] = None,
     ):
         self.id = release_id
         self.title = title
@@ -19,6 +22,9 @@ class Release:
         self.artist = artist
         self.tracks = tracks or []
         self.track_count = track_count
+        self.country = country
+        self.media_format = media_format
+        self.medium_count = medium_count
 
     def __repr__(self):
         track_count = (

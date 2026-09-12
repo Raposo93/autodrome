@@ -105,6 +105,9 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
             cover_url="https://archive.test/small.jpg",
             tracks=[],
             track_count=11,
+            country="GB",
+            media_format="2×CD",
+            medium_count=2,
         )
         controller.metadata_service.search_releases = AsyncMock(
             return_value=[release]
@@ -118,6 +121,9 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
             "https://archive.test/small.jpg",
         )
         self.assertEqual(result["releases"][0]["track_count"], 11)
+        self.assertEqual(result["releases"][0]["country"], "GB")
+        self.assertEqual(result["releases"][0]["media_format"], "2×CD")
+        self.assertEqual(result["releases"][0]["medium_count"], 2)
         self.assertNotIn("tracks", result["releases"][0])
         controller.metadata_service.get_cover_art.assert_not_awaited()
 
@@ -191,6 +197,9 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
                 artist="Artist",
                 cover_url="https://archive.test/small.jpg",
                 tracks=[],
+                country="JP",
+                media_format="CD + DVD",
+                medium_count=2,
             )
         )
         controller = SearchController(
@@ -204,6 +213,9 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(details["id"], "release-1")
         self.assertEqual(details["track_count"], 0)
         self.assertEqual(details["tracks"], [])
+        self.assertEqual(details["country"], "JP")
+        self.assertEqual(details["media_format"], "CD + DVD")
+        self.assertEqual(details["medium_count"], 2)
         metadata_service.get_release.assert_awaited_once_with("release-1")
         self.assertTrue(
             any("release_details_completed" in entry for entry in logs.output)

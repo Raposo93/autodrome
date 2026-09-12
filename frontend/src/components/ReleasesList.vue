@@ -38,7 +38,8 @@
               />
               <span class="result-copy">
                 <strong>{{ rel.title }}</strong>
-                <span>{{ rel.artist }} · {{ rel.date || 'Date unknown' }}</span>
+                <span>{{ rel.artist }}</span>
+                <span class="release-edition-meta">{{ editionSummary(rel) }}</span>
               </span>
               <span class="track-pill">{{ trackCountLabel(rel) }}</span>
             </button>
@@ -86,6 +87,15 @@ export default {
     }
   },
   methods: {
+    editionSummary(release) {
+      const year = /^\d{4}/.exec(release.date || '')?.[0] || 'Year unknown'
+      const country = release.country || 'Country unknown'
+      let media = release.media_format
+      if (!media && Number.isInteger(release.medium_count) && release.medium_count > 0) {
+        media = `${release.medium_count} ${release.medium_count === 1 ? 'medium' : 'media'} · Format unknown`
+      }
+      return `${year} · ${country} · ${media || 'Format unknown'}`
+    },
     trackCountLabel(release) {
       if (Number.isInteger(release.track_count)) {
         return `${release.track_count} tracks`

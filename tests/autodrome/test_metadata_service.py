@@ -140,6 +140,66 @@ class TestMetadataService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(releases[0].track_count)
 
+    async def test_search_releases_summarizes_release_editions_without_hydration(self):
+        self.http_client.get.return_value = {
+            "releases": [
+                {
+                    "id": "simple",
+                    "title": "Album",
+                    "date": "1986-03-03",
+                    "country": "US",
+                    "artist-credit": [{"name": "Artist"}],
+                    "track-count": 8,
+                    "media": [{"format": "CD", "track-count": 8}],
+                },
+                {
+                    "id": "multi",
+                    "title": "Album",
+                    "date": "2017",
+                    "country": "XE",
+                    "artist-credit": [{"name": "Artist"}],
+                    "track-count": 46,
+                    "media": [
+                        {"format": "CD"},
+                        {"format": "CD"},
+                        {"format": "CD"},
+                    ],
+                },
+                {
+                    "id": "mixed",
+                    "title": "Album",
+                    "artist-credit": [{"name": "Artist"}],
+                    "media": [
+                        {"format": "CD"},
+                        {"format": "DVD"},
+                        {"format": "CD"},
+                    ],
+                },
+                {
+                    "id": "unknown",
+                    "title": "Album",
+                    "date": "",
+                    "country": None,
+                    "artist-credit": [{"name": "Artist"}],
+                },
+            ]
+        }
+
+        releases = await self.service.search_releases("Artist", "Album")
+        by_id = {release.id: release for release in releases}
+
+        self.assertEqual(by_id["simple"].country, "US")
+        self.assertEqual(by_id["simple"].medium_count, 1)
+        self.assertEqual(by_id["simple"].media_format, "CD")
+        self.assertEqual(by_id["multi"].medium_count, 3)
+        self.assertEqual(by_id["multi"].media_format, "3×CD")
+        self.assertEqual(by_id["mixed"].medium_count, 3)
+        self.assertEqual(by_id["mixed"].media_format, "2×CD + DVD")
+        self.assertIsNone(by_id["unknown"].country)
+        self.assertIsNone(by_id["unknown"].medium_count)
+        self.assertIsNone(by_id["unknown"].media_format)
+        self.service.redis_cache.get_release.assert_not_called()
+
     async def test_search_releases_handles_empty_response(self):
         self.http_client.get.return_value = {"releases": []}
 
@@ -281,6 +341,9 @@ class TestMetadataService(unittest.IsolatedAsyncioTestCase):
         release = await self.service.get_release("release1")
 
         self.assertEqual([track.title for track in release.tracks], ["First"])
+        self.assertIsNone(release.country)
+        self.assertIsNone(release.media_format)
+        self.assertIsNone(release.medium_count)
         self.http_client.get.assert_not_awaited()
         self.service._get_cover_url.assert_not_awaited()
         self.service.redis_cache.set_release.assert_not_called()

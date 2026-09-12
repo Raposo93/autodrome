@@ -66,6 +66,10 @@ class MetadataService:
             "cover_url": release.cover_url,
             "cover_url_kind": "thumbnail",
             "tracks": [track.to_dict() for track in release.tracks],
+            "track_count": release.track_count,
+            "country": release.country,
+            "media_format": release.media_format,
+            "medium_count": release.medium_count,
         }
         self.redis_cache.set_release(release.id, cache_data)
 
@@ -125,6 +129,7 @@ class MetadataService:
             data,
             context=f"loading release {release_id}",
         )
+        medium_count, media_format = self._parse_media_summary(data.get("media"))
         release = Release(
             release_id=release_id,
             title=data.get("title") or "Unknown",
@@ -132,6 +137,10 @@ class MetadataService:
             artist=self._artist_credit(artist_credit) or "Unknown",
             cover_url=await self._get_cover_url(release_id),
             tracks=tracks,
+            track_count=len(tracks),
+            country=self._optional_text(data.get("country")),
+            media_format=media_format,
+            medium_count=medium_count,
         )
         self._cache_release(release)
         return release
@@ -162,6 +171,16 @@ class MetadataService:
             artist=cached["artist"],
             cover_url=cover_url,
             tracks=tracks,
+            track_count=MetadataService._optional_nonnegative_int(
+                cached.get("track_count")
+            ),
+            country=MetadataService._optional_text(cached.get("country")),
+            media_format=MetadataService._optional_text(
+                cached.get("media_format")
+            ),
+            medium_count=MetadataService._optional_positive_int(
+                cached.get("medium_count")
+            ),
         )
 
     async def get_cover_art(self, release_id: str) -> Optional[str]:
@@ -382,14 +401,13 @@ class MetadataService:
         return tracks
 
     def _parse_releases(self, data: Dict[str, Any], artist: Optional[str]) -> List[Release]:
-        
         if not isinstance(data, dict) or not isinstance(data.get("releases"), list):
             raise UpstreamServiceError(
                 provider="MusicBrainz",
                 context="searching releases",
                 reason="invalid response",
             )
-        
+
         releases = []
         for r in data.get("releases", []):
             if not isinstance(r, dict) or not isinstance(r.get("id"), str):
@@ -416,6 +434,7 @@ class MetadataService:
                 cover_url = (
                     f"https://coverartarchive.org/release/{release_id}/front-250"
                 )
+            medium_count, media_format = self._parse_media_summary(r.get("media"))
             releases.append(
                 Release(
                     release_id=release_id,
@@ -427,9 +446,56 @@ class MetadataService:
                     track_count=self._parse_search_track_count(
                         r.get("track-count")
                     ),
+                    country=self._optional_text(r.get("country")),
+                    media_format=media_format,
+                    medium_count=medium_count,
                 )
             )
         return releases
+
+    @staticmethod
+    def _optional_text(value: Any) -> Optional[str]:
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    @staticmethod
+    def _optional_nonnegative_int(value: Any) -> Optional[int]:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return None
+        return value
+
+    @staticmethod
+    def _optional_positive_int(value: Any) -> Optional[int]:
+        parsed = MetadataService._optional_nonnegative_int(value)
+        return parsed if parsed and parsed > 0 else None
+
+    @classmethod
+    def _parse_media_summary(
+        cls,
+        media: Any,
+    ) -> tuple[Optional[int], Optional[str]]:
+        if not isinstance(media, list) or not media:
+            return None, None
+
+        formats: list[Optional[str]] = []
+        for medium in media:
+            if not isinstance(medium, dict):
+                formats.append(None)
+                continue
+            formats.append(cls._optional_text(medium.get("format")))
+
+        known_formats = [item for item in formats if item is not None]
+        if not known_formats:
+            return len(media), None
+
+        counts: Dict[str, int] = {}
+        for item in formats:
+            label = item or "Unknown format"
+            counts[label] = counts.get(label, 0) + 1
+        summary = " + ".join(
+            f"{count}×{label}" if count > 1 else label
+            for label, count in counts.items()
+        )
+        return len(media), summary
 
     @staticmethod
     def _parse_search_track_count(value: Any) -> Optional[int]:

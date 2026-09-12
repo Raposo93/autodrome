@@ -264,6 +264,39 @@ test('a new search owns the UI while old hydration and preflight finish', async 
   expect(backend.callCount('download')).toBe(0)
 })
 
+test('same-title releases expose edition metadata before expansion', async ({ page }) => {
+  const backend = new ControlledBackend()
+  await openApp(page, backend)
+  await startSearch(page, { artist: 'Metallica', album: 'Master of Puppets' })
+  const search = await backend.next('search')
+  await search.reply({
+    playlists: [],
+    releases: [
+      release('original', 8, true, {
+        title: 'Master of Puppets', artist: 'Metallica', date: '1986-03-03',
+        country: 'US', media_format: 'CD', medium_count: 1,
+      }),
+      release('box', 46, true, {
+        title: 'Master of Puppets', artist: 'Metallica', date: '2017',
+        country: 'XE', media_format: '3×CD', medium_count: 3,
+      }),
+      release('unknown', 8, true, {
+        title: 'Master of Puppets', artist: 'Metallica', date: null,
+        country: null, media_format: null, medium_count: null,
+      }),
+    ],
+    errors: {},
+  })
+
+  await expect(releasesPanel(page).getByText('1986 · US · CD')).toBeVisible()
+  await expect(releasesPanel(page).getByText('2017 · XE · 3×CD')).toBeVisible()
+  await expect(
+    releasesPanel(page).getByText('Year unknown · Country unknown · Format unknown')
+  ).toBeVisible()
+  await expect(releasesPanel(page).getByText('8 tracks')).toHaveCount(2)
+  await expect(releasesPanel(page).getByText('46 tracks')).toBeVisible()
+})
+
 test('rapid playlist and release changes ignore stale completions', async ({ page }) => {
   const backend = new ControlledBackend()
   await openApp(page, backend)
