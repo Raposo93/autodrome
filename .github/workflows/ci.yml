@@ -49,3 +49,19 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
+
+  container:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: autodrome:ci
+          build-args: AUTODROME_COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - run: scripts/smoke_container.sh autodrome:ci "$GITHUB_SHA"

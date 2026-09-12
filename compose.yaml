@@ -1,0 +1,23 @@
+services:
+  autodrome:
+    image: ${AUTODROME_IMAGE:-ghcr.io/raposo93/autodrome:latest}
+    build:
+      context: .
+      args:
+        AUTODROME_COMMIT: ${AUTODROME_COMMIT:-}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 5000
+      COVER_STORAGE_PATH: /music/.autodrome-covers
+      LIBRARY_PATH: /music
+      QUEUE_STATE_PATH: /music/.autodrome-queue.json
+      STAGING_PATH: /music/.autodrome-staging
+      VERSION: ""
+      YT_DLP_DENO_PATH: /usr/local/bin/deno
+    ports:
+      - "${AUTODROME_BIND_ADDRESS:-127.0.0.1}:${AUTODROME_PORT:-5000}:5000"
+    user: "${AUTODROME_UID:-10001}:${AUTODROME_GID:-10001}"
+    volumes:
+      - "${MUSIC_PATH:?Set MUSIC_PATH to a writable host music directory}:/music"
