@@ -7,6 +7,21 @@ from autodrome.models.track import Track
 from autodrome.models.release import Release
 from autodrome.http_client_async import AsyncHttpClient, UpstreamServiceError
 
+
+LUCENE_SPECIAL_CHARACTERS = frozenset('+-&|!(){}[]^"~*?:\\/')
+
+
+def quote_musicbrainz_field_value(value: str) -> str:
+    """Quote one raw field value so Lucene treats it as literal text."""
+    escaped = "".join(
+        f"\\{character}"
+        if character in LUCENE_SPECIAL_CHARACTERS
+        else character
+        for character in value
+    )
+    return f'"{escaped}"'
+
+
 class MetadataService:
     MAX_SEARCH_RESULTS = 50
 
@@ -29,6 +44,8 @@ class MetadataService:
     ) -> List[Release]:
         self._validate_search_options(limit, max_tracks)
         query = self._build_mb_query(artist, album)
+        if not query:
+            return []
         candidate_limit = self.MAX_SEARCH_RESULTS if max_tracks is not None else limit
         data = await self._fetch_releases_data(query, candidate_limit)
         releases = self._parse_releases(data, artist)
@@ -207,10 +224,12 @@ class MetadataService:
 
     def _build_mb_query(self, artist: Optional[str], album: Optional[str]) -> str:
         terms = []
+        album = album.strip() if album else ""
+        artist = artist.strip() if artist else ""
         if album:
-            terms.append(f"release:{album}")
+            terms.append(f"release:{quote_musicbrainz_field_value(album)}")
         if artist:
-            terms.append(f"artist:{artist}")
+            terms.append(f"artist:{quote_musicbrainz_field_value(artist)}")
         return " AND ".join(terms)
 
     async def _fetch_releases_data(

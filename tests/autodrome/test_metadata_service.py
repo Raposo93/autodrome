@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock
 
 from autodrome.http_client_async import UpstreamServiceError
-from autodrome.metadata_service import MetadataService
+from autodrome.metadata_service import MetadataService, quote_musicbrainz_field_value
 from autodrome.models.release import Release
 
 
@@ -61,7 +61,7 @@ class TestMetadataService(unittest.IsolatedAsyncioTestCase):
         self.http_client.get.assert_awaited_once_with(
             "https://musicbrainz.org/ws/2/release/",
             params={
-                "query": "release:Test Album AND artist:Test Artist",
+                "query": 'release:"Test Album" AND artist:"Test Artist"',
                 "fmt": "json",
                 "limit": 10,
             },
@@ -106,7 +106,7 @@ class TestMetadataService(unittest.IsolatedAsyncioTestCase):
         self.http_client.get.assert_awaited_once_with(
             "https://musicbrainz.org/ws/2/release/",
             params={
-                "query": "release:Album AND artist:Artist",
+                "query": 'release:"Album" AND artist:"Artist"',
                 "fmt": "json",
                 "limit": 50,
             },
@@ -146,6 +146,64 @@ class TestMetadataService(unittest.IsolatedAsyncioTestCase):
         releases = await self.service.search_releases(None, None)
 
         self.assertEqual(releases, [])
+        self.http_client.get.assert_not_awaited()
+
+    def test_musicbrainz_field_values_are_quoted_and_escaped(self):
+        cases = {
+            "Test Album": '"Test Album"',
+            '"Quoted"': '"\\"Quoted\\""',
+            "Album (Deluxe)": '"Album \\(Deluxe\\)"',
+            "!!!": '"\\!\\!\\!"',
+            "foo:bar": '"foo\\:bar"',
+            "+plus -minus": '"\\+plus \\-minus"',
+            "AC/DC": '"AC\\/DC"',
+            "A AND B OR C NOT D": '"A AND B OR C NOT D"',
+            "Beyoncé Æther": '"Beyoncé Æther"',
+            "Simon & Garfunkel && Friends": (
+                '"Simon \\& Garfunkel \\&\\& Friends"'
+            ),
+            r"Back\slash": '"Back\\\\slash"',
+        }
+
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(quote_musicbrainz_field_value(value), expected)
+
+    def test_musicbrainz_query_uses_only_non_empty_fields(self):
+        self.assertEqual(
+            self.service._build_mb_query("Artist", None),
+            'artist:"Artist"',
+        )
+        self.assertEqual(
+            self.service._build_mb_query(None, "Album"),
+            'release:"Album"',
+        )
+        self.assertEqual(self.service._build_mb_query("  ", "\t"), "")
+
+    def test_musicbrainz_query_contains_injected_syntax_inside_values(self):
+        query = self.service._build_mb_query(
+            "Artist OR artist:Other",
+            "Album) AND release:Other",
+        )
+
+        self.assertEqual(
+            query,
+            'release:"Album\\) AND release\\:Other" '
+            'AND artist:"Artist OR artist\\:Other"',
+        )
+
+    async def test_search_releases_preserves_upstream_failure(self):
+        failure = UpstreamServiceError(
+            provider="MusicBrainz",
+            context="searching releases",
+            reason="invalid query",
+        )
+        self.http_client.get.side_effect = failure
+
+        with self.assertRaises(UpstreamServiceError) as raised:
+            await self.service.search_releases("Artist", "Album")
+
+        self.assertIs(raised.exception, failure)
 
     async def test_search_releases_rejects_invalid_response(self):
         self.http_client.get.return_value = {}
