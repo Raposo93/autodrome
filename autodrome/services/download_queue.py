@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 from autodrome.controllers.downloader_controller import DownloaderController
 from autodrome.logger import logger
 from autodrome.models.download_job import DownloadJob, TERMINAL_STATUSES, RETRYABLE_STATUSES
+from autodrome.services.cover_selection import CoverSelectionService
 
 
 class DownloadQueueManager:
@@ -18,16 +19,23 @@ class DownloadQueueManager:
         downloader: DownloaderController,
         websocket_manager,
         state_path: str,
+        cover_selection: Optional[CoverSelectionService] = None,
     ) -> None:
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.downloader = downloader
         self.websocket_manager = websocket_manager
         self.state_path = os.path.abspath(state_path)
+        self.cover_selection = cover_selection
         self.worker_task: Optional[asyncio.Task] = None
         self.storage_error: Optional[str] = None
         self._snapshot_lock = asyncio.Lock()
         self._jobs: Dict[str, DownloadJob] = {}
         self._load_state()
+        if self.cover_selection is not None:
+            self.cover_selection.set_protected_cover_ids_provider(
+                self.protected_cover_ids
+            )
+            self._cleanup_expired_covers()
 
     def start(self) -> asyncio.Task:
         if self.worker_task is None or self.worker_task.done():
@@ -103,6 +111,11 @@ class DownloadQueueManager:
 
     async def _remove_jobs(self, job_ids: set[str]) -> None:
         previous_jobs = self._jobs
+        removed_cover_ids = {
+            job.payload.get("cover_id")
+            for job_id, job in previous_jobs.items()
+            if job_id in job_ids and job.payload.get("cover_id")
+        }
         self._jobs = {
             job_id: job for job_id, job in previous_jobs.items() if job_id not in job_ids
         }
@@ -111,10 +124,22 @@ class DownloadQueueManager:
         except Exception:
             self._jobs = previous_jobs
             raise
+        self._delete_unreferenced_covers(removed_cover_ids)
         await self._broadcast_snapshot()
 
     def snapshot(self) -> List[Dict]:
         return [job.to_dict() for job in self._jobs.values()]
+
+    def protected_cover_ids(self) -> set[str]:
+        return {
+            str(cover_id)
+            for job in self._jobs.values()
+            if (
+                job.status not in TERMINAL_STATUSES
+                or job.status in RETRYABLE_STATUSES
+            )
+            and (cover_id := job.payload.get("cover_id"))
+        }
 
     async def _worker(self) -> None:
         logger.info("DownloadQueueManager: worker started")
@@ -213,7 +238,29 @@ class DownloadQueueManager:
         except Exception:
             job.status, job.updated_at, job.error = previous_state
             raise
+        cover_id = job.payload.get("cover_id")
+        if cover_id:
+            self._delete_unreferenced_covers({cover_id})
         await self._broadcast_snapshot()
+
+    def _cleanup_expired_covers(self) -> None:
+        if self.cover_selection is None:
+            return
+        try:
+            self.cover_selection.cleanup_expired(self.protected_cover_ids())
+        except Exception as error:
+            logger.warning(f"Could not clean expired prepared covers: {error}")
+
+    def _delete_unreferenced_covers(self, cover_ids: set[str]) -> None:
+        if self.cover_selection is None or not cover_ids:
+            return
+        try:
+            self.cover_selection.delete_unreferenced(
+                cover_ids,
+                self.protected_cover_ids(),
+            )
+        except Exception as error:
+            logger.warning(f"Could not clean unused prepared covers: {error}")
 
     async def _broadcast_snapshot(self) -> None:
         async with self._snapshot_lock:

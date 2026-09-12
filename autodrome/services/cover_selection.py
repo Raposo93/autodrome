@@ -1,11 +1,14 @@
 import os
 import stat
 import tempfile
+import time
+from itertools import islice
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Iterable, Optional
 from uuid import UUID, uuid4
 
 from autodrome import config
+from autodrome.logger import logger
 from autodrome.services.cover_embedder import (
     CoverEmbedder,
     CoverPreparationError,
@@ -23,6 +26,8 @@ class CoverSelectionError(ValueError):
 
 class CoverSelectionService:
     ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+    DEFAULT_ORPHAN_TTL_SECONDS = 24 * 60 * 60
+    MAX_CLEANUP_ENTRIES = 256
 
     def __init__(
         self,
@@ -31,7 +36,11 @@ class CoverSelectionService:
         embedder: CoverEmbedder,
         storage_dir: Optional[str] = None,
         max_upload_bytes: Optional[int] = None,
+        orphan_ttl_seconds: int = DEFAULT_ORPHAN_TTL_SECONDS,
+        clock: Callable[[], float] = time.time,
     ) -> None:
+        if orphan_ttl_seconds < 0:
+            raise ValueError("Selected cover orphan TTL cannot be negative")
         self.http_client = http_client
         self.embedder = embedder
         self.storage_dir = Path(
@@ -42,6 +51,77 @@ class CoverSelectionService:
             if max_upload_bytes is None
             else max_upload_bytes
         )
+        self.orphan_ttl_seconds = orphan_ttl_seconds
+        self._clock = clock
+        self._protected_cover_ids: Callable[[], set[str]] = set
+
+    def set_protected_cover_ids_provider(
+        self,
+        provider: Callable[[], set[str]],
+    ) -> None:
+        self._protected_cover_ids = provider
+
+    def cleanup_expired(
+        self,
+        protected_cover_ids: Optional[Iterable[str]] = None,
+    ) -> int:
+        protected = self._normalize_cover_ids(
+            self._protected_cover_ids()
+            if protected_cover_ids is None
+            else protected_cover_ids
+        )
+        cutoff = self._clock() - self.orphan_ttl_seconds
+        removed = 0
+        try:
+            entries = os.scandir(self.storage_dir)
+        except FileNotFoundError:
+            return 0
+        except OSError as error:
+            logger.warning(f"Could not scan prepared covers for cleanup: {error}")
+            return 0
+
+        with entries:
+            for entry in islice(entries, self.MAX_CLEANUP_ENTRIES):
+                cover_id = self._cover_id_from_filename(entry.name)
+                if cover_id is None or cover_id in protected:
+                    continue
+                try:
+                    file_stat = entry.stat(follow_symlinks=False)
+                    if (
+                        not stat.S_ISREG(file_stat.st_mode)
+                        or file_stat.st_mtime > cutoff
+                    ):
+                        continue
+                    os.unlink(entry.path)
+                    removed += 1
+                except OSError as error:
+                    logger.warning(
+                        f"Could not remove expired prepared cover {cover_id}: {error}"
+                    )
+        return removed
+
+    def delete_unreferenced(
+        self,
+        cover_ids: Iterable[str],
+        protected_cover_ids: Iterable[str],
+    ) -> int:
+        protected = self._normalize_cover_ids(protected_cover_ids)
+        removed = 0
+        for cover_id in self._normalize_cover_ids(cover_ids) - protected:
+            path = self._cover_path(cover_id)
+            try:
+                file_stat = os.lstat(path)
+                if not stat.S_ISREG(file_stat.st_mode):
+                    continue
+                os.unlink(path)
+                removed += 1
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                logger.warning(
+                    f"Could not remove unused prepared cover {cover_id}: {error}"
+                )
+        return removed
 
     def store_manual(self, content: bytes) -> dict:
         return self._store(content, square=False)
@@ -85,6 +165,7 @@ class CoverSelectionService:
                 f"Cover image exceeds the upload limit of {self.max_upload_bytes} bytes."
             )
 
+        self.cleanup_expired()
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         descriptor, temporary_path = tempfile.mkstemp(
             prefix=".autodrome-cover-",
@@ -138,6 +219,27 @@ class CoverSelectionService:
         except (TypeError, ValueError) as error:
             raise CoverSelectionError("Invalid selected cover identifier.") from error
         return self.storage_dir / f"{normalized_id}.cover"
+
+    @staticmethod
+    def _cover_id_from_filename(filename: str) -> Optional[str]:
+        if not filename.endswith(".cover"):
+            return None
+        candidate = filename[:-len(".cover")]
+        try:
+            normalized = str(UUID(candidate))
+        except ValueError:
+            return None
+        return normalized if candidate == normalized else None
+
+    @staticmethod
+    def _normalize_cover_ids(cover_ids: Iterable[str]) -> set[str]:
+        normalized = set()
+        for cover_id in cover_ids:
+            try:
+                normalized.add(str(UUID(str(cover_id))))
+            except (TypeError, ValueError):
+                continue
+        return normalized
 
     @staticmethod
     def _safe_preparation_error(error: CoverPreparationError) -> str:

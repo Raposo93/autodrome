@@ -1,6 +1,8 @@
 import asyncio
+import os
 from io import BytesIO
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 import pytest
 from PIL import Image
@@ -19,7 +21,14 @@ def image_bytes(image_format="PNG", size=(80, 40), color="red"):
     return output.getvalue()
 
 
-def service(tmp_path, *, response=None, max_upload_bytes=100_000):
+def service(
+    tmp_path,
+    *,
+    response=None,
+    max_upload_bytes=100_000,
+    orphan_ttl_seconds=24 * 60 * 60,
+    clock=None,
+):
     http_client = AsyncMock()
     http_client.get_binary.return_value = response or image_bytes()
     return CoverSelectionService(
@@ -27,6 +36,8 @@ def service(tmp_path, *, response=None, max_upload_bytes=100_000):
         embedder=CoverEmbedder(max_bytes=100_000),
         storage_dir=str(tmp_path),
         max_upload_bytes=max_upload_bytes,
+        orphan_ttl_seconds=orphan_ttl_seconds,
+        **({"clock": clock} if clock is not None else {}),
     )
 
 
@@ -99,6 +110,98 @@ def test_load_rejects_missing_or_symlinked_selected_cover(tmp_path):
     (tmp_path / f"{cover_id}.cover").symlink_to(outside)
     with pytest.raises(CoverSelectionError, match="no longer available"):
         selection.load_prepared(cover_id)
+
+
+def test_cleanup_removes_only_expired_unprotected_cover_files(tmp_path):
+    now = 100_000
+    selection = service(
+        tmp_path,
+        orphan_ttl_seconds=3_600,
+        clock=lambda: now,
+    )
+    expired_id = "12345678-1234-1234-1234-123456789abc"
+    fresh_id = "22345678-1234-1234-1234-123456789abc"
+    protected_id = "32345678-1234-1234-1234-123456789abc"
+    for cover_id in (expired_id, fresh_id, protected_id):
+        path = tmp_path / f"{cover_id}.cover"
+        path.write_bytes(cover_id.encode())
+    os.utime(tmp_path / f"{expired_id}.cover", (now - 3_601, now - 3_601))
+    os.utime(tmp_path / f"{fresh_id}.cover", (now - 3_599, now - 3_599))
+    os.utime(tmp_path / f"{protected_id}.cover", (now - 9_000, now - 9_000))
+
+    removed = selection.cleanup_expired({protected_id})
+
+    assert removed == 1
+    assert not (tmp_path / f"{expired_id}.cover").exists()
+    assert (tmp_path / f"{fresh_id}.cover").exists()
+    assert (tmp_path / f"{protected_id}.cover").exists()
+
+
+def test_cleanup_ignores_unexpected_names_and_symlinks(tmp_path):
+    now = 100_000
+    selection = service(tmp_path, orphan_ttl_seconds=1, clock=lambda: now)
+    invalid = tmp_path / "not-a-cover.cover"
+    invalid.write_bytes(b"unrelated")
+    outside = tmp_path.parent / "outside-cover"
+    outside.write_bytes(b"outside")
+    symlink_id = "12345678-1234-1234-1234-123456789abc"
+    symlink = tmp_path / f"{symlink_id}.cover"
+    symlink.symlink_to(outside)
+    os.utime(invalid, (now - 10, now - 10))
+
+    assert selection.cleanup_expired(set()) == 0
+
+    assert invalid.read_bytes() == b"unrelated"
+    assert symlink.is_symlink()
+    assert outside.read_bytes() == b"outside"
+
+
+def test_cleanup_scan_is_bounded(tmp_path):
+    now = 100_000
+    selection = service(tmp_path, orphan_ttl_seconds=1, clock=lambda: now)
+    for value in range(selection.MAX_CLEANUP_ENTRIES + 1):
+        cover_id = str(UUID(int=value + 1))
+        path = tmp_path / f"{cover_id}.cover"
+        path.write_bytes(b"cover")
+        os.utime(path, (now - 10, now - 10))
+
+    removed = selection.cleanup_expired(set())
+
+    assert removed == selection.MAX_CLEANUP_ENTRIES
+    assert len(list(tmp_path.iterdir())) == 1
+
+
+def test_cleanup_unlink_failure_is_non_fatal(tmp_path, monkeypatch):
+    now = 100_000
+    selection = service(tmp_path, orphan_ttl_seconds=1, clock=lambda: now)
+    cover_id = "12345678-1234-1234-1234-123456789abc"
+    path = tmp_path / f"{cover_id}.cover"
+    path.write_bytes(b"cover")
+    os.utime(path, (now - 10, now - 10))
+    def fail_unlink(_path):
+        raise PermissionError("read only")
+
+    monkeypatch.setattr(os, "unlink", fail_unlink)
+
+    assert selection.cleanup_expired(set()) == 0
+    assert path.exists()
+
+
+def test_storing_cover_runs_cleanup_with_current_job_references(tmp_path):
+    now = 100_000
+    selection = service(tmp_path, orphan_ttl_seconds=1, clock=lambda: now)
+    orphan_id = "12345678-1234-1234-1234-123456789abc"
+    protected_id = "22345678-1234-1234-1234-123456789abc"
+    for cover_id in (orphan_id, protected_id):
+        path = tmp_path / f"{cover_id}.cover"
+        path.write_bytes(b"cover")
+        os.utime(path, (now - 10, now - 10))
+    selection.set_protected_cover_ids_provider(lambda: {protected_id})
+
+    selection.store_manual(image_bytes())
+
+    assert not (tmp_path / f"{orphan_id}.cover").exists()
+    assert (tmp_path / f"{protected_id}.cover").exists()
 
 
 @pytest.mark.parametrize(

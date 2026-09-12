@@ -62,6 +62,7 @@ async def lifespan(app: FastAPI):
         downloader_controller,
         ws_manager,
         state_path=conf.queue_state_path,
+        cover_selection=cover_selection,
     )
     system_status = SystemStatusService(
         settings=conf,

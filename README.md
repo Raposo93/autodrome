@@ -376,6 +376,13 @@ validan y optimizan antes de descargar audio. La fuente elegida y la referencia
 a los bytes ya preparados forman parte del trabajo, por lo que un reintento usa
 la misma decisión e imagen.
 
+Las portadas alternativas preparadas se conservan mientras cualquier trabajo
+`queued`, `running`, `failed` o `interrupted` las necesite. Al dejar de estar
+referenciadas por un trabajo recuperable se eliminan después de persistir el
+nuevo estado. Las selecciones abandonadas sin llegar a encolarse expiran tras
+24 horas y se limpian mediante barridos acotados al arrancar o preparar otra
+portada.
+
 ## Integridad y recuperación
 
 Cada álbum se construye completamente dentro del staging de la biblioteca. Se
@@ -394,8 +401,9 @@ Desde la cola, **Cancel** impide que un trabajo `queued` llegue a ejecutarse y l
 conserva como `cancelled`. No interrumpe trabajos que ya estén `running`.
 **Clear finished jobs** limpia el historial de trabajos `succeeded`, `failed`,
 `interrupted` y `cancelled`; **Remove** elimina uno de ellos. Estas dos últimas
-acciones solo borran entradas del historial, no archivos de audio, álbumes
-publicados ni staging conservado.
+acciones borran las entradas y liberan portadas alternativas que ya no necesita
+ningún trabajo recuperable; nunca borran audio, álbumes publicados ni staging
+conservado.
 
 **Retry** crea un nuevo trabajo con el payload original de un fallo o interrupción.
 El original conserva su estado y error, y el nuevo guarda su identificador en

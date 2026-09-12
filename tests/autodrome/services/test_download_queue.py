@@ -3,9 +3,10 @@ import json
 import os
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch, ANY
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from autodrome.models.download_job import DownloadJob
+from autodrome.services.cover_selection import CoverSelectionService
 from autodrome.services.download_queue import DownloadQueueManager
 
 
@@ -559,6 +560,208 @@ class TestCoverChoiceQueue(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(restored._jobs[retry].payload, payload)
             finally:
                 await restored.stop()
+
+    async def test_startup_cleanup_preserves_every_recoverable_cover(self):
+        with tempfile.TemporaryDirectory() as directory:
+            now = 100_000
+            state_path = os.path.join(directory, "queue.json")
+            cover_directory = os.path.join(directory, "covers")
+            os.mkdir(cover_directory)
+            jobs = []
+            cover_paths = {}
+            for index, status in enumerate(
+                ("queued", "running", "failed", "interrupted", "succeeded", "cancelled")
+            ):
+                cover_id = f"{index + 1:08d}-1234-1234-1234-123456789abc"
+                job = DownloadJob.create({
+                    **PAYLOAD,
+                    "cover_source": "manual_upload",
+                    "cover_id": cover_id,
+                })
+                job.transition(status)
+                jobs.append(job)
+                cover_path = os.path.join(cover_directory, f"{cover_id}.cover")
+                with open(cover_path, "wb") as cover_file:
+                    cover_file.write(status.encode())
+                os.utime(cover_path, (now - 10, now - 10))
+                cover_paths[status] = cover_path
+            with open(state_path, "w", encoding="utf-8") as state_file:
+                json.dump(
+                    {"version": 1, "jobs": [job.to_storage_dict() for job in jobs]},
+                    state_file,
+                )
+            selection = CoverSelectionService(
+                http_client=AsyncMock(),
+                embedder=MagicMock(),
+                storage_dir=cover_directory,
+                orphan_ttl_seconds=1,
+                clock=lambda: now,
+            )
+
+            manager = DownloadQueueManager(
+                AsyncMock(),
+                AsyncMock(),
+                state_path,
+                cover_selection=selection,
+            )
+
+            for status in ("queued", "running", "failed", "interrupted"):
+                self.assertTrue(os.path.exists(cover_paths[status]), status)
+            for status in ("succeeded", "cancelled"):
+                self.assertFalse(os.path.exists(cover_paths[status]), status)
+            recovered_running = next(
+                job for job in manager.snapshot()
+                if job["cover_id"] == jobs[1].payload["cover_id"]
+            )
+            self.assertEqual(recovered_running["status"], "interrupted")
+
+    async def test_cover_is_deleted_only_after_last_reference_stops_needing_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = os.path.join(directory, "queue.json")
+            cover_directory = os.path.join(directory, "covers")
+            os.mkdir(cover_directory)
+            cover_id = "12345678-1234-1234-1234-123456789abc"
+            cover_path = os.path.join(cover_directory, f"{cover_id}.cover")
+            with open(cover_path, "wb") as cover_file:
+                cover_file.write(b"shared bytes")
+            selection = CoverSelectionService(
+                http_client=AsyncMock(),
+                embedder=MagicMock(),
+                storage_dir=cover_directory,
+            )
+            manager = DownloadQueueManager(
+                AsyncMock(), AsyncMock(), state_path, cover_selection=selection
+            )
+            payload = {
+                **PAYLOAD,
+                "cover_source": "manual_upload",
+                "cover_id": cover_id,
+            }
+            first_id = await manager.enqueue(payload)
+            second_id = await manager.enqueue(payload)
+
+            await manager._transition(manager._jobs[first_id], "succeeded")
+            self.assertTrue(os.path.exists(cover_path))
+
+            await manager.cancel_job(second_id)
+            self.assertFalse(os.path.exists(cover_path))
+
+    async def test_failed_cover_survives_retry_and_restart_with_same_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = os.path.join(directory, "queue.json")
+            cover_directory = os.path.join(directory, "covers")
+            os.mkdir(cover_directory)
+            cover_id = "12345678-1234-1234-1234-123456789abc"
+            cover_path = os.path.join(cover_directory, f"{cover_id}.cover")
+            original_bytes = b"exact prepared cover bytes"
+            with open(cover_path, "wb") as cover_file:
+                cover_file.write(original_bytes)
+            selection = CoverSelectionService(
+                http_client=AsyncMock(),
+                embedder=MagicMock(),
+                storage_dir=cover_directory,
+            )
+            manager = DownloadQueueManager(
+                AsyncMock(), AsyncMock(), state_path, cover_selection=selection
+            )
+            payload = {
+                **PAYLOAD,
+                "cover_source": "manual_upload",
+                "cover_id": cover_id,
+            }
+            original_id = await manager.enqueue(payload)
+            await manager._transition(
+                manager._jobs[original_id], "failed", "temporary failure"
+            )
+            retry_id = await manager.retry_job(original_id)
+
+            restored = DownloadQueueManager(
+                AsyncMock(), AsyncMock(), state_path, cover_selection=selection
+            )
+
+            self.assertEqual(restored._jobs[retry_id].payload["cover_id"], cover_id)
+            with open(cover_path, "rb") as cover_file:
+                self.assertEqual(cover_file.read(), original_bytes)
+
+    async def test_cleanup_failure_does_not_change_persisted_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = os.path.join(directory, "queue.json")
+            cover_selection = MagicMock()
+            cover_selection.delete_unreferenced.side_effect = PermissionError(
+                "read only"
+            )
+            manager = DownloadQueueManager(
+                AsyncMock(),
+                AsyncMock(),
+                state_path,
+                cover_selection=cover_selection,
+            )
+            payload = {
+                **PAYLOAD,
+                "cover_source": "manual_upload",
+                "cover_id": "12345678-1234-1234-1234-123456789abc",
+            }
+            job_id = await manager.enqueue(payload)
+
+            await manager._transition(manager._jobs[job_id], "succeeded")
+
+            self.assertEqual(manager._jobs[job_id].status, "succeeded")
+            with open(state_path, encoding="utf-8") as state_file:
+                self.assertEqual(json.load(state_file)["jobs"][0]["status"], "succeeded")
+
+    async def test_cover_is_not_released_when_terminal_state_cannot_persist(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = os.path.join(directory, "queue.json")
+            cover_selection = MagicMock()
+            manager = DownloadQueueManager(
+                AsyncMock(),
+                AsyncMock(),
+                state_path,
+                cover_selection=cover_selection,
+            )
+            payload = {
+                **PAYLOAD,
+                "cover_source": "manual_upload",
+                "cover_id": "12345678-1234-1234-1234-123456789abc",
+            }
+            job_id = await manager.enqueue(payload)
+            cover_selection.reset_mock()
+
+            with patch.object(
+                manager,
+                "_persist_state",
+                side_effect=OSError("disk full"),
+            ):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    await manager._transition(manager._jobs[job_id], "succeeded")
+
+            self.assertEqual(manager._jobs[job_id].status, "queued")
+            cover_selection.delete_unreferenced.assert_not_called()
+
+    async def test_deleting_retryable_history_releases_its_cover(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = os.path.join(directory, "queue.json")
+            cover_directory = os.path.join(directory, "covers")
+            os.mkdir(cover_directory)
+            cover_id = "12345678-1234-1234-1234-123456789abc"
+            cover_path = os.path.join(cover_directory, f"{cover_id}.cover")
+            with open(cover_path, "wb") as cover_file:
+                cover_file.write(b"cover")
+            selection = CoverSelectionService(
+                http_client=AsyncMock(),
+                embedder=MagicMock(),
+                storage_dir=cover_directory,
+            )
+            manager = DownloadQueueManager(
+                AsyncMock(), AsyncMock(), state_path, cover_selection=selection
+            )
+            payload = {**PAYLOAD, "cover_id": cover_id}
+            job_id = await manager.enqueue(payload)
+            await manager._transition(manager._jobs[job_id], "failed", "failure")
+
+            await manager.delete_job(job_id)
+
+            self.assertFalse(os.path.exists(cover_path))
 
 class TestQueueProgress(unittest.IsolatedAsyncioTestCase):
     setUp = TestDownloadQueueManager.setUp
