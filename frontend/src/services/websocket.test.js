@@ -5,6 +5,7 @@ import {
   buildWebSocketUrl,
   createReconnectingWebSocket,
 } from './websocket.js'
+import { connectWebSocket, setApiToken } from './api.js'
 
 class FakeWebSocket {
   static instances = []
@@ -77,20 +78,98 @@ function connect(options = {}) {
   return { controller, messages, scheduler }
 }
 
-test('buildWebSocketUrl selects secure transport and includes a token', () => {
+test('buildWebSocketUrl selects secure transport and includes a ticket', () => {
   const url = buildWebSocketUrl(
     { protocol: 'https:', host: 'music.example.test' },
-    'secret token',
+    'ephemeral ticket',
   )
 
   assert.equal(url.protocol, 'wss:')
   assert.equal(url.host, 'music.example.test')
   assert.equal(url.pathname, '/ws')
-  assert.equal(url.searchParams.get('token'), 'secret token')
+  assert.equal(url.searchParams.get('ticket'), 'ephemeral ticket')
+  assert.equal(url.searchParams.has('token'), false)
   assert.equal(
     buildWebSocketUrl({ protocol: 'http:', host: 'localhost:5000' }).protocol,
     'ws:',
   )
+})
+
+test('authenticated connection obtains a fresh ticket without exposing the API token', async () => {
+  FakeWebSocket.instances = []
+  const scheduler = createScheduler()
+  const values = new Map()
+  globalThis.sessionStorage = {
+    getItem(key) {
+      return values.get(key) || null
+    },
+    setItem(key, value) {
+      values.set(key, value)
+    },
+    removeItem(key) {
+      values.delete(key)
+    },
+  }
+  setApiToken('master-api-secret')
+  let issued = 0
+  const controller = connectWebSocket(() => {}, {
+    location: { protocol: 'https:', host: 'music.example.test' },
+    ticketIssuer: async () => ({
+      data: { ticket: `ticket-${++issued}` },
+    }),
+    WebSocketImpl: FakeWebSocket,
+    ...scheduler,
+  })
+
+  await new Promise(resolve => setImmediate(resolve))
+  const firstSocket = FakeWebSocket.instances[0]
+  assert.equal(new URL(firstSocket.url).searchParams.get('ticket'), 'ticket-1')
+  assert.equal(firstSocket.url.toString().includes('master-api-secret'), false)
+  assert.equal(new URL(firstSocket.url).searchParams.has('token'), false)
+
+  firstSocket.close()
+  scheduler.timeouts[0].callback()
+  await new Promise(resolve => setImmediate(resolve))
+
+  const secondSocket = FakeWebSocket.instances[1]
+  assert.equal(new URL(secondSocket.url).searchParams.get('ticket'), 'ticket-2')
+  assert.equal(issued, 2)
+
+  controller.close()
+  setApiToken('')
+  delete globalThis.sessionStorage
+})
+
+test('loopback connection opens directly without requesting a ticket', async () => {
+  FakeWebSocket.instances = []
+  const values = new Map()
+  globalThis.sessionStorage = {
+    getItem(key) {
+      return values.get(key) || null
+    },
+    setItem(key, value) {
+      values.set(key, value)
+    },
+    removeItem(key) {
+      values.delete(key)
+    },
+  }
+  let issued = 0
+  const controller = connectWebSocket(() => {}, {
+    location: { protocol: 'http:', host: 'localhost:5000' },
+    ticketIssuer: async () => {
+      issued += 1
+      return { data: { ticket: 'unused' } }
+    },
+    WebSocketImpl: FakeWebSocket,
+  })
+
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(FakeWebSocket.instances[0].url.search, '')
+  assert.equal(issued, 0)
+  controller.close()
+  delete globalThis.sessionStorage
 })
 
 test('connection handles snapshots and sends heartbeat pings', () => {

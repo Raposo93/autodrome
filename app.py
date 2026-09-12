@@ -18,6 +18,7 @@ from autodrome.services.download_queue import DownloadQueueManager
 from autodrome.services.cover_selection import CoverSelectionService
 from autodrome.services.redis_cache import NullCache, RedisCache
 from autodrome.services.system_status import SystemStatusService
+from autodrome.services.websocket_tickets import WebSocketTicketStore
 from autodrome.metadata_service import MetadataService
 from autodrome.services.organizer import Organizer
 from autodrome.yt_downloader import YTDownloader
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
     app.state.cover_selection = cover_selection
     app.state.queue_manager = queue_manager
     app.state.system_status = system_status
+    app.state.websocket_ticket_store = WebSocketTicketStore()
 
     queue_manager.start()
 

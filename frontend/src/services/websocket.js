@@ -2,11 +2,11 @@ const CONNECTING = 0
 const OPEN = 1
 const CLOSING = 2
 
-export function buildWebSocketUrl(location, apiToken) {
+export function buildWebSocketUrl(location, ticket) {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const socketUrl = new URL(`${protocol}//${location.host}/ws`)
-  if (apiToken) {
-    socketUrl.searchParams.set('token', apiToken)
+  if (ticket) {
+    socketUrl.searchParams.set('ticket', ticket)
   }
   return socketUrl
 }
@@ -28,6 +28,7 @@ export function createReconnectingWebSocket({
   let heartbeatTimer = null
   let retryCount = 0
   let stopped = false
+  let acquiringUrl = false
 
   const clearHeartbeat = () => {
     if (heartbeatTimer !== null) {
@@ -48,15 +49,18 @@ export function createReconnectingWebSocket({
     }, delay)
   }
 
-  const connect = () => {
-    if (
-      stopped ||
-      (socket && (socket.readyState === CONNECTING || socket.readyState === OPEN))
-    ) {
+  const openSocket = (url) => {
+    if (stopped) {
       return
     }
 
-    const currentSocket = new WebSocketImpl(urlFactory())
+    let currentSocket
+    try {
+      currentSocket = new WebSocketImpl(url)
+    } catch {
+      scheduleReconnect()
+      return
+    }
     socket = currentSocket
 
     currentSocket.onopen = () => {
@@ -104,6 +108,39 @@ export function createReconnectingWebSocket({
         currentSocket.close()
       }
     }
+  }
+
+  const connect = () => {
+    if (
+      stopped ||
+      acquiringUrl ||
+      (socket && (socket.readyState === CONNECTING || socket.readyState === OPEN))
+    ) {
+      return
+    }
+
+    let url
+    try {
+      url = urlFactory()
+    } catch {
+      scheduleReconnect()
+      return
+    }
+    if (!url || typeof url.then !== 'function') {
+      openSocket(url)
+      return
+    }
+
+    acquiringUrl = true
+    Promise.resolve(url)
+      .then((resolvedUrl) => {
+        acquiringUrl = false
+        openSocket(resolvedUrl)
+      })
+      .catch(() => {
+        acquiringUrl = false
+        scheduleReconnect()
+      })
   }
 
   connect()

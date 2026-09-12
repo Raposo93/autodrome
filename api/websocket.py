@@ -1,9 +1,16 @@
 import asyncio
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 
 from autodrome.logger import logger
-from autodrome.security import token_matches
+from autodrome.services.websocket_tickets import WebSocketTicketCapacityError
 
 websocket_router = APIRouter()
 HEARTBEAT_TIMEOUT_SECONDS = 30
@@ -13,10 +20,10 @@ HEARTBEAT_TIMEOUT_SECONDS = 30
 async def websocket_endpoint(websocket: WebSocket):
     app = websocket.scope["app"]
     settings = app.state.config
-    if settings.requires_api_token and not token_matches(
-        settings.api_token, websocket.query_params.get("token")
+    if settings.requires_api_token and not app.state.websocket_ticket_store.consume(
+        websocket.query_params.get("ticket")
     ):
-        await websocket.close(code=1008, reason="A valid API token is required")
+        await websocket.close(code=1008, reason="A valid WebSocket ticket is required")
         return
 
     ws_manager = app.state.queue_manager.websocket_manager
@@ -47,6 +54,20 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         if connected:
             ws_manager.disconnect(websocket)
+
+
+@websocket_router.post("/api/auth/ws-ticket", status_code=201)
+async def issue_websocket_ticket(request: Request, response: Response):
+    store = request.app.state.websocket_ticket_store
+    try:
+        ticket = store.issue()
+    except WebSocketTicketCapacityError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="WebSocket ticket capacity temporarily exhausted",
+        ) from error
+    response.headers["Cache-Control"] = "no-store"
+    return {"ticket": ticket, "expires_in": store.ttl_seconds}
 
 
 @websocket_router.get("/ping")

@@ -324,7 +324,9 @@ Red y frontend:
 - `API_HOST` y `API_PORT`: escucha de FastAPI; `127.0.0.1:5000` por defecto.
 - `API_TOKEN`: token de al menos 32 caracteres, obligatorio cuando `API_HOST`
   no es loopback. Introdúcelo en la pantalla de conexión del navegador; se
-  conserva solo durante la sesión de esa pestaña. Nunca se incrusta en el build.
+  conserva solo durante la sesión de esa pestaña. Nunca se incrusta en el build
+  ni se incluye en la URL del WebSocket: el frontend lo intercambia mediante
+  HTTP autenticado por un ticket aleatorio, efímero y de un solo uso.
 - `CORS_ORIGINS`: orígenes `http`/`https` permitidos, separados por comas; vacío
   por defecto.
 - `VITE_HOST` y `VITE_PORT`: escucha de Vue; `127.0.0.1:5173` por defecto.

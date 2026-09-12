@@ -93,19 +93,47 @@ class TestWebSocketEndpoint(unittest.IsolatedAsyncioTestCase):
         websocket.accept.assert_awaited_once_with()
         self.assertEqual(websocket_manager.active_connections, [])
 
-    async def test_external_connection_rejects_invalid_token(self):
+    async def test_external_connection_does_not_accept_api_token_query_fallback(
+        self,
+    ):
         websocket = MagicMock()
         websocket.close = AsyncMock()
-        websocket.query_params = {}
+        websocket.query_params = {"token": "a" * 32}
         websocket.scope = {"app": MagicMock()}
         websocket.scope["app"].state.config.requires_api_token = True
-        websocket.scope["app"].state.config.api_token = "a" * 32
+        websocket.scope["app"].state.websocket_ticket_store.consume.return_value = False
 
         await websocket_endpoint(websocket)
 
         websocket.close.assert_awaited_once_with(
-            code=1008, reason="A valid API token is required"
+            code=1008, reason="A valid WebSocket ticket is required"
         )
+        ticket_store = websocket.scope["app"].state.websocket_ticket_store
+        ticket_store.consume.assert_called_once_with(None)
+
+    async def test_external_connection_consumes_valid_ticket(self):
+        websocket = MagicMock()
+        websocket.send_json = AsyncMock()
+        websocket.receive_text = AsyncMock(side_effect=WebSocketDisconnect())
+        websocket.client = MagicMock()
+        websocket.query_params = {"ticket": "one-use-ticket"}
+        websocket_manager = MagicMock()
+        websocket_manager.connect = AsyncMock()
+        queue_manager = MagicMock()
+        queue_manager.storage_error = None
+        queue_manager.websocket_manager = websocket_manager
+        queue_manager.snapshot.return_value = []
+        websocket.scope = {"app": MagicMock()}
+        websocket.scope["app"].state.config.requires_api_token = True
+        ticket_store = websocket.scope["app"].state.websocket_ticket_store
+        ticket_store.consume.return_value = True
+        websocket.scope["app"].state.queue_manager = queue_manager
+
+        await websocket_endpoint(websocket)
+
+        ticket_store.consume.assert_called_once_with("one-use-ticket")
+        websocket_manager.connect.assert_awaited_once_with(websocket)
+        websocket_manager.disconnect.assert_called_once_with(websocket)
 
 
 if __name__ == "__main__":

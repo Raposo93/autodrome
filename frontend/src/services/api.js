@@ -2,7 +2,7 @@ import axios from 'axios'
 import {
   buildWebSocketUrl,
   createReconnectingWebSocket,
-} from './websocket'
+} from './websocket.js'
 
 const tokenKey = 'autodrome-api-token'
 const apiToken = () => sessionStorage.getItem(tokenKey) || ''
@@ -79,11 +79,24 @@ export default {
   },
 }
 
-export function connectWebSocket(onMessage) {
+export function connectWebSocket(onMessage, options = {}) {
+  const location = options.location || window.location
+  const ticketIssuer = options.ticketIssuer || (() => (
+    apiClient.post('/auth/ws-ticket')
+  ))
   return createReconnectingWebSocket({
     onMessage,
-    urlFactory() {
-      return buildWebSocketUrl(window.location, apiToken())
+    WebSocketImpl: options.WebSocketImpl,
+    setTimeoutFn: options.setTimeoutFn,
+    clearTimeoutFn: options.clearTimeoutFn,
+    setIntervalFn: options.setIntervalFn,
+    clearIntervalFn: options.clearIntervalFn,
+    async urlFactory() {
+      if (!apiToken()) {
+        return buildWebSocketUrl(location)
+      }
+      const response = await ticketIssuer()
+      return buildWebSocketUrl(location, response.data.ticket)
     },
   })
 }
