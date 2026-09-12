@@ -36,6 +36,21 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.max_cover_upload_bytes, 10 * 1024 * 1024)
         self.assertEqual(settings.download_concurrency, 1)
         self.assertFalse(settings.redis_enabled)
+        self.assertIsNone(settings.log_file)
+        self.assertEqual(settings.log_max_bytes, 10 * 1024 * 1024)
+        self.assertEqual(settings.log_backup_count, 3)
+
+    def test_rotating_log_file_options_are_explicit(self):
+        settings = self.build_config({
+            **REQUIRED_ENV,
+            "LOG_FILE": "/tmp/autodrome-test.log",
+            "LOG_MAX_BYTES": "4096",
+            "LOG_BACKUP_COUNT": "2",
+        })
+
+        self.assertEqual(settings.log_file, "/tmp/autodrome-test.log")
+        self.assertEqual(settings.log_max_bytes, 4096)
+        self.assertEqual(settings.log_backup_count, 2)
 
     def test_musicbrainz_policy_defaults_and_overrides(self):
         settings = self.build_config(REQUIRED_ENV)

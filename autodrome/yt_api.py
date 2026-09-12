@@ -168,7 +168,7 @@ class YTApi:
                 track_count=None
             )
             results.append(playlist)
-        logger.info(f"Parsed {len(results)} playlists")
+        logger.debug("youtube_playlists_parsed count=%s", len(results))
         return results
 
     @staticmethod

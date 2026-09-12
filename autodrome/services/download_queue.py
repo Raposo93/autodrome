@@ -2,11 +2,16 @@ import asyncio
 import json
 import os
 import tempfile
+import time
 from typing import Dict, List, Optional
 
 from autodrome.controllers.downloader_controller import DownloaderController
-from autodrome.logger import logger
-from autodrome.models.download_job import DownloadJob, TERMINAL_STATUSES, RETRYABLE_STATUSES
+from autodrome.logger import logger, safe_log_text
+from autodrome.models.download_job import (
+    DownloadJob,
+    RETRYABLE_STATUSES,
+    TERMINAL_STATUSES,
+)
 from autodrome.services.cover_selection import CoverSelectionService
 
 
@@ -28,6 +33,9 @@ class DownloadQueueManager:
         self.cover_selection = cover_selection
         self.worker_task: Optional[asyncio.Task] = None
         self.storage_error: Optional[str] = None
+        self._storage_failure_started_at: Optional[float] = None
+        self._storage_retry_failures = 0
+        self._recovered_running_jobs = 0
         self._snapshot_lock = asyncio.Lock()
         self._jobs: Dict[str, DownloadJob] = {}
         self._load_state()
@@ -36,6 +44,12 @@ class DownloadQueueManager:
                 self.protected_cover_ids
             )
             self._cleanup_expired_covers()
+        logger.info(
+            "queue_started loaded=%s queued=%s interrupted=%s",
+            len(self._jobs),
+            sum(job.status == "queued" for job in self._jobs.values()),
+            self._recovered_running_jobs,
+        )
 
     def start(self) -> asyncio.Task:
         if self.worker_task is None or self.worker_task.done():
@@ -70,7 +84,11 @@ class DownloadQueueManager:
             raise
         self.queue.put_nowait(job.job_id)
         await self._broadcast_snapshot()
-        logger.info(f"Playlist enqueued as job {job.job_id}: {payload.get('album')}")
+        logger.info(
+            "job_enqueued job_id=%s mode=%s",
+            job.job_id,
+            payload.get("metadata_mode", "musicbrainz"),
+        )
         return job.job_id
 
     async def clear_history(self) -> int:
@@ -92,6 +110,7 @@ class DownloadQueueManager:
         if job.status != "queued":
             raise ValueError("Only queued jobs can be cancelled")
         await self._transition(job, "cancelled")
+        logger.info("job_cancelled job_id=%s", job_id)
 
     async def retry_job(self, job_id: str) -> str:
         job = self._get_job(job_id)
@@ -102,7 +121,9 @@ class DownloadQueueManager:
             for candidate in self._jobs.values()
         ):
             raise ValueError("This job already has an active retry")
-        return await self.enqueue(job.payload, retry_of=job_id)
+        retry_id = await self.enqueue(job.payload, retry_of=job_id)
+        logger.info("job_retry_created job_id=%s retry_of=%s", retry_id, job_id)
+        return retry_id
 
     def _get_job(self, job_id: str) -> DownloadJob:
         if job_id not in self._jobs:
@@ -142,7 +163,7 @@ class DownloadQueueManager:
         }
 
     async def _worker(self) -> None:
-        logger.info("DownloadQueueManager: worker started")
+        logger.debug("queue_worker_started")
         while True:
             job_id = None
             job = None
@@ -154,6 +175,19 @@ class DownloadQueueManager:
 
                 await self._save_worker_transition(job, "running")
                 payload = job.payload
+                concurrency = getattr(self.downloader, "download_concurrency", None)
+                if not isinstance(concurrency, int):
+                    concurrency = getattr(
+                        getattr(self.downloader, "downloader", None),
+                        "download_concurrency",
+                        "unknown",
+                    )
+                logger.info(
+                    "job_started job_id=%s tracks=%s concurrency=%s",
+                    job_id,
+                    payload.get("track_count", "unknown"),
+                    concurrency,
+                )
 
                 async def progress(phase, current, total, completed):
                     previous_phase = (job.progress or {}).get("phase")
@@ -190,11 +224,17 @@ class DownloadQueueManager:
                         await self._report_storage_error(job, "interrupted", str(error))
                     raise
                 except Exception as error:
-                    logger.error(f"Error processing download job {job_id}: {error}")
                     await self._save_worker_transition(job, "failed", str(error))
+                    phase = (job.progress or {}).get("phase", "unknown")
+                    logger.error(
+                        "job_failed job_id=%s phase=%s reason=%s",
+                        job_id,
+                        phase,
+                        safe_log_text(error),
+                    )
                 else:
                     await self._save_worker_transition(job, "succeeded")
-                    logger.info(f"Completed download job {job_id}")
+                    logger.info("job_succeeded job_id=%s", job_id)
             finally:
                 if job_id is not None:
                     self.queue.task_done()
@@ -204,12 +244,29 @@ class DownloadQueueManager:
                 "error": self.storage_error}
 
     async def _report_storage_error(self, job, status, error) -> None:
-        self.storage_error = (
+        message = (
             f"Queue processing paused: could not save {status} for job {job.job_id}: "
             f"{error}. Fix queue storage; saving will retry automatically."
         )
-        logger.error(self.storage_error)
-        await self.websocket_manager.broadcast(self.processing_status())
+        if self.storage_error is None:
+            self.storage_error = message
+            self._storage_failure_started_at = time.monotonic()
+            self._storage_retry_failures = 0
+            logger.error(
+                "queue_storage_paused job_id=%s transition=%s reason=%s",
+                job.job_id,
+                status,
+                safe_log_text(error),
+            )
+            await self.websocket_manager.broadcast(self.processing_status())
+        else:
+            self._storage_retry_failures += 1
+            logger.debug(
+                "queue_storage_retry_failed job_id=%s transition=%s attempt=%s",
+                job.job_id,
+                status,
+                self._storage_retry_failures,
+            )
 
     async def _save_worker_transition(self, job, status, error=None) -> None:
         # Retry only this state write, never the download that preceded it.
@@ -221,7 +278,19 @@ class DownloadQueueManager:
                 await asyncio.sleep(self.STORAGE_RETRY_SECONDS)
             else:
                 if self.storage_error is not None:
+                    downtime = (
+                        time.monotonic() - self._storage_failure_started_at
+                        if self._storage_failure_started_at is not None
+                        else 0
+                    )
                     self.storage_error = None
+                    logger.info(
+                        "queue_storage_recovered downtime_s=%.2f retries=%s",
+                        downtime,
+                        self._storage_retry_failures,
+                    )
+                    self._storage_failure_started_at = None
+                    self._storage_retry_failures = 0
                     await self.websocket_manager.broadcast(self.processing_status())
                 return
 
@@ -249,7 +318,10 @@ class DownloadQueueManager:
         try:
             self.cover_selection.cleanup_expired(self.protected_cover_ids())
         except Exception as error:
-            logger.warning(f"Could not clean expired prepared covers: {error}")
+            logger.warning(
+                "prepared_cover_cleanup_failed reason=%s",
+                safe_log_text(error),
+            )
 
     def _delete_unreferenced_covers(self, cover_ids: set[str]) -> None:
         if self.cover_selection is None or not cover_ids:
@@ -260,7 +332,10 @@ class DownloadQueueManager:
                 self.protected_cover_ids(),
             )
         except Exception as error:
-            logger.warning(f"Could not clean unused prepared covers: {error}")
+            logger.warning(
+                "prepared_cover_delete_failed reason=%s",
+                safe_log_text(error),
+            )
 
     async def _broadcast_snapshot(self) -> None:
         async with self._snapshot_lock:
@@ -295,6 +370,7 @@ class DownloadQueueManager:
                     "Application restarted before the download completed",
                 )
                 recovered_running_job = True
+                self._recovered_running_jobs += 1
             elif job.status == "queued":
                 self.queue.put_nowait(job.job_id)
 

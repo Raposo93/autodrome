@@ -172,7 +172,7 @@ class MetadataService:
             await self._download_cover_art(release_id, path)
         except UpstreamServiceError as e:
             if e.status == 404:
-                logger.info(f"Cover Art Archive has no front cover for {release_id}")
+                logger.debug("cover_archive_missing release_id=%s", release_id)
                 return None
             raise
         return os.path.abspath(path)

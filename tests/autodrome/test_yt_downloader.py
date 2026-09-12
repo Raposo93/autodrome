@@ -1,6 +1,7 @@
 import asyncio
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from autodrome.yt_downloader import (
@@ -14,6 +15,15 @@ from tests.fixtures import generated_playlist, playlist_from_hell
 class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.downloader = YTDownloader()
+
+    def test_ytdlp_is_quiet_and_dead_subprocess_path_is_absent(self):
+        options = self.downloader._build_ydl_opts(
+            Path(tempfile.gettempdir()), MagicMock(), 1
+        )
+
+        self.assertTrue(options["quiet"])
+        self.assertTrue(options["no_warnings"])
+        self.assertFalse(hasattr(self.downloader, "_download_with_subprocess"))
 
     async def test_download_playlist_downloads_track_urls_sequentially(self):
         self.downloader.get_playlist_track_urls = AsyncMock(
@@ -92,6 +102,9 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
         manifest = self.downloader._extract_manifest("fixture://playlist-from-hell")
 
         expected = fixture["expected"]
+        extraction_options = youtube_dl.call_args.args[0]
+        self.assertTrue(extraction_options["quiet"])
+        self.assertTrue(extraction_options["no_warnings"])
         self.assertEqual(manifest["unavailable"], 3)
         self.assertEqual(
             [track["id"] for track in manifest["tracks"]],
@@ -158,10 +171,11 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
         ) as to_thread, tempfile.TemporaryDirectory() as destination:
             to_thread.side_effect = lambda function, *args: function(*args)
 
-            with self.assertRaises(TrackDownloadError) as raised:
-                await downloader.download_track(
-                    "https://youtube.test/track", destination, 7, MagicMock()
-                )
+            with self.assertNoLogs("autodrome", level="WARNING"):
+                with self.assertRaises(TrackDownloadError) as raised:
+                    await downloader.download_track(
+                        "https://youtube.test/track", destination, 7, MagicMock()
+                    )
 
         self.assertEqual(raised.exception.index, 7)
         self.assertEqual(raised.exception.url, "https://youtube.test/track")

@@ -16,7 +16,7 @@ def save_image(path, image_format, size=(64, 64), color="navy"):
     Image.new("RGB", size, color).save(path, format=image_format)
 
 
-@mock.patch("autodrome.services.cover_embedder.logger.info")
+@mock.patch("autodrome.services.cover_embedder.logger.debug")
 def test_prepare_cover_preserves_valid_image_and_detects_real_mime(
     log_info, tmp_path
 ):
@@ -32,10 +32,17 @@ def test_prepare_cover_preserves_valid_image_and_detects_real_mime(
     assert prepared.dimensions == (64, 64)
     assert prepared.original_size == len(original)
     assert prepared.optimized is False
-    log_message = log_info.call_args.args[0]
-    assert f"original_size={len(original)} bytes" in log_message
-    assert f"final_size={len(original)} bytes" in log_message
-    assert "limit=10000 bytes" in log_message
+    assert log_info.call_args.args == (
+        "cover_%s original_bytes=%s final_bytes=%s limit_bytes=%s "
+        "mime=%s dimensions=%sx%s",
+        "prepared",
+        len(original),
+        len(original),
+        10_000,
+        "image/png",
+        64,
+        64,
+    )
 
 
 def test_prepare_cover_optimizes_once_without_changing_original(tmp_path):

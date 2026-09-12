@@ -36,10 +36,10 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
         self.temp_directory.cleanup()
 
     async def test_success_transitions_are_persisted_and_broadcast(self):
-        self.manager.start()
-
-        job_id = await self.manager.enqueue(PAYLOAD)
-        await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+        with self.assertLogs("autodrome", level="INFO") as logs:
+            self.manager.start()
+            job_id = await self.manager.enqueue(PAYLOAD)
+            await asyncio.wait_for(self.manager.queue.join(), timeout=1)
 
         job = self.manager.snapshot()[0]
         self.assertEqual(job["job_id"], job_id)
@@ -62,21 +62,33 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
         with open(self.state_path, "r", encoding="utf-8") as state_file:
             persisted = json.load(state_file)
         self.assertEqual(persisted["jobs"][0]["status"], "succeeded")
+        lifecycle = " ".join(logs.output)
+        self.assertIn("job_enqueued", lifecycle)
+        self.assertIn("job_started", lifecycle)
+        self.assertIn("tracks=1", lifecycle)
+        self.assertIn("job_succeeded", lifecycle)
 
     async def test_failure_stores_error_and_removes_running_state(self):
-        self.downloader.download_and_tag.side_effect = RuntimeError("download failed")
+        self.downloader.download_and_tag.side_effect = RuntimeError(
+            "download failed https://provider.test/path?token=secret"
+        )
         self.manager.start()
 
-        job_id = await self.manager.enqueue(PAYLOAD)
-        await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+        with self.assertLogs("autodrome", level="ERROR") as logs:
+            job_id = await self.manager.enqueue(PAYLOAD)
+            await asyncio.wait_for(self.manager.queue.join(), timeout=1)
 
         job = self.manager.snapshot()[0]
         self.assertEqual(job["job_id"], job_id)
         self.assertEqual(job["status"], "failed")
-        self.assertEqual(job["error"], "download failed")
+        self.assertIn("token=secret", job["error"])
         final_broadcast = self.websocket_manager.broadcast.await_args_list[-1]
         self.assertEqual(final_broadcast.args[0][0]["status"], "failed")
-        self.assertEqual(final_broadcast.args[0][0]["error"], "download failed")
+        self.assertIn("token=secret", final_broadcast.args[0][0]["error"])
+        logged = " ".join(logs.output)
+        self.assertIn("job_failed", logged)
+        self.assertNotIn("secret", logged)
+        self.assertNotIn("provider.test", logged)
 
     async def test_duplicate_payloads_are_independent_jobs(self):
         self.manager.start()
@@ -225,11 +237,12 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
             json.dump({"version": 1, "jobs": [job.to_storage_dict()]}, state_file)
 
         restarted_downloader = AsyncMock()
-        restarted_manager = DownloadQueueManager(
-            restarted_downloader,
-            AsyncMock(),
-            self.state_path,
-        )
+        with self.assertLogs("autodrome", level="INFO") as logs:
+            restarted_manager = DownloadQueueManager(
+                restarted_downloader,
+                AsyncMock(),
+                self.state_path,
+            )
         try:
             restarted_manager.start()
             await asyncio.sleep(0)
@@ -238,6 +251,7 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(recovered["status"], "interrupted")
             self.assertIn("restarted", recovered["error"])
             restarted_downloader.download_and_tag.assert_not_awaited()
+            self.assertIn("interrupted=1", " ".join(logs.output))
         finally:
             await restarted_manager.stop()
 
@@ -443,6 +457,24 @@ class TestStorageRecovery(unittest.IsolatedAsyncioTestCase):
     setUp = TestDownloadQueueManager.setUp
     asyncTearDown = TestDownloadQueueManager.asyncTearDown
     persisted_jobs = TestDownloadQueueManager.persisted_jobs
+
+    async def test_repeated_storage_failure_logs_once_then_reports_recovery(self):
+        job_id = await self.manager.enqueue(PAYLOAD)
+        job = self.manager._jobs[job_id]
+
+        with patch("autodrome.services.download_queue.logger") as queue_logger:
+            await self.manager._report_storage_error(job, "running", "disk full")
+            await self.manager._report_storage_error(job, "running", "disk full")
+            await self.manager._save_worker_transition(job, "running")
+
+        queue_logger.error.assert_called_once()
+        queue_logger.debug.assert_called_once()
+        queue_logger.info.assert_called_once_with(
+            "queue_storage_recovered downtime_s=%.2f retries=%s",
+            ANY,
+            1,
+        )
+        self.assertIsNone(self.manager.storage_error)
 
     async def test_worker_retries_state_without_repeating_download(self):
         for target in ("running", "succeeded", "failed"):

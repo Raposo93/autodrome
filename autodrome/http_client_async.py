@@ -215,13 +215,15 @@ class AsyncHttpClient:
                     retryable = self._is_retryable(error, status)
                     if retryable and attempt < max_attempts:
                         delay = retry_base * (2 ** (attempt - 1))
-                        status_context = (
-                            f"HTTP {status}" if status is not None else "timeout"
-                        )
+                        retry_reason = self._retry_reason(error, status)
                         logger.warning(
-                            f"{provider_name} {status_context} while {context}; "
-                            f"retrying in {delay:.2f}s "
-                            f"({attempt + 1}/{max_attempts})"
+                            "upstream_retry provider=%s reason=%s attempt=%s/%s "
+                            "delay_s=%.2f",
+                            provider_name,
+                            retry_reason,
+                            attempt + 1,
+                            max_attempts,
+                            delay,
                         )
                         await self._sleep(delay)
                         continue
@@ -274,6 +276,16 @@ class AsyncHttpClient:
         if isinstance(error, aiohttp.ClientError):
             return "HTTP client error"
         return "unexpected response error"
+
+    @staticmethod
+    def _retry_reason(error: Exception, status: Optional[int]) -> str:
+        if status is not None:
+            return f"http_{status}"
+        if isinstance(error, (asyncio.TimeoutError, aiohttp.ServerTimeoutError)):
+            return "timeout"
+        if isinstance(error, aiohttp.ClientConnectionError):
+            return "connection_failed"
+        return "transient_failure"
 
     @staticmethod
     def _provider_for_url(url: str) -> str:

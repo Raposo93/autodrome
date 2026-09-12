@@ -55,12 +55,13 @@ class Organizer:
             yield staging_folder
         except Exception:
             if conf.preserve_failed_staging:
-                logger.error(
-                    f"Album processing failed; preserving staging files in {staging_folder}"
+                logger.warning(
+                    "staging_preserved path=%s",
+                    staging_folder,
                 )
             else:
                 shutil.rmtree(staging_folder, ignore_errors=True)
-                logger.info(f"Removed failed staging folder {staging_folder}")
+                logger.debug("staging_removed path=%s", staging_folder)
             raise
         else:
             if os.path.exists(staging_folder):
@@ -115,7 +116,7 @@ class Organizer:
         else:
             logger.debug(f"No valid cover art found to embed (path: {cover_path})")
 
-        logger.info("Tagging and renaming completed.")
+        logger.debug("tagging_completed tracks=%s", len(tracks))
 
     def validate_album(
         self,
@@ -171,7 +172,7 @@ class Organizer:
                         f"{conf.max_embedded_cover_bytes} bytes"
                     )
 
-        logger.info(f"Validated {len(files)} staged MP3 files before publication")
+        logger.info("album_validated tracks=%s", len(files))
 
     def move_to_library(
         self,
@@ -202,7 +203,7 @@ class Organizer:
                 os.rmdir(artist_folder)
             raise
 
-        logger.info(f"Published album atomically to: {album_folder}")
+        logger.info("album_published path=%s", album_folder)
 
     def inspect_album_destination(self, artist: str, album: str) -> dict:
         """Inspect a final destination without creating or changing library files."""

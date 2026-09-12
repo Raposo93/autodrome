@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 from typing import Optional
 
 from dotenv import load_dotenv
-from autodrome.logger import logger
+from autodrome.logger import configure_logging
 
 
 MAX_DOWNLOAD_CONCURRENCY = 4
@@ -81,11 +81,20 @@ class Config:
         ]
 
         log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
-        log_level = getattr(logging, log_level_str, logging.INFO)
-
-        logger.setLevel(log_level)
-        # logger.info(f"Config loaded. User-Agent: {self.user_agent}")
-        # logger.info(f"Library path: {self.library_path}")
+        self.log_level = getattr(logging, log_level_str, logging.INFO)
+        self.log_file = os.getenv("LOG_FILE", "").strip() or None
+        self.log_max_bytes = self._read_int(
+            "LOG_MAX_BYTES", 10 * 1024 * 1024, minimum=1
+        )
+        self.log_backup_count = self._read_int(
+            "LOG_BACKUP_COUNT", 3, minimum=1
+        )
+        configure_logging(
+            self.log_level,
+            log_file=self.log_file,
+            max_bytes=self.log_max_bytes,
+            backup_count=self.log_backup_count,
+        )
 
     @property
     def requires_api_token(self) -> bool:

@@ -4,7 +4,6 @@ from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
 from autodrome.models.track import Track
 from autodrome.services.track_files import match_track_files
-from autodrome.logger import logger
 
 class Tagger:
     def tag_files(

@@ -34,7 +34,7 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_json(app.state.queue_manager.snapshot())
         if app.state.queue_manager.storage_error:
             await websocket.send_json(app.state.queue_manager.processing_status())
-        logger.info(f"WebSocket connected: {websocket.client}")
+        logger.debug("websocket_connected client=%s", websocket.client)
         while True:
             try:
                 message = await asyncio.wait_for(
@@ -48,9 +48,9 @@ async def websocket_endpoint(websocket: WebSocket):
             if message == "ping":
                 await websocket.send_json({"type": "pong"})
     except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected: {websocket.client}")
-    except Exception as e:
-        logger.warning(f"Unexpected WebSocket error: {e}")
+        logger.debug("websocket_disconnected client=%s", websocket.client)
+    except Exception:
+        logger.exception("websocket_unexpected_error")
     finally:
         if connected:
             ws_manager.disconnect(websocket)

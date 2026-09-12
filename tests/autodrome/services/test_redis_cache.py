@@ -35,12 +35,36 @@ class TestRedisCache(unittest.TestCase):
         client.set.side_effect = ConnectionError("Redis is down")
         cache = RedisCache(client=client)
 
-        with self.assertLogs(level="WARNING") as logs:
+        with self.assertLogs("autodrome", level="DEBUG") as logs:
+            self.assertIsNone(cache.get_release("release-1"))
             self.assertIsNone(cache.get_release("release-1"))
             cache.set_release("release-1", {"title": "Album"})
 
-        self.assertTrue(any("Could not retrieve" in entry for entry in logs.output))
-        self.assertTrue(any("Could not save" in entry for entry in logs.output))
+        warning_entries = [entry for entry in logs.output if "WARNING" in entry]
+        debug_entries = [entry for entry in logs.output if "DEBUG" in entry]
+        self.assertEqual(len(warning_entries), 1)
+        self.assertIn("redis_unavailable", warning_entries[0])
+        self.assertIn("reason=connection_failed", warning_entries[0])
+        self.assertEqual(len(debug_entries), 2)
+
+    def test_redis_recovery_is_logged_once(self):
+        client = MagicMock()
+        client.get.side_effect = [ConnectionError("down"), None, None]
+        cache = RedisCache(client=client)
+
+        with self.assertLogs("autodrome", level="INFO") as logs:
+            self.assertIsNone(cache.get_release("release-1"))
+            self.assertIsNone(cache.get_release("release-1"))
+            self.assertIsNone(cache.get_release("release-1"))
+
+        self.assertEqual(
+            sum("redis_unavailable" in entry for entry in logs.output),
+            1,
+        )
+        self.assertEqual(
+            sum("redis_recovered" in entry for entry in logs.output),
+            1,
+        )
 
     def test_ping_reports_client_availability(self):
         client = MagicMock()

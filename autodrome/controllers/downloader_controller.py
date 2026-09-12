@@ -108,7 +108,7 @@ class DownloaderController:
             await report_progress(progress, "publishing")
             self.organizer.move_to_library(tmpdir, artist, album)
 
-        logger.info(f"Download and tagging completed for release_id: {release_id}")
+        logger.debug("download_workflow_completed release_id=%s", release_id)
 
     async def _prepare_cover(
         self,

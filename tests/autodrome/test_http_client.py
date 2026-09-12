@@ -94,14 +94,16 @@ class TestAsyncHttpClient(unittest.IsolatedAsyncioTestCase):
             async_response_context(success),
         ]
 
-        result = await client.get(
-            "https://example.test/ws/2/release/",
-            context="searching releases",
-        )
+        with self.assertLogs("autodrome", level="WARNING") as logs:
+            result = await client.get(
+                "https://example.test/ws/2/release/",
+                context="searching releases",
+            )
 
         self.assertEqual(result, {"status": "ok"})
         self.assertEqual(self.session.get.call_count, 2)
         sleep.assert_awaited_once_with(0.25)
+        self.assertIn("reason=http_429", logs.output[0])
 
     async def test_get_retries_5xx_then_returns_sanitized_error(self):
         sleep = AsyncMock()
@@ -129,12 +131,13 @@ class TestAsyncHttpClient(unittest.IsolatedAsyncioTestCase):
         client = AsyncHttpClient(session=self.session, sleep=sleep)
         self.session.get.side_effect = asyncio.TimeoutError()
 
-        with self.assertRaises(UpstreamServiceError) as raised:
-            await client.get(
-                "https://www.googleapis.com/youtube/v3/search",
-                params={"key": "super-secret"},
-                context="searching playlists",
-            )
+        with self.assertLogs("autodrome", level="WARNING") as logs:
+            with self.assertRaises(UpstreamServiceError) as raised:
+                await client.get(
+                    "https://www.googleapis.com/youtube/v3/search",
+                    params={"key": "super-secret"},
+                    context="searching playlists",
+                )
 
         message = str(raised.exception)
         self.assertEqual(
@@ -144,6 +147,23 @@ class TestAsyncHttpClient(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("super-secret", message)
         self.assertEqual(self.session.get.call_count, 3)
+        self.assertTrue(all("reason=timeout" in entry for entry in logs.output))
+        self.assertNotIn("super-secret", " ".join(logs.output))
+        self.assertNotIn("googleapis.com", " ".join(logs.output))
+
+    async def test_connection_retries_have_a_distinct_reason(self):
+        sleep = AsyncMock()
+        client = AsyncHttpClient(session=self.session, sleep=sleep)
+        self.session.get.side_effect = aiohttp.ClientConnectionError("offline")
+
+        with self.assertLogs("autodrome", level="WARNING") as logs:
+            with self.assertRaises(UpstreamServiceError):
+                await client.get("https://example.test/private?token=secret")
+
+        self.assertTrue(
+            all("reason=connection_failed" in entry for entry in logs.output)
+        )
+        self.assertNotIn("secret", " ".join(logs.output))
 
     async def test_non_transient_http_error_is_not_retried(self):
         response = response_with_error(400)

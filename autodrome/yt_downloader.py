@@ -62,8 +62,7 @@ class YTDownloader:
         manifest=None,
         progress: Optional[ProgressCallback] = None,
     ) -> None:
-        logger.debug(f"[YTDownloader] Starting download_playlist: {url} to {dest}")
-        print(f"[YTDownloader] Descargando: {url} en {dest}")
+        logger.debug("playlist_download_started destination=%s", dest)
 
         await report_progress(progress, "manifest")
         if manifest is not None:
@@ -198,12 +197,15 @@ class YTDownloader:
                     pass
                 raise
             except Exception as e:
-                logger.warning(
-                    f"[YTDownloader] Track {index} attempt {attempt} of "
-                    f"{self.track_download_attempts} failed: {e}"
-                )
                 if attempt == self.track_download_attempts:
                     raise TrackDownloadError(index, url, str(e)) from e
+                logger.warning(
+                    "track_download_retry track=%s attempt=%s/%s reason=%s",
+                    index,
+                    attempt + 1,
+                    self.track_download_attempts,
+                    type(e).__name__,
+                )
 
     def _extract_track_urls(self, url: str) -> List[str]:
         return [track["url"] for track in self._extract_manifest(url)["tracks"]]
@@ -213,7 +215,7 @@ class YTDownloader:
             "extract_flat": "in_playlist",
             "skip_download": True,
             "quiet": True,
-            "no_warnings": False,
+            "no_warnings": True,
         }
         with YoutubeDL(options) as ydl:
             playlist = ydl.extract_info(url, download=False)
@@ -243,23 +245,16 @@ class YTDownloader:
         index: int,
         hook: Callable,
     ) -> None:
-        logger.info(f"[YTDownloader] Downloading track {index} to: {dest}")
-        print(f"[YTDownloader] Lanzando descarga yt-dlp: {url}")
+        logger.debug("track_download_started track=%s", index)
 
         ydl_opts = self._build_ydl_opts(Path(dest), hook, index)
 
         with YoutubeDL(ydl_opts) as ydl:
-            try:
-                ydl.download([url])
-            except Exception as e:
-                logger.error(f"[YTDownloader] Error downloading track {index}: {e}")
-                raise
+            ydl.download([url])
 
-        logger.info(f"[YTDownloader] Track {index} download completed successfully")
+        logger.debug("track_download_completed track=%s", index)
 
     async def _check_downloaded_files(self, folder: str) -> None:
-        print(f"[YTDownloader] Comprobando archivos descargados en: {folder}")
-
         files = os.listdir(folder)
 
         downloaded = [
@@ -267,7 +262,7 @@ class YTDownloader:
             for file in files
             if file.lower().endswith((".mp3", ".m4a", ".opus"))
         ]
-        logger.info(f"[YTDownloader] Archivos de audio descargados: {downloaded}")
+        logger.debug("playlist_files_verified audio_files=%s", len(downloaded))
 
         if not downloaded:
             raise RuntimeError(
@@ -286,8 +281,8 @@ class YTDownloader:
             }],
             'outtmpl': str(dest / f'{index:02d} - %(title)s.%(ext)s'),
             'progress_hooks': [hook],
-            'quiet': False,
-            'no_warnings': False,
+            'quiet': True,
+            'no_warnings': True,
             'ignoreerrors': False,
             'noplaylist': True,
         }
@@ -307,47 +302,12 @@ class YTDownloader:
                         if total
                         else f"[YTDownloader] Downloaded {completed}"
                     )
-                    logger.info(msg)
-                    print(msg)
+                    logger.debug(msg)
                 elif (
                     d.get("status") == "downloading"
                     and last_log_msg != "beginning download"
                 ):
-                    logger.info("[YTDownloader] Beginning download")
-                    print("[YTDownloader] Comenzando descarga")
+                    logger.debug("track_transfer_started")
                     last_log_msg = "beginning download"
 
         return hook
-
-    async def _download_with_subprocess(self, url: str, dest: str) -> None:
-        args = [
-            "yt-dlp",
-            "-f", "bestaudio/best",
-            "--extract-audio",
-            "--audio-format", "mp3",
-            "--audio-quality", "192K",
-            "-o", f"{dest}/%(playlist_index)02d - %(title)s.%(ext)s",
-            url
-        ]
-        logger.info(f"[YTDownloader] Starting yt-dlp subprocess with args: {args}")
-        print(f"[YTDownloader] Subprocess yt-dlp: {' '.join(args)}")
-
-        process = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        stdout, stderr = await process.communicate()
-
-        if stdout:
-            decoded = stdout.decode(errors='ignore')
-            logger.debug(f"[YTDownloader] yt-dlp stdout: {decoded}")
-            print(decoded)
-        if stderr:
-            decoded = stderr.decode(errors='ignore')
-            logger.error(f"[YTDownloader] yt-dlp stderr: {decoded}")
-            print(decoded)
-
-        if process.returncode != 0:
-            raise RuntimeError(f"[YTDownloader] yt-dlp subprocess failed with return code {process.returncode}")

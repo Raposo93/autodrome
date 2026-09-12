@@ -72,6 +72,21 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
             "Artist", "Album", limit=37, max_tracks=28
         )
 
+    async def test_info_summary_has_counts_without_the_raw_query(self):
+        controller = SearchController(http_client=MagicMock())
+        controller.yt_api.search_playlist = AsyncMock(return_value=[])
+        controller.metadata_service.search_releases = AsyncMock(return_value=[])
+
+        with self.assertLogs("autodrome", level="INFO") as logs:
+            await controller.search("Secret Artist", "Unreleased Album")
+
+        output = " ".join(logs.output)
+        self.assertIn("search_completed", output)
+        self.assertIn("youtube=0", output)
+        self.assertIn("musicbrainz=0", output)
+        self.assertNotIn("Secret Artist", output)
+        self.assertNotIn("Unreleased Album", output)
+
     async def test_unexpected_provider_failure_preserves_other_results(self):
         controller = SearchController(http_client=MagicMock())
         controller.yt_api.search_playlist = AsyncMock(side_effect=ValueError("private detail"))
@@ -183,7 +198,7 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
             metadata_service=metadata_service,
         )
 
-        with self.assertLogs("autodrome", level="INFO") as logs:
+        with self.assertLogs("autodrome", level="DEBUG") as logs:
             details = await controller.get_release_details("release-1")
 
         self.assertEqual(details["id"], "release-1")
@@ -191,7 +206,7 @@ class TestSearchController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(details["tracks"], [])
         metadata_service.get_release.assert_awaited_once_with("release-1")
         self.assertTrue(
-            any("details fetched in" in entry for entry in logs.output)
+            any("release_details_completed" in entry for entry in logs.output)
         )
 
 

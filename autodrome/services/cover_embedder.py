@@ -280,11 +280,15 @@ class CoverEmbedder:
         return image.convert("RGB")
 
     def _log_prepared(self, cover: PreparedCover) -> None:
-        logger.info(
-            "Prepared cover art: "
-            f"original_size={cover.original_size} bytes, "
-            f"final_size={cover.final_size} bytes, limit={self.max_bytes} bytes, "
-            f"mime={cover.mime_type}, dimensions="
-            f"{cover.dimensions[0]}x{cover.dimensions[1]}, "
-            f"optimized={cover.optimized}"
+        log = logger.info if cover.optimized else logger.debug
+        log(
+            "cover_%s original_bytes=%s final_bytes=%s limit_bytes=%s "
+            "mime=%s dimensions=%sx%s",
+            "optimized" if cover.optimized else "prepared",
+            cover.original_size,
+            cover.final_size,
+            self.max_bytes,
+            cover.mime_type,
+            cover.dimensions[0],
+            cover.dimensions[1],
         )

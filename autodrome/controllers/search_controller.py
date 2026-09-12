@@ -74,7 +74,13 @@ class SearchController:
             max_tracks,
         )
         elapsed = time.monotonic() - start
-        logger.info(f"SearchController: completed search for '{query}' in {elapsed:.2f} seconds")
+        logger.info(
+            "search_completed youtube=%s musicbrainz=%s errors=%s elapsed_ms=%s",
+            len(playlists),
+            len(releases),
+            len(errors),
+            round(elapsed * 1000),
+        )
         return {
             "playlists": playlists,
             "releases": releases,
@@ -86,7 +92,7 @@ class SearchController:
         try:
             return await search
         except UpstreamServiceError as error:
-            logger.warning(f"Search provider failure: {error}")
+            logger.warning("search_provider_failed provider=%s", provider)
             errors[provider] = str(error)
         except Exception:
             logger.exception(f"Unexpected {provider} search failure")
@@ -131,14 +137,16 @@ class SearchController:
         try:
             release = await self.metadata_service.get_release(release_id)
         except Exception:
-            logger.info(
-                f"SearchController: release {release_id} details failed after "
-                f"{time.monotonic() - start:.2f}s"
+            logger.debug(
+                "release_details_failed release_id=%s elapsed_ms=%s",
+                release_id,
+                round((time.monotonic() - start) * 1000),
             )
             raise
-        logger.info(
-            f"SearchController: release {release_id} details fetched in "
-            f"{time.monotonic() - start:.2f}s"
+        logger.debug(
+            "release_details_completed release_id=%s elapsed_ms=%s",
+            release_id,
+            round((time.monotonic() - start) * 1000),
         )
         return {
             "id": release.id,

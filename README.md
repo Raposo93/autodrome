@@ -90,9 +90,8 @@ cp .env.example .env
 Edita `/opt/autodrome/.env` y configura al menos `GOOGLE_API_KEY`,
 `CONTACT_EMAIL` y una ruta absoluta para `LIBRARY_PATH`.
 
-El servicio necesita leer `.env`, escribir en `covers/` y abrir
-`autodrome.log`. Prepara esos recursos sin dar permiso de escritura sobre todo
-el checkout:
+El servicio necesita leer `.env` y escribir en `covers/`. Prepara esos recursos
+sin dar permiso de escritura sobre todo el checkout:
 
 ```bash
 sudo chown "$USER":autodrome /opt/autodrome/.env
@@ -100,9 +99,6 @@ chmod 640 /opt/autodrome/.env
 
 sudo chown -R autodrome:autodrome /opt/autodrome/covers
 sudo chmod 0750 /opt/autodrome/covers
-
-sudo install -o autodrome -g autodrome -m 0640 /dev/null \
-  /opt/autodrome/autodrome.log
 ```
 
 El usuario `autodrome` también necesita lectura y escritura en `LIBRARY_PATH`,
@@ -146,8 +142,8 @@ con una espera de cinco segundos. Al parar, se espera a que termine o se
 interrumpa la operación de audio activa; no se inicia otra pista. Si no termina
 en 120 segundos, systemd elimina todo el grupo de procesos. La cola conserva el
 último estado durable y los trabajos inciertos pasan a `interrupted` al
-reiniciar; revisa staging y biblioteca antes de reintentarlos. Los logs están en
-journal y en `autodrome.log`.
+reiniciar; revisa staging y biblioteca antes de reintentarlos. Por defecto, los
+logs se escriben únicamente en stdout/stderr y systemd los recoge en journal.
 
 ### Biblioteca compartida
 
@@ -304,6 +300,11 @@ La configuración principal vive en `.env`:
   entre `1` y `4`; por defecto, `1`. Valores altos aumentan la carga de CPU,
   disco y ffmpeg, y pueden provocar throttling del proveedor.
 - `LOG_LEVEL`: nivel de log; por defecto, `INFO`.
+- `LOG_FILE`: ruta opcional para duplicar el log en un archivo rotatorio. Vacío
+  por defecto. Si se configura, el usuario del servicio necesita permiso de
+  escritura sobre el archivo y su directorio.
+- `LOG_MAX_BYTES`: tamaño máximo de cada archivo de log; 10 MiB por defecto.
+- `LOG_BACKUP_COUNT`: número de archivos rotados conservados; `3` por defecto.
 - `REDIS_ENABLED`: activa la caché Redis local; por defecto, `false`. Cuando
   está desactivada no se crea ningún cliente ni se intenta conectar a Redis.
 
@@ -504,7 +505,6 @@ aplicar actualizaciones automáticas.
 - Los trabajos interrumpidos requieren revisar biblioteca/staging antes de Retry.
 - Las pruebas avanzadas de disco lleno, SIGKILL, reboot y concurrencia quedan
   aplazadas; no forman parte de las garantías verificadas de esta versión.
-- No se incluye rotación de `autodrome.log`; configura la retención del host.
 
 ## Uso responsable
 
