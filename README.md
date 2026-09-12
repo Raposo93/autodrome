@@ -60,7 +60,27 @@ la SPA compilada y expone `autodrome`; Node y npm no son dependencias de
 runtime. El workflow de releases repite el build y el smoke en un entorno
 limpio antes de adjuntar el wheel a la release de GitHub.
 
-## Servicio systemd (recomendado)
+## Docker Compose
+
+La ruta más corta para una instalación autoalojada usa la imagen de GHCR. Copia
+`.env.example` a `.env`, configura `GOOGLE_API_KEY`, `CONTACT_EMAIL`, un
+`API_TOKEN` aleatorio de al menos 32 caracteres y `MUSIC_PATH`. El usuario
+numérico configurado (10001:10001 por defecto) debe poder escribir en esa ruta.
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose ps
+```
+
+El puerto sólo se publica en loopback por defecto. Biblioteca, staging, cola y
+portadas preparadas viven bajo el mismo mount `/music`, de modo que las
+actualizaciones no pierden estado y la publicación final sigue siendo un rename
+en el mismo filesystem. Redis continúa desactivado y no hay Node/npm en la
+imagen final. Consulta [docs/docker.md](docs/docker.md) para instalación,
+permisos, red, build local y actualización.
+
+## Servicio systemd (instalación nativa)
 
 La unidad de ejemplo [deploy/autodrome.service](deploy/autodrome.service) asume
 un wheel instalado en `/opt/autodrome/.venv`, el fichero
