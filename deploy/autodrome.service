@@ -10,7 +10,7 @@ Group=autodrome
 WorkingDirectory=/opt/autodrome
 EnvironmentFile=/opt/autodrome/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/autodrome/start_autodrome.sh --production
+ExecStart=/opt/autodrome/.venv/bin/autodrome
 Restart=on-failure
 RestartSec=5
 KillMode=mixed

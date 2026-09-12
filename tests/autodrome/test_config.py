@@ -34,6 +34,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.max_embedded_cover_height, 1600)
         self.assertEqual(settings.max_cover_source_pixels, 40_000_000)
         self.assertEqual(settings.max_cover_upload_bytes, 10 * 1024 * 1024)
+        self.assertEqual(settings.cover_storage_path, "covers/selected")
         self.assertEqual(settings.download_concurrency, 1)
         self.assertFalse(settings.redis_enabled)
         self.assertIsNone(settings.log_file)
@@ -51,6 +52,18 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.log_file, "/tmp/autodrome-test.log")
         self.assertEqual(settings.log_max_bytes, 4096)
         self.assertEqual(settings.log_backup_count, 2)
+
+    def test_installed_package_version_is_the_default(self):
+        with patch(
+            "autodrome.config.default_runtime_version",
+            return_value="autodrome/0.2.0",
+        ):
+            settings = self.build_config(
+                {key: value for key, value in REQUIRED_ENV.items() if key != "VERSION"}
+            )
+
+        self.assertEqual(settings.version, "autodrome/0.2.0")
+        settings.validate()
 
     def test_musicbrainz_policy_defaults_and_overrides(self):
         settings = self.build_config(REQUIRED_ENV)
@@ -88,6 +101,16 @@ class TestConfig(unittest.TestCase):
 
         self.assertFalse(settings.optimize_oversized_covers)
 
+    def test_cover_storage_path_can_be_configured(self):
+        settings = self.build_config(
+            {**REQUIRED_ENV, "COVER_STORAGE_PATH": "/var/lib/autodrome/covers"}
+        )
+
+        self.assertEqual(
+            settings.cover_storage_path,
+            "/var/lib/autodrome/covers",
+        )
+
     def test_limited_track_download_concurrency_can_be_configured(self):
         for concurrency in (1, 2, 4):
             with self.subTest(concurrency=concurrency):
@@ -114,7 +137,8 @@ class TestConfig(unittest.TestCase):
                     )
 
     def test_missing_critical_configuration_is_actionable(self):
-        settings = self.build_config({})
+        with patch("autodrome.config.default_runtime_version", return_value=None):
+            settings = self.build_config({})
 
         with self.assertRaisesRegex(
             ConfigurationError,

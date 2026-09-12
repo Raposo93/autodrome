@@ -44,7 +44,7 @@ class CoverSelectionService:
         self.http_client = http_client
         self.embedder = embedder
         self.storage_dir = Path(
-            storage_dir or Path(__file__).resolve().parents[2] / "covers" / "selected"
+            storage_dir or conf.cover_storage_path
         ).resolve()
         self.max_upload_bytes = (
             conf.max_cover_upload_bytes

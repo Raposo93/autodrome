@@ -33,12 +33,31 @@ if git --no-pager grep -nE '^(<<<<<<< .+|=======|>>>>>>> .+)$'; then
 fi
 
 echo
+echo "Installing locked frontend dependencies..."
+npm ci --prefix frontend
+
+echo
+echo "Building frontend..."
+npm run build --prefix frontend
+
+echo
 echo "Running backend tests..."
 "$PROJECT_PYTHON" -m pytest
 
 echo
-echo "Installing locked frontend dependencies..."
-npm ci --prefix frontend
+echo "Building and smoke-testing the wheel..."
+WHEEL_DIRECTORY="$(mktemp -d /tmp/autodrome-wheel-check.XXXXXX)"
+cleanup_wheel_directory() {
+  rm -rf "$WHEEL_DIRECTORY"
+}
+trap cleanup_wheel_directory EXIT
+"$PROJECT_PYTHON" -m build --no-isolation --wheel --outdir "$WHEEL_DIRECTORY"
+WHEELS=("$WHEEL_DIRECTORY"/*.whl)
+if [[ ${#WHEELS[@]} -ne 1 || ! -f "${WHEELS[0]}" ]]; then
+  echo "Error: expected exactly one built wheel."
+  exit 1
+fi
+"$PROJECT_PYTHON" scripts/smoke_wheel.py "${WHEELS[0]}"
 
 echo
 echo "Running frontend tests..."
@@ -47,10 +66,6 @@ npm test --prefix frontend
 echo
 echo "Running frontend E2E smoke tests..."
 npm run test:e2e --prefix frontend
-
-echo
-echo "Building frontend..."
-npm run build --prefix frontend
 
 echo
 echo "All checks passed."

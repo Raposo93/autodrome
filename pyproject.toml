@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=84", "wheel>=0.48"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autodrome"
+version = "0.2.0.dev0"
+description = "Self-hosted album downloader and music library organizer"
+readme = "README.md"
+requires-python = ">=3.14"
+dynamic = ["dependencies"]
+
+[project.scripts]
+autodrome = "autodrome.server:main"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["autodrome*", "api*"]
+namespaces = false

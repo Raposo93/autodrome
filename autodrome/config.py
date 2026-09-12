@@ -6,6 +6,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from autodrome.logger import configure_logging
+from autodrome.version import default_runtime_version
 
 
 MAX_DOWNLOAD_CONCURRENCY = 4
@@ -20,7 +21,7 @@ class Config:
         load_dotenv()
         self.google_api_key = os.getenv("GOOGLE_API_KEY")
         self.contact_email = os.getenv("CONTACT_EMAIL")
-        self.version = os.getenv("VERSION")
+        self.version = os.getenv("VERSION") or default_runtime_version()
         self.user_agent = f"{self.version} ({self.contact_email})"
         self.library_path = os.getenv("LIBRARY_PATH", "library")
         self.staging_path = os.getenv(
@@ -50,6 +51,9 @@ class Config:
         )
         self.max_cover_upload_bytes = self._read_int(
             "MAX_COVER_UPLOAD_BYTES", 10 * 1024 * 1024, minimum=1
+        )
+        self.cover_storage_path = os.getenv(
+            "COVER_STORAGE_PATH", os.path.join("covers", "selected")
         )
         self.queue_state_path = os.getenv(
             "QUEUE_STATE_PATH",

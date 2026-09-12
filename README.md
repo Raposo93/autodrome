@@ -5,8 +5,8 @@ YouTube, descargar su audio, obtener metadatos de MusicBrainz y Cover Art
 Archive, etiquetar los MP3 y publicarlos de forma segura en una biblioteca.
 
 La interfaz soportada es **FastAPI + Vue/Vite**. La antigua CLI no forma parte
-del producto. Se recomienda systemd para ejecución persistente y
-`start_autodrome.sh` para desarrollo o diagnóstico.
+del producto. Producción arranca mediante el comando instalado `autodrome`;
+`start_autodrome.sh` queda reservado para desarrollo y diagnóstico.
 
 ## Funcionalidad
 
@@ -21,16 +21,15 @@ del producto. Se recomienda systemd para ejecución persistente y
 
 ## Requisitos
 
-- Linux o un entorno Unix con Bash 5 o posterior.
 - Python 3.14 y soporte para `venv`.
-- Node.js 22 y npm.
 - `ffmpeg` disponible en `PATH`.
 - Una clave de YouTube Data API v3.
+- Para construir desde el repositorio: Node.js 22, npm y Bash 5 o posterior.
 - Redis en `127.0.0.1:6379` es opcional y está desactivado por defecto. Para
   usarlo, configura `REDIS_ENABLED=true`. Sin Redis, Autodrome consulta los
   proveedores originales y conserva igualmente el estado de la cola en disco.
 
-## Instalación desde un clon limpio
+## Desarrollo desde un clon limpio
 
 Para desarrollo o ejecución manual, desde la raíz del repositorio:
 
@@ -46,13 +45,27 @@ también `LIBRARY_PATH`; se recomienda una ruta absoluta hacia la biblioteca de
 música. No uses `sudo` para instalar dependencias dentro de `.venv` ni para
 ejecutar la aplicación.
 
+Para construir el artefacto instalable:
+
+```bash
+npm ci --prefix frontend
+npm run build --prefix frontend
+.venv/bin/python -m build
+.venv/bin/python scripts/smoke_wheel.py dist/*.whl
+```
+
+El build falla si falta `frontend/dist/index.html`. El wheel resultante incluye
+la SPA compilada y expone `autodrome`; Node y npm no son dependencias de
+runtime. El workflow de releases repite el build y el smoke en un entorno
+limpio antes de adjuntar el wheel a la release de GitHub.
+
 ## Servicio systemd (recomendado)
 
 La unidad de ejemplo [deploy/autodrome.service](deploy/autodrome.service) asume
-una instalación completa en `/opt/autodrome` y un usuario/grupo no-root
-`autodrome`. `/opt/autodrome` debe contener el código, `.venv`, `.env` y el
-frontend compilado en `frontend/dist`; no copies únicamente el script de
-arranque.
+un wheel instalado en `/opt/autodrome/.venv`, el fichero
+`/opt/autodrome/.env` y un usuario/grupo no-root `autodrome`. El checkout, Node,
+npm, `app.py` y `frontend/` no son necesarios en ese host una vez instalado el
+wheel.
 
 Puedes usar otro usuario existente u otra ruta, pero entonces ajusta `User`,
 `Group`, `WorkingDirectory`, `EnvironmentFile` y `ExecStart` en la copia de la
@@ -70,36 +83,23 @@ sudo useradd --system --user-group --home-dir /opt/autodrome \
 
 Si ya existe, no vuelvas a crearlo. Compruébalo con `id autodrome`.
 
-Se recomienda que el checkout pertenezca al usuario administrador que realiza
-`git pull`, no al usuario del servicio. Así Git no necesita excepciones
-`safe.directory` y el proceso de Autodrome no puede modificar su propio código.
-Desde una cuenta administrativa normal:
+Descarga el wheel de una release o constrúyelo en otra máquina. Desde una cuenta
+administrativa normal, indica su ruta en `AUTODROME_WHEEL` e instala el
+artefacto sin copiar el repositorio:
 
 ```bash
+AUTODROME_WHEEL=/ruta/autodrome-0.x.y-py3-none-any.whl
 sudo install -d -o "$USER" -g "$(id -gn)" -m 0755 /opt/autodrome
-git clone https://github.com/Raposo93/autodrome.git /opt/autodrome
-cd /opt/autodrome
-
-python3.14 -m venv .venv
-.venv/bin/python -m pip install -r requirements.lock
-npm ci --prefix frontend
-npm run build --prefix frontend
-cp .env.example .env
+python3.14 -m venv /opt/autodrome/.venv
+/opt/autodrome/.venv/bin/python -m pip install "$AUTODROME_WHEEL"
+sudo install -o "$USER" -g autodrome -m 0640 /dev/null /opt/autodrome/.env
+sudo install -d -o autodrome -g autodrome -m 0750 /opt/autodrome/covers
 ```
 
 Edita `/opt/autodrome/.env` y configura al menos `GOOGLE_API_KEY`,
-`CONTACT_EMAIL` y una ruta absoluta para `LIBRARY_PATH`.
-
-El servicio necesita leer `.env` y escribir en `covers/`. Prepara esos recursos
-sin dar permiso de escritura sobre todo el checkout:
-
-```bash
-sudo chown "$USER":autodrome /opt/autodrome/.env
-chmod 640 /opt/autodrome/.env
-
-sudo chown -R autodrome:autodrome /opt/autodrome/covers
-sudo chmod 0750 /opt/autodrome/covers
-```
+`CONTACT_EMAIL` y una ruta absoluta para `LIBRARY_PATH`. `VERSION` es opcional
+en una instalación desde wheel: si se omite, se usa la versión instalada del
+paquete.
 
 El usuario `autodrome` también necesita lectura y escritura en `LIBRARY_PATH`,
 `STAGING_PATH` y `QUEUE_STATE_PATH`. La forma concreta de concederlos depende de
@@ -108,7 +108,7 @@ si la biblioteca es exclusiva del servicio o compartida con otros usuarios.
 Antes de instalar la unidad, prueba el mismo arranque que usará systemd:
 
 ```bash
-sudo -u autodrome /opt/autodrome/start_autodrome.sh --production
+sudo -u autodrome /opt/autodrome/.venv/bin/autodrome
 ```
 
 Si arranca correctamente, detén la prueba con `Ctrl+C`. Un fallo aquí suele ser
@@ -219,16 +219,14 @@ montada.
 
 ### Actualización
 
-Detén el servicio y actualiza con el usuario propietario del checkout, sin
-`sudo` para Git, `.venv`, npm o el build:
+Descarga el wheel de la nueva release, detén el servicio, actualiza el paquete y
+vuelve a arrancar. La biblioteca, staging, cola y portadas permanecen fuera del
+wheel:
 
 ```bash
+AUTODROME_WHEEL=/ruta/autodrome-0.x.y-py3-none-any.whl
 sudo systemctl stop autodrome
-cd /opt/autodrome
-git pull
-.venv/bin/python -m pip install -r requirements.lock
-npm ci --prefix frontend
-npm run build --prefix frontend
+/opt/autodrome/.venv/bin/python -m pip install --upgrade "$AUTODROME_WHEEL"
 sudo systemctl start autodrome
 ```
 
@@ -242,19 +240,17 @@ sudo systemctl daemon-reload
 
 ## Arranque y parada
 
-La ruta recomendada es:
+En producción, el único entry point soportado es el instalado por el wheel:
 
 ```bash
-./start_autodrome.sh
+/opt/autodrome/.venv/bin/autodrome
 ```
 
-El script valida herramientas, dependencias y configuración antes de arrancar.
-Antes del primer arranque ejecuta `npm run build --prefix frontend`. El modo
-predeterminado (`--production`) sirve frontend, API y WebSocket desde FastAPI
-en `http://127.0.0.1:5000`, sin Node ni Vite durante la ejecución. Las rutas de
-la SPA admiten recarga directa. Pulsa `Ctrl+C` para detener el servidor.
+El comando valida la configuración y sirve frontend, API y WebSocket desde un
+único proceso FastAPI en `http://127.0.0.1:5000`. No requiere checkout, Node ni
+Vite en runtime. Pulsa `Ctrl+C` para detenerlo.
 
-Para desarrollo, `./start_autodrome.sh --dev` inicia FastAPI y Vite
+Para desarrollo, `./start_autodrome.sh` (o `--dev`) inicia FastAPI y Vite
 (`http://127.0.0.1:5173`) y detiene ambos al salir. `npm run dev --prefix frontend`
 sigue disponible cuando se gestiona el backend por separado.
 
@@ -283,8 +279,9 @@ La configuración principal vive en `.env`:
 - `GOOGLE_API_KEY`: clave de YouTube Data API v3; obligatoria.
 - `CONTACT_EMAIL`: contacto incluido en el User-Agent de MusicBrainz;
   obligatorio.
-- `VERSION`: identificador del User-Agent; por defecto se propone
-  `autodrome/dev` en el ejemplo.
+- `VERSION`: override opcional del identificador del User-Agent y `/status`.
+  Un wheel instalado usa automáticamente su metadata; el ejemplo propone
+  `autodrome/dev` para ejecutar directamente desde el checkout.
 - `AUTODROME_COMMIT`: commit hexadecimal opcional que identifica el build en la
   vista de diagnóstico. También se reconoce `GIT_COMMIT`.
 - `LIBRARY_PATH`: raíz de la biblioteca; usa preferiblemente una ruta absoluta.
@@ -319,6 +316,9 @@ Portadas:
   defecto.
 - `MAX_COVER_UPLOAD_BYTES`: tamaño máximo de una portada alternativa recibida;
   10 MiB por defecto.
+- `COVER_STORAGE_PATH`: almacenamiento durable para portadas preparadas;
+  `covers/selected` por defecto, relativo al directorio de trabajo. Usa una
+  ruta absoluta si el servicio no trabaja en `/opt/autodrome`.
 
 Red y frontend:
 

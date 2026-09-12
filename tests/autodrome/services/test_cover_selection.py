@@ -41,6 +41,20 @@ def service(
     )
 
 
+def test_default_storage_uses_configured_runtime_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "autodrome.services.cover_selection.conf.cover_storage_path",
+        "covers/selected",
+    )
+    selection = CoverSelectionService(
+        http_client=AsyncMock(),
+        embedder=CoverEmbedder(max_bytes=100_000),
+    )
+
+    assert selection.storage_dir == (tmp_path / "covers" / "selected").resolve()
+
+
 def test_manual_cover_validates_real_mime_and_can_be_loaded_for_retry(tmp_path):
     selection = service(tmp_path)
 

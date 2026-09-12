@@ -20,13 +20,9 @@ if [[ ! -x "$PROJECT_PYTHON" ]]; then
   exit 1
 fi
 
-case "${1:---production}" in
-  --production)
-    command -v ffmpeg >/dev/null || { echo "Error: ffmpeg is required"; exit 1; }
-    exec "$PROJECT_PYTHON" -m autodrome.server
-    ;;
+case "${1:---dev}" in
   --dev) ;;
-  *) echo "Usage: $0 [--production|--dev]"; exit 2 ;;
+  *) echo "Usage: $0 [--dev]"; exit 2 ;;
 esac
 
 for command in node npm ffmpeg; do
@@ -138,7 +134,7 @@ trap 'exit 143' TERM
 echo "Starting FastAPI on http://$BACKEND_HOST:$BACKEND_PORT"
 (
   cd "$PROJECT_DIRECTORY"
-  exec "$PROJECT_PYTHON" -m uvicorn app:app \
+  exec "$PROJECT_PYTHON" -m uvicorn autodrome.web:app \
     --host "$BACKEND_HOST" \
     --port "$BACKEND_PORT"
 ) &
