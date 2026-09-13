@@ -163,26 +163,172 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
         finally:
             await restarted_manager.stop()
 
-    async def test_cancel_rejects_job_that_already_started(self):
+    async def test_running_job_cancels_durably_after_active_work_drains(self):
         started = asyncio.Event()
-        finish = asyncio.Event()
+        cancellation_seen = asyncio.Event()
+        drained = asyncio.Event()
 
         async def download(**kwargs):
             started.set()
-            await finish.wait()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancellation_seen.set()
+                await drained.wait()
+                raise
 
         self.downloader.download_and_tag.side_effect = download
         self.manager.start()
         job_id = await self.manager.enqueue(PAYLOAD)
         await asyncio.wait_for(started.wait(), timeout=1)
 
-        with self.assertRaisesRegex(ValueError, "Only queued jobs"):
-            await self.manager.cancel_job(job_id)
+        status = await self.manager.cancel_job(job_id)
+
+        self.assertEqual(status, "cancelling")
+        self.assertEqual(self.manager.snapshot()[0]["status"], "cancelling")
+        self.assertEqual(self.persisted_jobs()[0]["status"], "cancelling")
+        await asyncio.wait_for(cancellation_seen.wait(), timeout=1)
+        self.assertEqual(await self.manager.cancel_job(job_id), "cancelling")
+
+        drained.set()
+        await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+        self.assertEqual(self.manager.snapshot()[0]["status"], "cancelled")
+        self.assertEqual(self.persisted_jobs()[0]["status"], "cancelled")
+
+    async def test_running_cancel_persistence_failure_does_not_stop_work(self):
+        started = asyncio.Event()
+        finish = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        async def download(**kwargs):
+            started.set()
+            try:
+                await finish.wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        self.downloader.download_and_tag.side_effect = download
+        self.manager.start()
+        job_id = await self.manager.enqueue(PAYLOAD)
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        with patch(
+            "autodrome.services.download_queue.os.replace",
+            side_effect=OSError("disk full"),
+        ):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                await self.manager.cancel_job(job_id)
 
         self.assertEqual(self.manager.snapshot()[0]["status"], "running")
         self.assertEqual(self.persisted_jobs()[0]["status"], "running")
+        self.assertFalse(cancelled.is_set())
         finish.set()
         await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+        self.assertEqual(self.manager.snapshot()[0]["status"], "succeeded")
+
+    async def test_cancel_is_rejected_after_publishing_starts(self):
+        publishing = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def download(progress, **kwargs):
+            await progress("publishing", None, None, None)
+            publishing.set()
+            await finish.wait()
+
+        self.downloader.download_and_tag.side_effect = download
+        self.manager.start()
+        job_id = await self.manager.enqueue(PAYLOAD)
+        await asyncio.wait_for(publishing.wait(), timeout=1)
+
+        with self.assertRaisesRegex(ValueError, "started publishing"):
+            await self.manager.cancel_job(job_id)
+
+        self.assertEqual(self.persisted_jobs()[0]["status"], "running")
+        finish.set()
+        await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+        self.assertEqual(self.manager.snapshot()[0]["status"], "succeeded")
+
+    async def test_cancel_before_publish_never_reaches_publication(self):
+        for phase in ("downloading", "tagging", "validating"):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory:
+                downloader = AsyncMock()
+                reached = asyncio.Event()
+                published = False
+
+                async def download(progress, **kwargs):
+                    nonlocal published
+                    await progress(phase, 1, 1, 0)
+                    reached.set()
+                    await asyncio.Event().wait()
+                    published = True
+
+                downloader.download_and_tag.side_effect = download
+                manager = DownloadQueueManager(
+                    downloader,
+                    AsyncMock(),
+                    os.path.join(directory, "queue.json"),
+                )
+                manager.start()
+                job_id = await manager.enqueue(PAYLOAD)
+                await asyncio.wait_for(reached.wait(), timeout=1)
+
+                self.assertEqual(await manager.cancel_job(job_id), "cancelling")
+                await asyncio.wait_for(manager.queue.join(), timeout=1)
+
+                self.assertEqual(manager.snapshot()[0]["status"], "cancelled")
+                self.assertFalse(published)
+                await manager.stop()
+
+    async def test_queue_continues_after_running_job_is_cancelled(self):
+        first_started = asyncio.Event()
+        first_drained = asyncio.Event()
+        albums = []
+
+        async def download(album, **kwargs):
+            albums.append(album)
+            if album != "First":
+                return
+            first_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                await first_drained.wait()
+                raise
+
+        self.downloader.download_and_tag.side_effect = download
+        self.manager.start()
+        first_id = await self.manager.enqueue({**PAYLOAD, "album": "First"})
+        second_id = await self.manager.enqueue({**PAYLOAD, "album": "Second"})
+        await asyncio.wait_for(first_started.wait(), timeout=1)
+
+        await self.manager.cancel_job(first_id)
+        first_drained.set()
+        await asyncio.wait_for(self.manager.queue.join(), timeout=1)
+
+        self.assertEqual(albums, ["First", "Second"])
+        self.assertEqual(self.manager._jobs[first_id].status, "cancelled")
+        self.assertEqual(self.manager._jobs[second_id].status, "succeeded")
+
+    async def test_cancelling_job_becomes_cancelled_after_restart(self):
+        job = DownloadJob.create(PAYLOAD)
+        job.transition("cancelling")
+        self.manager._jobs[job.job_id] = job
+        self.manager._persist_state()
+
+        restarted_downloader = AsyncMock()
+        restarted = DownloadQueueManager(
+            restarted_downloader,
+            AsyncMock(),
+            self.state_path,
+        )
+
+        self.assertEqual(restarted.snapshot()[0]["status"], "cancelled")
+        self.assertEqual(self.persisted_jobs()[0]["status"], "cancelled")
+        restarted.start()
+        await asyncio.sleep(0)
+        restarted_downloader.download_and_tag.assert_not_awaited()
+        await restarted.stop()
 
     async def test_cancel_persistence_failure_restores_queued_job(self):
         job_id = await self.manager.enqueue(PAYLOAD)

@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 import time
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from autodrome.controllers.downloader_controller import DownloaderController
 from autodrome.logger import logger, safe_log_text
@@ -38,6 +38,8 @@ class DownloadQueueManager:
         self._recovered_running_jobs = 0
         self._snapshot_lock = asyncio.Lock()
         self._jobs: Dict[str, DownloadJob] = {}
+        self._active_job_id: Optional[str] = None
+        self._active_download_task: Optional[asyncio.Task] = None
         self._load_state()
         if self.cover_selection is not None:
             self.cover_selection.set_protected_cover_ids_provider(
@@ -105,12 +107,36 @@ class DownloadQueueManager:
             raise ValueError("Only finished jobs can be deleted")
         await self._remove_jobs({job_id})
 
-    async def cancel_job(self, job_id: str) -> None:
+    async def cancel_job(self, job_id: str) -> str:
         job = self._get_job(job_id)
-        if job.status != "queued":
-            raise ValueError("Only queued jobs can be cancelled")
-        await self._transition(job, "cancelled")
-        logger.info("job_cancelled job_id=%s", job_id)
+        if job.status == "queued":
+            await self._transition(job, "cancelled")
+            logger.info("job_cancelled job_id=%s", job_id)
+            return "cancelled"
+        if job.status == "cancelling":
+            return "cancelling"
+        if job.status != "running":
+            raise ValueError("Only queued or running jobs can be cancelled")
+        if (job.progress or {}).get("phase") == "publishing":
+            raise ValueError(
+                "This job has started publishing and can no longer be cancelled"
+            )
+
+        active_task = (
+            self._active_download_task
+            if self._active_job_id == job_id
+            else None
+        )
+        if active_task is None or active_task.done():
+            raise ValueError("This job can no longer be cancelled")
+
+        await self._transition(
+            job,
+            "cancelling",
+            after_persist=active_task.cancel,
+        )
+        logger.info("job_cancel_requested job_id=%s", job_id)
+        return "cancelling"
 
     async def retry_job(self, job_id: str) -> str:
         job = self._get_job(job_id)
@@ -190,6 +216,8 @@ class DownloadQueueManager:
                 )
 
                 async def progress(phase, current, total, completed):
+                    if job.status == "cancelling":
+                        raise asyncio.CancelledError
                     previous_phase = (job.progress or {}).get("phase")
                     job.progress = {"phase": phase, "current": current,
                                     "total": total, "completed": completed}
@@ -198,8 +226,8 @@ class DownloadQueueManager:
                     else:
                         await self._broadcast_snapshot()
 
-                try:
-                    await self.downloader.download_and_tag(
+                download_task = asyncio.create_task(
+                    self.downloader.download_and_tag(
                         progress=progress,
                         playlist_url=payload["playlist_url"],
                         artist=payload["artist"],
@@ -219,15 +247,35 @@ class DownloadQueueManager:
                         **({"metadata_mode": "manual", "manual_confirmed": payload.get("manual_confirmed", False)}
                            if payload.get("metadata_mode") == "manual" else {}),
                     )
+                )
+                self._active_job_id = job_id
+                self._active_download_task = download_task
+                try:
+                    await download_task
                 except asyncio.CancelledError:
-                    # Shutdown must not wait indefinitely for broken storage.
-                    try:
-                        await self._transition(
-                            job, "interrupted", "Worker stopped before the download completed"
-                        )
-                    except OSError as error:
-                        await self._report_storage_error(job, "interrupted", str(error))
-                    raise
+                    user_cancelled = job.status == "cancelling"
+                    worker_stopping = bool(asyncio.current_task().cancelling())
+                    if user_cancelled and not worker_stopping:
+                        await self._save_worker_transition(job, "cancelled")
+                    else:
+                        try:
+                            await self._transition(
+                                job,
+                                "cancelled" if user_cancelled else "interrupted",
+                                None if user_cancelled else (
+                                    "Worker stopped before the download completed"
+                                ),
+                            )
+                        except OSError as error:
+                            await self._report_storage_error(
+                                job,
+                                "cancelled" if user_cancelled else "interrupted",
+                                str(error),
+                            )
+                    if user_cancelled:
+                        logger.info("job_cancelled job_id=%s", job_id)
+                    if worker_stopping:
+                        raise
                 except Exception as error:
                     await self._save_worker_transition(job, "failed", str(error))
                     phase = (job.progress or {}).get("phase", "unknown")
@@ -240,6 +288,10 @@ class DownloadQueueManager:
                 else:
                     await self._save_worker_transition(job, "succeeded")
                     logger.info("job_succeeded job_id=%s", job_id)
+                finally:
+                    if self._active_job_id == job_id:
+                        self._active_job_id = None
+                        self._active_download_task = None
             finally:
                 if job_id is not None:
                     self.queue.task_done()
@@ -304,6 +356,7 @@ class DownloadQueueManager:
         job: DownloadJob,
         status: str,
         error: Optional[str] = None,
+        after_persist: Optional[Callable[[], object]] = None,
     ) -> None:
         previous_state = (job.status, job.updated_at, job.error)
         job.transition(status, error)
@@ -312,6 +365,8 @@ class DownloadQueueManager:
         except Exception:
             job.status, job.updated_at, job.error = previous_state
             raise
+        if after_persist is not None:
+            after_persist()
         cover_id = job.payload.get("cover_id")
         if cover_id:
             self._delete_unreferenced_covers({cover_id})
@@ -363,7 +418,7 @@ class DownloadQueueManager:
                 f"Could not load download queue state from {self.state_path}"
             ) from e
 
-        recovered_running_job = False
+        recovered_active_job = False
         for stored_job in stored_jobs:
             job = DownloadJob.from_dict(stored_job)
             if job.job_id in self._jobs:
@@ -374,14 +429,17 @@ class DownloadQueueManager:
                     "interrupted",
                     "Application restarted before the download completed",
                 )
-                recovered_running_job = True
+                recovered_active_job = True
                 self._recovered_running_jobs += 1
+            elif job.status == "cancelling":
+                job.transition("cancelled")
+                recovered_active_job = True
             elif job.status == "queued":
                 self.queue.put_nowait(job.job_id)
 
             self._jobs[job.job_id] = job
 
-        if recovered_running_job:
+        if recovered_active_job:
             self._persist_state()
 
     def _persist_state(self) -> None:

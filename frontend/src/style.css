@@ -673,6 +673,11 @@ input:focus-visible {
   box-shadow: 0 0 0 4px rgba(220, 154, 56, 0.14);
 }
 
+.status-dot--cancelling {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px #fff1d2;
+}
+
 .status-dot--failed,
 .status-dot--interrupted {
   background: #c95858;

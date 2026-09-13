@@ -47,8 +47,10 @@ async def delete_job(job_id: str, request: Request):
 
 @download_router.post("/jobs/{job_id}/cancel")
 async def cancel_job(job_id: str, request: Request):
-    await _queue_operation(request.app.state.queue_manager.cancel_job(job_id))
-    return {"status": "cancelled", "job_id": job_id}
+    job_status = await _queue_operation(
+        request.app.state.queue_manager.cancel_job(job_id)
+    )
+    return {"status": job_status, "job_id": job_id}
 
 
 @download_router.post("/jobs/{job_id}/retry", status_code=status.HTTP_202_ACCEPTED)

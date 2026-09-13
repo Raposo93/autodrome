@@ -540,6 +540,9 @@ class TestDownloadShutdown(unittest.IsolatedAsyncioTestCase):
             task.cancel()
             await asyncio.sleep(0)
             self.assertFalse(task.done())
+            task.cancel()
+            await asyncio.sleep(0)
+            self.assertFalse(task.done())
             released.set()
             with self.assertRaises(asyncio.CancelledError):
                 await task
@@ -571,7 +574,11 @@ class TestDownloadShutdown(unittest.IsolatedAsyncioTestCase):
                 cancelled.append(index)
                 if len(cancelled) == 2:
                     all_cancelled.set()
-                await release_cleanup.wait()
+                while not release_cleanup.is_set():
+                    try:
+                        await release_cleanup.wait()
+                    except asyncio.CancelledError:
+                        continue
                 drained.append(index)
                 raise
 
@@ -585,6 +592,9 @@ class TestDownloadShutdown(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(operation.done())
         self.assertEqual(started, [1, 2])
+        operation.cancel()
+        await asyncio.sleep(0)
+        self.assertFalse(operation.done())
         release_cleanup.set()
         with self.assertRaises(asyncio.CancelledError):
             await asyncio.wait_for(operation, timeout=1)

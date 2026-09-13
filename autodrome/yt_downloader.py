@@ -132,10 +132,25 @@ class YTDownloader:
         ]
         try:
             results = await asyncio.gather(*tasks)
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError:
+            # Cancelling the gather has already signalled every child task.
+            # Do not signal them a second time while their cleanup is draining.
+            drain = asyncio.gather(*tasks, return_exceptions=True)
+            while not drain.done():
+                try:
+                    await asyncio.shield(drain)
+                except asyncio.CancelledError:
+                    continue
+            raise
+        except Exception:
             for task in tasks:
                 task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            drain = asyncio.gather(*tasks, return_exceptions=True)
+            while not drain.done():
+                try:
+                    await asyncio.shield(drain)
+                except asyncio.CancelledError:
+                    continue
             raise
 
         return [failure for failure in results if failure is not None]
@@ -197,10 +212,13 @@ class YTDownloader:
                 stopping.set()
                 # A cancelled to_thread await does not stop its thread. Drain it
                 # before allowing the job/staging lifecycle to finish.
-                try:
-                    await operation
-                except Exception:
-                    pass
+                while not operation.done():
+                    try:
+                        await asyncio.shield(operation)
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception:
+                        break
                 raise
             except Exception as e:
                 if attempt == self.track_download_attempts:

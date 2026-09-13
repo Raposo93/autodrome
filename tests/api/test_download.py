@@ -53,6 +53,7 @@ class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
         app.include_router(download_router, prefix="/api/download")
         app.state.queue_manager = AsyncMock()
         app.state.queue_manager.clear_history.return_value = 3
+        app.state.queue_manager.cancel_job.return_value = "cancelled"
         app.state.queue_manager.retry_job.return_value = "new-job"
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.delete("/api/download/history")

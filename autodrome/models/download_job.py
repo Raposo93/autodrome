@@ -6,7 +6,7 @@ from uuid import uuid4
 
 TERMINAL_STATUSES = {"succeeded", "failed", "interrupted", "cancelled"}
 RETRYABLE_STATUSES = {"failed", "interrupted"}
-JOB_STATUSES = {"queued", "running"} | TERMINAL_STATUSES
+JOB_STATUSES = {"queued", "running", "cancelling"} | TERMINAL_STATUSES
 
 
 def utc_now() -> str:

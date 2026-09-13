@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 from unittest import mock
@@ -523,6 +524,31 @@ def test_failed_staging_is_preserved_by_default(monkeypatch):
                 raise RuntimeError("tagging failed")
 
         assert os.path.isfile(os.path.join(staging_folder, "downloaded.mp3"))
+
+
+@pytest.mark.parametrize("preserve", [True, False])
+def test_cancelled_staging_follows_failed_staging_policy(monkeypatch, preserve):
+    organizer = Organizer()
+    staging_folder = None
+
+    with tempfile.TemporaryDirectory() as root:
+        libdir = os.path.join(root, "library")
+        staging_dir = os.path.join(root, "staging")
+        monkeypatch.setattr("autodrome.services.organizer.conf.library_path", libdir)
+        monkeypatch.setattr("autodrome.services.organizer.conf.staging_path", staging_dir)
+        monkeypatch.setattr(
+            "autodrome.services.organizer.conf.minimum_staging_free_bytes", 0
+        )
+        monkeypatch.setattr(
+            "autodrome.services.organizer.conf.preserve_failed_staging", preserve
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            with organizer.create_staging_folder("Artist", "Album") as staging_folder:
+                create_dummy_mp3(staging_folder, "partial.mp3")
+                raise asyncio.CancelledError
+
+        assert os.path.exists(staging_folder) is preserve
 
 def test_publication_failure_leaves_no_partial_album(monkeypatch):
     organizer = Organizer()

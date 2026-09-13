@@ -31,12 +31,15 @@ function setup(cancelJob) {
   return state
 }
 
-test('cancel action is sent once only for a queued job', async () => {
+test('cancel action is single-shot for queued and running jobs', async () => {
   const calls = []
   let finish
   const state = setup(jobId => {
     calls.push(jobId)
-    return new Promise(resolve => { finish = resolve })
+    if (calls.length === 1) {
+      return new Promise(resolve => { finish = resolve })
+    }
+    return Promise.resolve()
   })
   const queued = { job_id: 'queued-job', status: 'queued' }
 
@@ -48,15 +51,17 @@ test('cancel action is sent once only for a queued job', async () => {
   assert.equal(await duplicate, undefined)
   finish()
   await first
+  await state.cancelJob({ job_id: 'running-job', status: 'running' })
+  assert.deepEqual(calls, ['queued-job', 'running-job'])
   assert.equal(state.busy, false)
 })
 
 test('cancel race rejection is shown to the user', async () => {
   const state = setup(async () => {
-    throw { response: { data: { detail: 'Only queued jobs can be cancelled' } } }
+    throw { response: { data: { detail: 'This job has started publishing' } } }
   })
 
   await state.cancelJob({ job_id: 'stale-queued-job', status: 'queued' })
 
-  assert.equal(state.actionError, 'Only queued jobs can be cancelled')
+  assert.equal(state.actionError, 'This job has started publishing')
 })

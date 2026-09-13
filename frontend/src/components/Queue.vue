@@ -150,13 +150,14 @@ export default {
     statusClass(item) {
       const status = typeof item === 'object' ? item.status : null
       return [
-        'queued', 'running', 'succeeded', 'failed', 'interrupted', 'cancelled'
+        'queued', 'running', 'cancelling', 'succeeded', 'failed', 'interrupted', 'cancelled'
       ].includes(status)
         ? status
         : 'unknown'
     },
     statusLabel(item) {
       const status = this.statusClass(item)
+      if (status === 'cancelling') return 'Cancelling…'
       return status.charAt(0).toUpperCase() + status.slice(1)
     }
   }

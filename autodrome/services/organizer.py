@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 import stat
@@ -53,7 +54,7 @@ class Organizer:
         staging_folder = tempfile.mkdtemp(prefix="album-", dir=staging_root)
         try:
             yield staging_folder
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             if conf.preserve_failed_staging:
                 logger.warning(
                     "staging_preserved path=%s",

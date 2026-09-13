@@ -590,6 +590,19 @@ test('queue actions are single-shot, selection-safe, and restored on reentry', a
     : job))
   await expect(queuedItem).toContainText('Cancelled')
 
+  const runningItem = queuePanel(page).getByText('Running Artist — Running Album').locator('..').locator('..')
+  const runningCancel = runningItem.getByRole('button', { name: 'Cancel' })
+  await runningCancel.dispatchEvent('click')
+  await runningCancel.dispatchEvent('click')
+  const cancelRunning = await backend.next('cancel:running-job')
+  expect(backend.callCount('cancel:running-job')).toBe(1)
+  await cancelRunning.reply({ job_id: 'running-job', status: 'cancelling' })
+  backend.setQueue(backend.queue.map(job => job.job_id === 'running-job'
+    ? { ...job, status: 'cancelling' }
+    : job))
+  await expect(runningItem).toContainText('Cancelling…')
+  await expect(runningItem.getByRole('button', { name: 'Cancel' })).toHaveCount(0)
+
   backend.executeQueuedJobs()
   expect(backend.executedJobs).not.toContain('queued-job')
   expect(backend.queue.find(job => job.job_id === 'queued-job').status).toBe('cancelled')
@@ -611,6 +624,7 @@ test('queue actions are single-shot, selection-safe, and restored on reentry', a
   await nextConnection
   backend.broadcastQueue()
   await expect(queuePanel(page)).toContainText('Running Artist — Running Album')
+  await expect(queuePanel(page)).toContainText('Cancelling…')
   await expect(queuePanel(page)).toContainText('Downloading and converting audio · track 2 of 4 · 1 completed')
   await expect(queuePanel(page)).toContainText('Queued Artist — Queued Album')
   await expect(queuePanel(page)).toContainText('Cancelled')
