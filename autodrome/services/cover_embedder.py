@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from io import BytesIO
 import os
-from typing import AbstractSet, Optional, Tuple
+from typing import AbstractSet, Literal, Optional, Tuple
 
 from PIL import Image, ImageOps
 from mutagen.id3 import APIC, ID3, error
@@ -112,13 +112,21 @@ class CoverEmbedder:
         self,
         cover_image_path: str,
         *,
+        mode: Literal["fit", "crop"] = "fit",
         allowed_mime_types: Optional[AbstractSet[str]] = None,
     ) -> PreparedCover:
-        """Center an image on deterministic square padding without cropping it."""
-        self._inspect_cover(
+        """Normalize an image to a square with deterministic fit or center crop."""
+        if mode not in {"fit", "crop"}:
+            raise CoverPreparationError(f"Unsupported square cover mode: {mode}")
+        _, width, height = self._inspect_cover(
             cover_image_path,
             allowed_mime_types=allowed_mime_types,
         )
+        if width == height:
+            return self.prepare_cover(
+                cover_image_path,
+                allowed_mime_types=allowed_mime_types,
+            )
         try:
             original_size = os.path.getsize(cover_image_path)
             with Image.open(cover_image_path) as source:
@@ -134,11 +142,20 @@ class CoverEmbedder:
                 f"Cover image is damaged or unsupported: {cover_image_path}"
             ) from e
 
-        side = min(max(image.size), self.max_width, self.max_height)
-        image.thumbnail((side, side), Image.Resampling.LANCZOS)
-        square = Image.new("RGB", (side, side), (27, 39, 43))
-        offset = ((side - image.width) // 2, (side - image.height) // 2)
-        square.paste(image, offset)
+        if mode == "crop":
+            side = min(*image.size, self.max_width, self.max_height)
+            square = ImageOps.fit(
+                image,
+                (side, side),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.5),
+            )
+        else:
+            side = min(max(image.size), self.max_width, self.max_height)
+            image.thumbnail((side, side), Image.Resampling.LANCZOS)
+            square = Image.new("RGB", (side, side), (27, 39, 43))
+            offset = ((side - image.width) // 2, (side - image.height) // 2)
+            square.paste(image, offset)
         prepared = self._encode_to_limits(square, original_size)
         self._log_prepared(prepared)
         return prepared

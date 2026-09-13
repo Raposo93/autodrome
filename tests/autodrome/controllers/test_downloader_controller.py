@@ -221,12 +221,33 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
             cover_source="youtube_thumbnail",
             cover_id="cover-id",
             cover_url="https://i.ytimg.com/vi/video/mqdefault.jpg",
+            cover_square_mode="crop",
         )
 
         self.metadata_service.get_cover_art.assert_not_awaited()
         self.assertEqual(
             self.organizer.tag_and_rename.call_args.kwargs["prepared_cover"],
             "prepared-alternative",
+        )
+
+    async def test_legacy_fit_cover_without_mode_still_reuses_prepared_bytes(self):
+        cover_selection = MagicMock()
+        cover_selection.load_prepared.return_value = "legacy-fit-bytes"
+        self.controller.cover_selection = cover_selection
+
+        await self.controller.download_and_tag(
+            "https://example.test/playlist",
+            "Artist",
+            "Album",
+            "release-1",
+            cover_source="manual_upload",
+            cover_id="legacy-cover-id",
+        )
+
+        cover_selection.load_prepared.assert_called_once_with("legacy-cover-id")
+        self.assertEqual(
+            self.organizer.tag_and_rename.call_args.kwargs["prepared_cover"],
+            "legacy-fit-bytes",
         )
 
     async def test_invalid_alternative_cover_stops_before_staging_or_audio(self):
@@ -242,6 +263,7 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
                 "release-1",
                 cover_source="manual_upload",
                 cover_id="cover-id",
+                cover_square_mode="fit",
             )
 
         self.organizer.create_staging_folder.assert_not_called()

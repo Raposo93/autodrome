@@ -350,9 +350,9 @@
           <button
             type="button"
             class="cover-option"
-            :class="{ 'cover-option--selected': coverSelection?.source === 'youtube_thumbnail' }"
-            :disabled="coverPreparing || !selectedPlaylist.thumbnail"
-            @click="prepareYoutubeCover"
+            :class="{ 'cover-option--selected': coverCandidate?.source === 'youtube_thumbnail' }"
+            :disabled="!selectedPlaylist.thumbnail"
+            @click="chooseYoutubeCover"
           >
             <img
               v-if="selectedPlaylist.thumbnail"
@@ -366,7 +366,7 @@
           </button>
           <label
             class="cover-option cover-option--upload"
-            :class="{ 'cover-option--selected': coverSelection?.source === 'manual_upload' }"
+            :class="{ 'cover-option--selected': coverCandidate?.source === 'manual_upload' }"
           >
             <img v-if="manualCoverPreview" :src="manualCoverPreview" alt="Manual cover preview" />
             <span>
@@ -376,7 +376,6 @@
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
-              :disabled="coverPreparing"
               @change="prepareManualCover"
             />
           </label>
@@ -384,7 +383,6 @@
             type="button"
             class="cover-option cover-option--none"
             :class="{ 'cover-option--selected': coverSelection?.source === 'none' }"
-            :disabled="coverPreparing"
             @click="chooseNoCover"
           >
             <span>
@@ -396,6 +394,96 @@
         <p v-if="!selectedPlaylist.thumbnail" class="cover-choice-note">
           This playlist has no thumbnail, so choose an upload or continue without cover.
         </p>
+        <section
+          v-if="coverCandidate"
+          class="alternative-cover-review"
+          aria-labelledby="alternative-cover-title"
+        >
+          <div class="alternative-cover-heading">
+            <div>
+              <span class="selection-label">Alternative cover preview</span>
+              <strong id="alternative-cover-title">
+                {{ coverCandidate.source === 'youtube_thumbnail'
+                  ? 'YouTube playlist thumbnail — not official artwork'
+                  : 'Uploaded image' }}
+              </strong>
+            </div>
+            <span v-if="coverImageDimensions">
+              {{ coverImageDimensions.width }} × {{ coverImageDimensions.height }}
+            </span>
+          </div>
+          <p class="cover-semantic-warning">
+            Check the actual image carefully. A technically valid thumbnail can be unrelated to the album.
+          </p>
+          <div class="cover-preview-grid">
+            <figure>
+              <figcaption>Original</figcaption>
+              <div class="cover-original-frame">
+                <img
+                  :src="coverCandidatePreview"
+                  alt="Original alternative cover preview"
+                  @load="recordCoverDimensions"
+                />
+              </div>
+            </figure>
+            <figure>
+              <figcaption>{{ coverSquareMode === 'crop' ? 'Centered crop' : 'Square fit' }}</figcaption>
+              <div class="cover-result-frame">
+                <img
+                  :src="coverCandidatePreview"
+                  :class="`cover-result--${coverSquareMode}`"
+                  alt="Selected square cover result preview"
+                />
+              </div>
+            </figure>
+          </div>
+          <fieldset v-if="coverNeedsSquareChoice" class="cover-square-modes">
+            <legend>Square handling</legend>
+            <label>
+              <input
+                v-model="coverSquareMode"
+                type="radio"
+                value="fit"
+                :disabled="coverPreparing"
+                @change="changeCoverSquareMode"
+              />
+              <span>
+                <strong>Fit entire image</strong>
+                <small>Keep all content and add neutral padding when needed.</small>
+              </span>
+            </label>
+            <label>
+              <input
+                v-model="coverSquareMode"
+                type="radio"
+                value="crop"
+                :disabled="coverPreparing"
+                @change="changeCoverSquareMode"
+              />
+              <span>
+                <strong>Crop to square</strong>
+                <small>Fill the square with a centered crop; content at the edges can be removed.</small>
+              </span>
+            </label>
+          </fieldset>
+          <p v-else-if="coverImageDimensions" class="cover-choice-note">
+            This image is already square, so no geometric transformation is needed.
+          </p>
+          <div class="cover-confirmation">
+            <button
+              type="button"
+              :disabled="coverPreparing || Boolean(coverSelection)"
+              @click="prepareCoverCandidate"
+            >
+              {{ coverSelection
+                ? `${coverSquareModeLabel} cover confirmed`
+                : `Confirm ${coverSquareModeLabel} cover` }}
+            </button>
+            <span v-if="coverSelection">
+              Prepared bytes are saved for this job and future retries.
+            </span>
+          </div>
+        </section>
         <p v-if="coverError" class="feedback feedback--error" role="alert">
           {{ coverError }} You can choose another cover option.
         </p>
@@ -545,6 +633,18 @@ export default {
     coverReady() {
       return this.hasAuthoritativeCover || Boolean(this.coverSelection)
     },
+    coverCandidatePreview() {
+      return this.coverCandidate?.source === 'manual_upload'
+        ? this.manualCoverPreview
+        : this.coverCandidate?.cover_url
+    },
+    coverNeedsSquareChoice() {
+      if (!this.coverImageDimensions) return true
+      return this.coverImageDimensions.width !== this.coverImageDimensions.height
+    },
+    coverSquareModeLabel() {
+      return this.coverSquareMode === 'crop' ? 'Crop' : 'Fit'
+    },
     selectionReady() {
       return Boolean(
         this.selectedPlaylist && this.playlistReady &&
@@ -632,6 +732,9 @@ export default {
       releaseDetailsLoading: false,
       releaseDetailsReady: false,
       coverSelection: null,
+      coverCandidate: null,
+      coverSquareMode: 'fit',
+      coverImageDimensions: null,
       coverPreparing: false,
       coverError: null,
       coverGeneration: 0,
@@ -946,6 +1049,9 @@ export default {
     resetCoverChoice() {
       this.coverGeneration += 1
       this.coverSelection = null
+      this.coverCandidate = null
+      this.coverSquareMode = 'fit'
+      this.coverImageDimensions = null
       this.coverPreparing = false
       this.coverError = null
       this.revokeManualCoverPreview()
@@ -956,49 +1062,73 @@ export default {
         this.manualCoverPreview = null
       }
     },
-    async prepareYoutubeCover() {
+    chooseYoutubeCover() {
       const thumbnailUrl = this.selectedPlaylist?.thumbnail
-      if (!thumbnailUrl || this.coverPreparing) return
-      const generation = ++this.coverGeneration
+      if (!thumbnailUrl) return
+      this.coverGeneration += 1
       this.revokeManualCoverPreview()
       this.coverSelection = null
-      this.coverPreparing = true
-      this.coverError = null
-      try {
-        const response = await api.prepareYoutubeCover(thumbnailUrl)
-        if (generation !== this.coverGeneration) return
-        this.coverSelection = {
-          source: 'youtube_thumbnail',
-          cover_id: response.data.cover_id,
-          cover_url: thumbnailUrl,
-        }
-      } catch (error) {
-        if (generation !== this.coverGeneration) return
-        this.coverError = error.response?.data?.detail || 'Could not prepare the YouTube thumbnail.'
-      } finally {
-        if (generation === this.coverGeneration) this.coverPreparing = false
+      this.coverCandidate = {
+        source: 'youtube_thumbnail',
+        cover_url: thumbnailUrl,
       }
+      this.coverSquareMode = 'fit'
+      this.coverImageDimensions = null
+      this.coverPreparing = false
+      this.coverError = null
     },
-    async prepareManualCover(event) {
+    prepareManualCover(event) {
       const file = event.target.files?.[0]
       event.target.value = ''
-      if (!file || this.coverPreparing) return
-      const generation = ++this.coverGeneration
+      if (!file) return
+      this.coverGeneration += 1
       this.revokeManualCoverPreview()
       this.manualCoverPreview = URL.createObjectURL(file)
       this.coverSelection = null
+      this.coverCandidate = { source: 'manual_upload', file }
+      this.coverSquareMode = 'fit'
+      this.coverImageDimensions = null
+      this.coverPreparing = false
+      this.coverError = null
+    },
+    recordCoverDimensions(event) {
+      const width = event.target.naturalWidth
+      const height = event.target.naturalHeight
+      if (width > 0 && height > 0) {
+        this.coverImageDimensions = { width, height }
+        if (width === height && this.coverSquareMode !== 'fit') {
+          this.coverSquareMode = 'fit'
+          this.changeCoverSquareMode()
+        }
+      }
+    },
+    changeCoverSquareMode() {
+      this.coverGeneration += 1
+      this.coverSelection = null
+      this.coverPreparing = false
+      this.coverError = null
+    },
+    async prepareCoverCandidate() {
+      if (!this.coverCandidate || this.coverPreparing || this.coverSelection) return
+      const generation = ++this.coverGeneration
+      const candidate = this.coverCandidate
+      const squareMode = this.coverSquareMode
       this.coverPreparing = true
       this.coverError = null
       try {
-        const response = await api.prepareManualCover(file)
+        const response = candidate.source === 'youtube_thumbnail'
+          ? await api.prepareYoutubeCover(candidate.cover_url, squareMode)
+          : await api.prepareManualCover(candidate.file, squareMode)
         if (generation !== this.coverGeneration) return
         this.coverSelection = {
-          source: 'manual_upload',
+          source: candidate.source,
           cover_id: response.data.cover_id,
+          square_mode: response.data.square_mode || squareMode,
+          ...(candidate.cover_url ? { cover_url: candidate.cover_url } : {}),
         }
       } catch (error) {
         if (generation !== this.coverGeneration) return
-        this.coverError = error.response?.data?.detail || 'Could not prepare the uploaded cover.'
+        this.coverError = error.response?.data?.detail || 'Could not prepare the selected cover.'
       } finally {
         if (generation === this.coverGeneration) this.coverPreparing = false
       }
@@ -1006,6 +1136,9 @@ export default {
     chooseNoCover() {
       this.coverGeneration += 1
       this.revokeManualCoverPreview()
+      this.coverCandidate = null
+      this.coverImageDimensions = null
+      this.coverSquareMode = 'fit'
       this.coverPreparing = false
       this.coverError = null
       this.coverSelection = { source: 'none' }
@@ -1021,6 +1154,9 @@ export default {
           : {}),
         ...(this.coverSelection.cover_url
           ? { cover_url: this.coverSelection.cover_url }
+          : {}),
+        ...(this.coverSelection.square_mode
+          ? { cover_square_mode: this.coverSelection.square_mode }
           : {}),
       }
     },

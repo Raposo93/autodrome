@@ -22,6 +22,7 @@ CoverSource = Literal[
     "manual_upload",
     "none",
 ]
+CoverSquareMode = Literal["fit", "crop"]
 
 
 class DownloadRequest(BaseModel):
@@ -37,6 +38,7 @@ class DownloadRequest(BaseModel):
     cover_source: Optional[CoverSource] = None
     cover_id: Optional[UUID] = None
     cover_url: Optional[str] = None
+    cover_square_mode: Optional[CoverSquareMode] = None
 
     @model_validator(mode="after")
     def validate_metadata_mode(self):
@@ -52,16 +54,26 @@ class DownloadRequest(BaseModel):
         if self.cover_source is None:
             self.cover_source = "cover_art_archive"
         if self.cover_source == "cover_art_archive":
-            if self.cover_id is not None or self.cover_url is not None:
+            if (
+                self.cover_id is not None
+                or self.cover_url is not None
+                or self.cover_square_mode is not None
+            ):
                 raise ValueError("Cover Art Archive selection cannot include an alternative cover")
         elif self.cover_source == "youtube_thumbnail":
             if self.cover_id is None or self.cover_url is None:
                 raise ValueError("YouTube cover selection requires its prepared image and URL")
             validate_youtube_thumbnail_url(self.cover_url)
+            self.cover_square_mode = self.cover_square_mode or "fit"
         elif self.cover_source == "manual_upload":
             if self.cover_id is None or self.cover_url is not None:
                 raise ValueError("Manual cover selection requires its prepared image only")
-        elif self.cover_id is not None or self.cover_url is not None:
+            self.cover_square_mode = self.cover_square_mode or "fit"
+        elif (
+            self.cover_id is not None
+            or self.cover_url is not None
+            or self.cover_square_mode is not None
+        ):
             raise ValueError("No-cover selection cannot include an image")
         return self
 
@@ -130,6 +142,7 @@ class YoutubeCoverRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     thumbnail_url: str
+    square_mode: CoverSquareMode = "fit"
 
     @field_validator("thumbnail_url")
     @classmethod

@@ -208,7 +208,12 @@ class DownloadQueueManager:
                         track_count=payload.get("track_count"),
                         **{
                             key: payload[key]
-                            for key in ("cover_source", "cover_id", "cover_url")
+                            for key in (
+                                "cover_source",
+                                "cover_id",
+                                "cover_url",
+                                "cover_square_mode",
+                            )
                             if key in payload
                         },
                         **({"metadata_mode": "manual", "manual_confirmed": payload.get("manual_confirmed", False)}

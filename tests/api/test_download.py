@@ -127,6 +127,7 @@ class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
             "size": 10,
             "width": 50,
             "height": 50,
+            "square_mode": "crop",
         }
         app.state.cover_selection.store_manual.return_value = prepared
         app.state.cover_selection.store_youtube = AsyncMock(return_value=prepared)
@@ -137,21 +138,22 @@ class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
             response = await client.post(
                 "/api/download/covers/manual",
                 files={"cover": ("cover.jpg", b"image-data", "image/jpeg")},
+                data={"square_mode": "crop"},
             )
             self.assertEqual(response.status_code, 201)
             self.assertEqual(response.json(), prepared)
             app.state.cover_selection.store_manual.assert_called_once_with(
-                b"image-data"
+                b"image-data", "crop"
             )
 
             thumbnail_url = "https://i.ytimg.com/vi/video/mqdefault.jpg"
             response = await client.post(
                 "/api/download/covers/youtube",
-                json={"thumbnail_url": thumbnail_url},
+                json={"thumbnail_url": thumbnail_url, "square_mode": "crop"},
             )
             self.assertEqual(response.status_code, 201)
             app.state.cover_selection.store_youtube.assert_awaited_once_with(
-                thumbnail_url
+                thumbnail_url, "crop"
             )
 
     async def test_cover_preparation_routes_expose_safe_actionable_errors(self):

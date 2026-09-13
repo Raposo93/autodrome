@@ -574,6 +574,7 @@ class TestCoverChoiceQueue(unittest.IsolatedAsyncioTestCase):
                 "cover_source": "youtube_thumbnail",
                 "cover_id": "12345678-1234-1234-1234-123456789abc",
                 "cover_url": "https://i.ytimg.com/vi/video/mqdefault.jpg",
+                "cover_square_mode": "crop",
             }
             manager = DownloadQueueManager(AsyncMock(), AsyncMock(), path)
             original = await manager.enqueue(payload)
@@ -668,6 +669,7 @@ class TestCoverChoiceQueue(unittest.IsolatedAsyncioTestCase):
                 **PAYLOAD,
                 "cover_source": "manual_upload",
                 "cover_id": cover_id,
+                "cover_square_mode": "crop",
             }
             first_id = await manager.enqueue(payload)
             second_id = await manager.enqueue(payload)
@@ -700,6 +702,7 @@ class TestCoverChoiceQueue(unittest.IsolatedAsyncioTestCase):
                 **PAYLOAD,
                 "cover_source": "manual_upload",
                 "cover_id": cover_id,
+                "cover_square_mode": "crop",
             }
             original_id = await manager.enqueue(payload)
             await manager._transition(
@@ -712,6 +715,10 @@ class TestCoverChoiceQueue(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(restored._jobs[retry_id].payload["cover_id"], cover_id)
+            self.assertEqual(
+                restored._jobs[retry_id].payload["cover_square_mode"],
+                "crop",
+            )
             with open(cover_path, "rb") as cover_file:
                 self.assertEqual(cover_file.read(), original_bytes)
 

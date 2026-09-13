@@ -66,15 +66,17 @@ export default {
     return apiClient.post('/download/destination', payload)
   },
 
-  prepareYoutubeCover(thumbnailUrl) {
+  prepareYoutubeCover(thumbnailUrl, squareMode = 'fit') {
     return apiClient.post('/download/covers/youtube', {
       thumbnail_url: thumbnailUrl,
+      square_mode: squareMode,
     })
   },
 
-  prepareManualCover(file) {
+  prepareManualCover(file, squareMode = 'fit') {
     const form = new FormData()
     form.append('cover', file)
+    form.append('square_mode', squareMode)
     return apiClient.post('/download/covers/manual', form)
   },
 

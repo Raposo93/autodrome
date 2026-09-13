@@ -38,6 +38,7 @@ class DownloaderController:
         cover_source: Optional[str] = None,
         cover_id: Optional[str] = None,
         cover_url: Optional[str] = None,
+        cover_square_mode: Optional[str] = None,
         progress: Optional[ProgressCallback] = None
     ) -> None:
         logger.debug(f"Starting download_and_tag for release_id: {release_id}")
@@ -76,6 +77,7 @@ class DownloaderController:
                 cover_source=resolved_cover_source,
                 cover_id=cover_id,
                 cover_url=cover_url,
+                cover_square_mode=cover_square_mode,
             )
 
         await report_progress(progress, "staging")
@@ -92,6 +94,7 @@ class DownloaderController:
                     cover_source=resolved_cover_source,
                     cover_id=cover_id,
                     cover_url=cover_url,
+                    cover_square_mode=cover_square_mode,
                 )
             await report_progress(progress, "tagging")
             self.organizer.tag_and_rename(
@@ -117,16 +120,25 @@ class DownloaderController:
         cover_source: Optional[str],
         cover_id: Optional[str],
         cover_url: Optional[str],
+        cover_square_mode: Optional[str],
     ) -> Optional[PreparedCover]:
         source = cover_source or ("cover_art_archive" if release_id else "none")
         if source == "none":
-            if cover_id is not None or cover_url is not None:
+            if (
+                cover_id is not None
+                or cover_url is not None
+                or cover_square_mode is not None
+            ):
                 raise ValueError("No-cover selection cannot include an image")
             return None
         if source == "cover_art_archive":
             if not release_id:
                 raise ValueError("Cover Art Archive selection requires a release")
-            if cover_id is not None or cover_url is not None:
+            if (
+                cover_id is not None
+                or cover_url is not None
+                or cover_square_mode is not None
+            ):
                 raise ValueError("Cover Art Archive selection cannot include an alternative cover")
             cover_path = await self.metadata_service.get_cover_art(release_id)
             if cover_path is None:
@@ -135,6 +147,8 @@ class DownloaderController:
         if source in {"youtube_thumbnail", "manual_upload"}:
             if not cover_id or self.cover_selection is None:
                 raise ValueError("The selected alternative cover is unavailable")
+            if cover_square_mode not in {None, "fit", "crop"}:
+                raise ValueError("Alternative cover selection has an unsupported square mode")
             if source == "youtube_thumbnail":
                 if cover_url is None:
                     raise ValueError("YouTube cover selection requires its URL")

@@ -684,13 +684,22 @@ test('missing archive artwork requires and persists the selected playlist thumbn
   await expect(page.getByText(/not authoritative/)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Download & Tag' })).toBeDisabled()
   await page.getByRole('button', { name: /Use playlist thumbnail/ }).click()
+  await expect(page.getByText('YouTube playlist thumbnail — not official artwork')).toBeVisible()
+  await expect(page.getByText(/technically valid thumbnail can be unrelated/)).toBeVisible()
+  await expect(page.getByRole('radio', { name: /Fit entire image/ })).toBeChecked()
+  expect(backend.callCount('cover-youtube')).toBe(0)
+  await page.getByRole('radio', { name: /Crop to square/ }).check()
+  await expect(page.locator('.cover-result--crop')).toBeVisible()
+  expect(backend.callCount('cover-youtube')).toBe(0)
+  await page.getByRole('button', { name: 'Confirm Crop cover' }).click()
   const cover = await backend.next('cover-youtube')
   expect(cover.body).toEqual({
     thumbnail_url: 'https://i.ytimg.com/vi/fallback/mqdefault.jpg',
+    square_mode: 'crop',
   })
   await cover.reply({
     cover_id: '12345678-1234-1234-1234-123456789abc',
-    mime_type: 'image/jpeg', size: 100, width: 480, height: 480,
+    mime_type: 'image/jpeg', size: 100, width: 480, height: 480, square_mode: 'crop',
   }, 201)
 
   const readyButton = page.getByRole('button', { name: 'Download & Tag' })
@@ -706,6 +715,7 @@ test('missing archive artwork requires and persists the selected playlist thumbn
     cover_source: 'youtube_thumbnail',
     cover_id: '12345678-1234-1234-1234-123456789abc',
     cover_url: 'https://i.ytimg.com/vi/fallback/mqdefault.jpg',
+    cover_square_mode: 'crop',
   })
   await download.reply({ job_id: 'fallback-job' }, 202)
 })
@@ -732,6 +742,7 @@ test('failed and manual fallback covers remain explicit and recoverable', async 
   await continueToReview(page)
 
   await page.getByRole('button', { name: /Use playlist thumbnail/ }).click()
+  await page.getByRole('button', { name: 'Confirm Fit cover' }).click()
   const youtubeCover = await backend.next('cover-youtube')
   await youtubeCover.reject(502, { detail: 'YouTube thumbnail could not be downloaded.' })
   await expect(page.getByRole('alert')).toContainText('choose another cover option')
@@ -740,13 +751,20 @@ test('failed and manual fallback covers remain explicit and recoverable', async 
   await page.locator('.cover-option--upload input').setInputFiles({
     name: 'cover.png',
     mimeType: 'image/png',
-    buffer: Buffer.from('controlled image'),
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64'
+    ),
   })
+  await expect(page.getByText(/already square/)).toBeVisible()
+  await expect(page.getByRole('radio')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Confirm Fit cover' }).click()
   const manualCover = await backend.next('cover-manual')
-  expect(String(manualCover.body)).toContain('controlled image')
+  expect(String(manualCover.body)).toContain('name="square_mode"')
+  expect(String(manualCover.body)).toContain('fit')
   await manualCover.reply({
     cover_id: 'abcdefab-1234-1234-1234-abcdefabcdef',
-    mime_type: 'image/png', size: 100, width: 600, height: 600,
+    mime_type: 'image/png', size: 100, width: 1, height: 1, square_mode: 'fit',
   }, 201)
 
   const readyButton = page.getByRole('button', { name: 'Download & Tag' })
@@ -756,22 +774,31 @@ test('failed and manual fallback covers remain explicit and recoverable', async 
   expect(download.body.cover_source).toBe('manual_upload')
   expect(download.body.cover_id).toBe('abcdefab-1234-1234-1234-abcdefabcdef')
   expect(download.body.cover_url).toBeUndefined()
+  expect(download.body.cover_square_mode).toBe('fit')
   await download.reply({ job_id: 'manual-cover-job' }, 202)
 })
 
 test('missing archive artwork can be consciously queued without a cover', async ({ page }) => {
   const backend = new ControlledBackend()
+  await page.route('https://i.ytimg.com/vi/crypto-podcast/mqdefault.jpg', route => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#251b35"/><circle cx="210" cy="150" r="70" fill="#f0b35b"/><circle cx="430" cy="150" r="70" fill="#59adb3"/><text x="320" y="300" text-anchor="middle" fill="white" font-size="42">CRYPTO PODCAST</text></svg>',
+  }))
   await openApp(page, backend)
 
   await startSearch(page)
   const search = await backend.next('search')
   await search.reply({
-    playlists: [playlist('none')],
+    playlists: [{
+      ...playlist('none'),
+      title: 'Oracular Spectacular playlist',
+      thumbnail: 'https://i.ytimg.com/vi/crypto-podcast/mqdefault.jpg',
+    }],
     releases: [release('none', 2, false)],
     errors: {},
   })
   const hydration = await backend.next('release:none')
-  await playlistsPanel(page).getByRole('button', { name: /Playlist none/ }).click()
+  await playlistsPanel(page).getByRole('button', { name: /Oracular Spectacular playlist/ }).click()
   const preflight = await backend.next('preflight')
   await preflight.reply({ track_count: 2 })
   await releasesPanel(page).getByRole('button', { name: /Release none/ }).click()
@@ -780,6 +807,9 @@ test('missing archive artwork can be consciously queued without a cover', async 
   await destination.reply({ state: 'not_found', exists: false })
   await continueToReview(page)
 
+  await page.getByRole('button', { name: /Use playlist thumbnail/ }).click()
+  await expect(page.getByAltText('Original alternative cover preview')).toBeVisible()
+  await expect(page.getByText(/technically valid thumbnail can be unrelated/)).toBeVisible()
   await page.getByRole('button', { name: /Continue without cover/ }).click()
   await page.getByRole('button', { name: 'Download & Tag' }).click()
   const download = await backend.next('download')

@@ -141,9 +141,10 @@ def test_manual_cover_can_restrict_real_mime_independent_of_extension(tmp_path):
         embedder.prepare_cover(str(unsupported), allowed_mime_types=allowed)
 
 
-def test_square_cover_uses_centered_padding_without_distortion(tmp_path):
+@pytest.mark.parametrize("size", [(80, 40), (40, 80)])
+def test_square_cover_fit_uses_centered_padding_without_distortion(tmp_path, size):
     cover_path = tmp_path / "wide.png"
-    save_image(cover_path, "PNG", size=(80, 40), color="red")
+    save_image(cover_path, "PNG", size=size, color="red")
     embedder = CoverEmbedder(max_bytes=100_000)
 
     prepared = embedder.prepare_square_cover(
@@ -155,10 +156,64 @@ def test_square_cover_uses_centered_padding_without_distortion(tmp_path):
     assert prepared.mime_type == "image/jpeg"
     with Image.open(BytesIO(prepared.data)) as square:
         assert square.size == (80, 80)
-        top = square.getpixel((40, 5))
+        padding_point = (40, 5) if size[0] > size[1] else (5, 40)
+        top = square.getpixel(padding_point)
         center = square.getpixel((40, 40))
         assert top[0] < 80 and top[1] < 80 and top[2] < 80
         assert center[0] > 180 and center[1] < 100 and center[2] < 100
+
+
+@pytest.mark.parametrize("size", [(90, 30), (30, 90)])
+def test_square_cover_crop_is_centered_and_removes_only_excess(tmp_path, size):
+    cover_path = tmp_path / "striped.png"
+    image = Image.new("RGB", size, "red")
+    if size[0] > size[1]:
+        image.paste("green", (30, 0, 60, 30))
+        image.paste("blue", (60, 0, 90, 30))
+    else:
+        image.paste("green", (0, 30, 30, 60))
+        image.paste("blue", (0, 60, 30, 90))
+    image.save(cover_path, format="PNG")
+
+    prepared = CoverEmbedder(max_bytes=100_000).prepare_square_cover(
+        str(cover_path),
+        mode="crop",
+        allowed_mime_types={"image/jpeg", "image/png", "image/webp"},
+    )
+
+    assert prepared.dimensions == (30, 30)
+    with Image.open(BytesIO(prepared.data)) as square:
+        red, green, blue = square.getpixel((15, 15))
+        assert green > red * 2
+        assert green > blue * 2
+
+
+@pytest.mark.parametrize("mode", ["fit", "crop"])
+def test_square_cover_avoids_unnecessary_transformation(tmp_path, mode):
+    cover_path = tmp_path / "square.png"
+    save_image(cover_path, "PNG", size=(48, 48), color="purple")
+    original = cover_path.read_bytes()
+
+    prepared = CoverEmbedder(max_bytes=100_000).prepare_square_cover(
+        str(cover_path),
+        mode=mode,
+        allowed_mime_types={"image/jpeg", "image/png", "image/webp"},
+    )
+
+    assert prepared.data == original
+    assert prepared.mime_type == "image/png"
+    assert prepared.dimensions == (48, 48)
+    assert prepared.optimized is False
+
+
+def test_square_cover_modes_keep_safe_source_pixel_limit(tmp_path):
+    cover_path = tmp_path / "large.png"
+    save_image(cover_path, "PNG", size=(1_000, 600), color="white")
+    embedder = CoverEmbedder(max_bytes=100_000, max_source_pixels=500_000)
+
+    for mode in ("fit", "crop"):
+        with pytest.raises(CoverPreparationError, match="safe decoding limit"):
+            embedder.prepare_square_cover(str(cover_path), mode=mode)
 
 
 @mock.patch("autodrome.services.cover_embedder.MP3")

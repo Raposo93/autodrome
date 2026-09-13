@@ -134,6 +134,7 @@ class TestRequestModels(unittest.TestCase):
             cover_url="https://i.ytimg.com/vi/video/mqdefault.jpg",
         )
         self.assertEqual(youtube.cover_source, "youtube_thumbnail")
+        self.assertEqual(youtube.cover_square_mode, "fit")
         self.assertEqual(
             DownloadRequest(
                 **VALID_DOWNLOAD,
@@ -142,6 +143,13 @@ class TestRequestModels(unittest.TestCase):
             ).cover_source,
             "manual_upload",
         )
+        cropped = DownloadRequest(
+            **VALID_DOWNLOAD,
+            cover_source="manual_upload",
+            cover_id=cover_id,
+            cover_square_mode="crop",
+        )
+        self.assertEqual(cropped.cover_square_mode, "crop")
         self.assertEqual(
             DownloadRequest(**VALID_DOWNLOAD, cover_source="none").cover_source,
             "none",
@@ -157,6 +165,13 @@ class TestRequestModels(unittest.TestCase):
             {"cover_source": "manual_upload"},
             {"cover_source": "none", "cover_id": cover_id},
             {"cover_source": "cover_art_archive", "cover_id": cover_id},
+            {"cover_source": "cover_art_archive", "cover_square_mode": "fit"},
+            {"cover_source": "none", "cover_square_mode": "crop"},
+            {
+                "cover_source": "manual_upload",
+                "cover_id": cover_id,
+                "cover_square_mode": "stretch",
+            },
         )
         for values in invalid:
             with self.subTest(values=values), self.assertRaises(ValidationError):

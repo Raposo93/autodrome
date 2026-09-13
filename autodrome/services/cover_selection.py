@@ -123,10 +123,14 @@ class CoverSelectionService:
                 )
         return removed
 
-    def store_manual(self, content: bytes) -> dict:
-        return self._store(content, square=False)
+    def store_manual(self, content: bytes, square_mode: str = "fit") -> dict:
+        return self._store(content, square_mode=square_mode)
 
-    async def store_youtube(self, thumbnail_url: str) -> dict:
+    async def store_youtube(
+        self,
+        thumbnail_url: str,
+        square_mode: str = "fit",
+    ) -> dict:
         validate_youtube_thumbnail_url(thumbnail_url)
         content = await self.http_client.get_binary(
             thumbnail_url,
@@ -135,7 +139,7 @@ class CoverSelectionService:
             context="downloading the selected playlist thumbnail",
             allow_redirects=False,
         )
-        return self._store(content, square=True)
+        return self._store(content, square_mode=square_mode)
 
     def load_prepared(self, cover_id: str) -> PreparedCover:
         path = self._cover_path(cover_id)
@@ -157,7 +161,7 @@ class CoverSelectionService:
         except CoverPreparationError as error:
             raise CoverSelectionError(self._safe_preparation_error(error)) from error
 
-    def _store(self, content: bytes, *, square: bool) -> dict:
+    def _store(self, content: bytes, *, square_mode: str) -> dict:
         if not content:
             raise CoverSelectionError("Cover image is empty.")
         if len(content) > self.max_upload_bytes:
@@ -180,16 +184,11 @@ class CoverSelectionService:
                 temporary_file.flush()
                 os.fsync(temporary_file.fileno())
             try:
-                if square:
-                    prepared = self.embedder.prepare_square_cover(
-                        temporary_path,
-                        allowed_mime_types=self.ALLOWED_MIME_TYPES,
-                    )
-                else:
-                    prepared = self.embedder.prepare_cover(
-                        temporary_path,
-                        allowed_mime_types=self.ALLOWED_MIME_TYPES,
-                    )
+                prepared = self.embedder.prepare_square_cover(
+                    temporary_path,
+                    mode=square_mode,
+                    allowed_mime_types=self.ALLOWED_MIME_TYPES,
+                )
             except CoverPreparationError as error:
                 raise CoverSelectionError(
                     self._safe_preparation_error(error)
@@ -211,6 +210,7 @@ class CoverSelectionService:
             "size": prepared.final_size,
             "width": prepared.dimensions[0],
             "height": prepared.dimensions[1],
+            "square_mode": square_mode,
         }
 
     def _cover_path(self, cover_id: str) -> Path:

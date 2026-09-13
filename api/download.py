@@ -1,7 +1,8 @@
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 
 from autodrome.models.requests import (
     AlbumDestinationRequest,
+    CoverSquareMode,
     DownloadRequest,
     PlaylistPreflightRequest,
     YoutubeCoverRequest,
@@ -77,11 +78,15 @@ async def album_destination(payload: AlbumDestinationRequest, request: Request):
 
 
 @download_router.post("/covers/manual", status_code=status.HTTP_201_CREATED)
-async def upload_manual_cover(request: Request, cover: UploadFile = File(...)):
+async def upload_manual_cover(
+    request: Request,
+    cover: UploadFile = File(...),
+    square_mode: CoverSquareMode = Form("fit"),
+):
     maximum = request.app.state.config.max_cover_upload_bytes
     content = await cover.read(maximum + 1)
     try:
-        return request.app.state.cover_selection.store_manual(content)
+        return request.app.state.cover_selection.store_manual(content, square_mode)
     except CoverSelectionError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -90,7 +95,8 @@ async def upload_manual_cover(request: Request, cover: UploadFile = File(...)):
 async def prepare_youtube_cover(payload: YoutubeCoverRequest, request: Request):
     try:
         return await request.app.state.cover_selection.store_youtube(
-            payload.thumbnail_url
+            payload.thumbnail_url,
+            payload.square_mode,
         )
     except CoverSelectionError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

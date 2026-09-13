@@ -58,12 +58,12 @@ def test_default_storage_uses_configured_runtime_path(tmp_path, monkeypatch):
 def test_manual_cover_validates_real_mime_and_can_be_loaded_for_retry(tmp_path):
     selection = service(tmp_path)
 
-    stored = selection.store_manual(image_bytes("WEBP", size=(32, 48)))
+    stored = selection.store_manual(image_bytes("WEBP", size=(32, 48)), "crop")
     prepared = selection.load_prepared(stored["cover_id"])
 
-    assert stored["mime_type"] == "image/webp"
-    assert stored["width"] == 32
-    assert stored["height"] == 48
+    assert stored["mime_type"] == "image/jpeg"
+    assert stored["width"] == stored["height"] == 32
+    assert stored["square_mode"] == "crop"
     assert prepared.data == (tmp_path / f'{stored["cover_id"]}.cover').read_bytes()
 
 
@@ -106,10 +106,30 @@ def test_youtube_cover_downloads_exact_url_and_adds_centered_square_padding(tmp_
         allow_redirects=False,
     )
     assert stored["width"] == stored["height"] == 80
+    assert stored["square_mode"] == "fit"
     with Image.open(BytesIO(prepared.data)) as image:
         assert image.size == (80, 80)
         assert image.getpixel((40, 5))[0] < 80
         assert image.getpixel((40, 40))[0] > 180
+
+
+def test_youtube_crop_downloads_source_once_and_persists_centered_square(tmp_path):
+    content = BytesIO()
+    image = Image.new("RGB", (90, 30), "red")
+    image.paste("green", (30, 0, 60, 30))
+    image.paste("blue", (60, 0, 90, 30))
+    image.save(content, format="PNG")
+    selection = service(tmp_path, response=content.getvalue())
+    url = "https://i.ytimg.com/vi/video-id/mqdefault.jpg"
+
+    stored = asyncio.run(selection.store_youtube(url, "crop"))
+    prepared = selection.load_prepared(stored["cover_id"])
+
+    selection.http_client.get_binary.assert_awaited_once()
+    assert stored["square_mode"] == "crop"
+    assert prepared.dimensions == (30, 30)
+    with Image.open(BytesIO(prepared.data)) as square:
+        assert square.getpixel((15, 15))[1] > 80
 
 
 def test_load_rejects_missing_or_symlinked_selected_cover(tmp_path):
