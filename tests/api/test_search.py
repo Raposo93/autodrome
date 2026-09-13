@@ -47,6 +47,34 @@ class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
             max_tracks=None,
         )
 
+    async def test_track_compatibility_is_positional_and_provider_free(self):
+        payload = {
+            "playlist_tracks": [
+                {"position": 1, "title": "One (Official Audio)"},
+                {"position": 2, "title": "Two (Live)"},
+            ],
+            "release_tracks": [
+                {"global_position": 1, "title": "One"},
+                {"global_position": 2, "title": "Two"},
+            ],
+        }
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/search/compatibility",
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertEqual(result["status"], "review")
+        self.assertEqual(
+            [track["status"] for track in result["tracks"]],
+            ["clean", "warning"],
+        )
+        self.app.state.search_controller.assert_not_called()
+
     async def test_custom_shared_result_limit_is_forwarded(self):
         async with AsyncClient(
             transport=ASGITransport(app=self.app), base_url="http://test"

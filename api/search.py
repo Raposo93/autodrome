@@ -6,7 +6,8 @@ from fastapi.responses import JSONResponse
 
 from autodrome.logger import logger
 from autodrome.http_client_async import UpstreamServiceError
-from autodrome.models.requests import SearchRequest
+from autodrome.models.requests import SearchRequest, TrackCompatibilityRequest
+from autodrome.services.track_matching import compare_tracklists
 
 search_router = APIRouter()
 
@@ -16,6 +17,14 @@ def _upstream_error_response(error: UpstreamServiceError) -> JSONResponse:
     return JSONResponse(
         status_code=502,
         content={"error": str(error), "provider": error.provider},
+    )
+
+
+@search_router.post("/compatibility")
+async def track_compatibility(payload: TrackCompatibilityRequest):
+    return compare_tracklists(
+        [track.model_dump() for track in payload.playlist_tracks],
+        [track.model_dump() for track in payload.release_tracks],
     )
 
 @search_router.get("/")

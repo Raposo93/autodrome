@@ -245,6 +245,75 @@
         </div>
       </div>
 
+      <section
+        v-if="selectedPlaylist && selectedRelease"
+        class="compatibility-card"
+        aria-labelledby="compatibility-title"
+      >
+        <header class="compatibility-heading">
+          <div>
+            <span class="selection-label">Playlist ↔ MusicBrainz</span>
+            <h3 id="compatibility-title">Track compatibility</h3>
+          </div>
+          <span
+            v-if="compatibilityResult"
+            class="compatibility-badge"
+            :class="`compatibility-badge--${compatibilityResult.status}`"
+          >
+            {{ compatibilityStatusLabel(compatibilityResult.status) }}
+          </span>
+        </header>
+
+        <p v-if="compatibilityLoading" class="compatibility-state" role="status">
+          Comparing titles in playlist order…
+        </p>
+        <p v-else-if="compatibilityError" class="feedback feedback--error" role="alert">
+          {{ compatibilityError }} No compatibility score has been assumed.
+        </p>
+        <template v-else-if="compatibilityResult">
+          <p
+            v-if="compatibilityResult.reason === 'track_count_mismatch'"
+            class="compatibility-count-warning"
+            role="alert"
+          >
+            Track count mismatch: YouTube has {{ compatibilityResult.playlist_count }}
+            tracks and MusicBrainz has {{ compatibilityResult.release_count }}.
+            Title scoring was skipped.
+          </p>
+          <template v-else>
+            <div class="compatibility-summary" aria-label="Compatibility summary">
+              <span><strong>{{ compatibilityResult.summary.exact }}</strong> Exact</span>
+              <span><strong>{{ compatibilityResult.summary.clean }}</strong> Clean</span>
+              <span><strong>{{ compatibilityResult.summary.close }}</strong> Close</span>
+              <span><strong>{{ compatibilityResult.summary.warning }}</strong> Warnings</span>
+              <span><strong>{{ compatibilityResult.summary.mismatch }}</strong> Mismatch</span>
+            </div>
+            <details class="compatibility-details">
+              <summary>Review {{ compatibilityResult.tracks.length }} track comparisons</summary>
+              <ol>
+                <li v-for="track in compatibilityResult.tracks" :key="track.position">
+                  <span class="compatibility-position">{{ String(track.position).padStart(2, '0') }}</span>
+                  <span>
+                    <strong>{{ track.youtube_title }}</strong>
+                    <small>YouTube</small>
+                  </span>
+                  <span>
+                    <strong>{{ track.release_title }}</strong>
+                    <small>MusicBrainz</small>
+                  </span>
+                  <span
+                    class="track-match-status"
+                    :class="`track-match-status--${track.status}`"
+                  >
+                    {{ trackStatusLabel(track.status) }}
+                  </span>
+                </li>
+              </ol>
+            </details>
+          </template>
+        </template>
+      </section>
+
       <div v-if="selectedPlaylist && !selectedRelease" class="manual-metadata">
         <p>MusicBrainz metadata is recommended when a matching release exists.</p>
         <button v-if="!manualPrompt && !manualConfirmed" type="button" @click="manualPrompt = true">
@@ -570,6 +639,11 @@ export default {
       downloading: false,
       downloadError: null,
       dashboardNotice: null,
+      compatibilityResult: null,
+      compatibilityLoading: false,
+      compatibilityError: null,
+      compatibilityKey: null,
+      compatibilityGeneration: 0,
       defaultPlaylistImg: '/default__no_cover.jpg',
       defaultReleaseImg: '/default__no_cover.jpg'
     }
@@ -606,6 +680,7 @@ export default {
     goToReview() {
       if (!this.canReview) return
       this.downloadError = null
+      this.loadCompatibility()
       this.navigate('review')
     },
     clearWorkflow() {
@@ -631,12 +706,96 @@ export default {
       this.releaseDetailsLoading = false
       this.releaseDetailsReady = false
       this.downloadError = null
+      this.resetCompatibility()
       this.resetCoverChoice()
     },
     completeDownload() {
       this.dashboardNotice = 'Download queued successfully.'
       this.clearWorkflow()
       this.navigate('dashboard')
+    },
+    compatibilityStatusLabel(status) {
+      return {
+        strong: 'Strong match',
+        likely: 'Likely match',
+        review: 'Review recommended',
+        mismatch: 'Likely wrong release',
+      }[status] || 'Unknown'
+    },
+    trackStatusLabel(status) {
+      return {
+        exact: 'Exact',
+        clean: 'Minor noise',
+        close: 'Close',
+        warning: 'Review',
+        mismatch: 'Mismatch',
+      }[status] || 'Unknown'
+    },
+    compatibilitySelectionKey() {
+      if (!this.selectedPlaylist || !this.selectedRelease) return null
+      return JSON.stringify({
+        playlist: this.selectedPlaylist.url,
+        playlist_tracks: this.selectedPlaylist.tracks,
+        release: this.selectedRelease.id,
+        release_tracks: this.selectedRelease.tracks,
+      })
+    },
+    resetCompatibility() {
+      this.compatibilityGeneration += 1
+      this.compatibilityResult = null
+      this.compatibilityLoading = false
+      this.compatibilityError = null
+      this.compatibilityKey = null
+    },
+    async loadCompatibility() {
+      const key = this.compatibilitySelectionKey()
+      if (!key) {
+        this.resetCompatibility()
+        return
+      }
+      if (
+        this.compatibilityKey === key &&
+        (this.compatibilityLoading || this.compatibilityResult || this.compatibilityError)
+      ) return
+
+      const playlistTracks = this.selectedPlaylist.tracks
+      const releaseTracks = this.selectedRelease.tracks
+      if (!Array.isArray(playlistTracks) || !Array.isArray(releaseTracks)) {
+        this.resetCompatibility()
+        this.compatibilityKey = key
+        this.compatibilityError = 'Track titles are unavailable for this selection.'
+        return
+      }
+
+      const generation = ++this.compatibilityGeneration
+      this.compatibilityKey = key
+      this.compatibilityResult = null
+      this.compatibilityError = null
+      this.compatibilityLoading = true
+      try {
+        const response = await api.trackCompatibility({
+          playlist_tracks: playlistTracks.map(track => ({
+            position: track.position,
+            title: track.title,
+          })),
+          release_tracks: releaseTracks.map(track => ({
+            global_position: track.global_position,
+            title: track.title,
+          })),
+        })
+        if (generation !== this.compatibilityGeneration) return
+        if (key !== this.compatibilitySelectionKey()) return
+        this.compatibilityResult = response.data
+      } catch (error) {
+        if (generation !== this.compatibilityGeneration) return
+        if (key !== this.compatibilitySelectionKey()) return
+        this.compatibilityError = error.response?.data?.detail ||
+          'Could not compare the selected tracklists.'
+      } finally {
+        if (generation === this.compatibilityGeneration) {
+          this.compatibilityLoading = false
+        }
+      }
     },
     hydrateReleases() {
       if (!this.hydrator) {
@@ -672,6 +831,7 @@ export default {
       this.releaseDetailsLoading = false
       this.releaseDetailsReady = false
       this.resetCoverChoice()
+      this.resetCompatibility()
 
       if (!this.artist && !this.album) return
       const searchOptionError = this.resultLimitError || this.maxTracksError
@@ -716,6 +876,7 @@ export default {
       this.manualConfirmed = false
       this.manualPrompt = false
       this.resetCoverChoice()
+      this.resetCompatibility()
       const generation = ++this.playlistGeneration
       this.selectedPlaylist = pl
       this.playlistReady = false
@@ -723,7 +884,11 @@ export default {
       try {
         const response = await api.playlistPreflight({ playlist_url: pl.url, track_count: pl.track_count ?? null })
         if (generation !== this.playlistGeneration) return
-        this.selectedPlaylist = { ...pl, track_count: response.data.track_count }
+        this.selectedPlaylist = {
+          ...pl,
+          track_count: response.data.track_count,
+          tracks: Array.isArray(response.data.tracks) ? response.data.tracks : null,
+        }
         this.playlistReady = true
       } catch (error) {
         if (generation !== this.playlistGeneration) return
@@ -745,6 +910,7 @@ export default {
       this.manualConfirmed = false
       this.manualPrompt = false
       this.resetCoverChoice()
+      this.resetCompatibility()
       this.selectedRelease = rel
       this.releaseDetailsReady = Array.isArray(rel.tracks)
       this.releaseDetailsLoading = !this.releaseDetailsReady

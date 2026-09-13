@@ -38,6 +38,10 @@ export default {
     return apiClient.get(`/search/releases/${releaseId}`)
   },
 
+  trackCompatibility(payload) {
+    return apiClient.post('/search/compatibility', payload)
+  },
+
   clearQueueHistory() {
     return apiClient.delete('/download/history')
   },

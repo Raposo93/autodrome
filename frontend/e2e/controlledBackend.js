@@ -24,6 +24,21 @@ class ControlledRequest {
   async reply(body = {}, status = 200) {
     if (this.settled) throw new Error(`Request ${this.kind} was already settled`)
     this.settled = true
+    if (
+      this.kind === 'preflight' &&
+      Number.isInteger(body.track_count) &&
+      !Array.isArray(body.tracks)
+    ) {
+      body = {
+        ...body,
+        unavailable: 0,
+        tracks: Array.from({ length: body.track_count }, (_, index) => ({
+          position: index + 1,
+          title: `Track ${index + 1}`,
+          url: `https://youtube.test/watch?v=track-${index + 1}`,
+        })),
+      }
+    }
     await this.route.fulfill({
       status,
       contentType: 'application/json',
@@ -63,6 +78,7 @@ export class ControlledBackend {
     if (method === 'GET' && path.startsWith('/api/search/releases/')) {
       return `release:${decodeURIComponent(path.slice('/api/search/releases/'.length))}`
     }
+    if (method === 'POST' && path === '/api/search/compatibility') return 'compatibility'
     if (method === 'POST' && path === '/api/download/preflight') return 'preflight'
     if (method === 'POST' && path === '/api/download/destination') return 'destination'
     if (method === 'POST' && path === '/api/download/covers/youtube') return 'cover-youtube'

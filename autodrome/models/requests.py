@@ -1,4 +1,4 @@
-from typing import Annotated, Optional, Literal
+from typing import Annotated, List, Optional, Literal
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
@@ -11,6 +11,10 @@ from autodrome.url_safety import validate_youtube_thumbnail_url
 NonEmptyText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=255),
+]
+TrackTitle = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=1000),
 ]
 CoverSource = Literal[
     "cover_art_archive",
@@ -131,6 +135,45 @@ class YoutubeCoverRequest(BaseModel):
     @classmethod
     def validate_thumbnail_url(cls, value: str) -> str:
         return validate_youtube_thumbnail_url(value)
+
+
+class PlaylistMatchTrack(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    position: int = Field(ge=1, le=10_000)
+    title: TrackTitle
+
+
+class ReleaseMatchTrack(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    global_position: int = Field(ge=1, le=10_000)
+    title: TrackTitle
+
+
+class TrackCompatibilityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    playlist_tracks: List[PlaylistMatchTrack] = Field(
+        min_length=1,
+        max_length=1000,
+    )
+    release_tracks: List[ReleaseMatchTrack] = Field(
+        min_length=1,
+        max_length=1000,
+    )
+
+    @model_validator(mode="after")
+    def require_contiguous_positions(self) -> "TrackCompatibilityRequest":
+        playlist_positions = {track.position for track in self.playlist_tracks}
+        release_positions = {
+            track.global_position for track in self.release_tracks
+        }
+        if playlist_positions != set(range(1, len(self.playlist_tracks) + 1)):
+            raise ValueError("Playlist positions must be unique and contiguous")
+        if release_positions != set(range(1, len(self.release_tracks) + 1)):
+            raise ValueError("Release positions must be unique and contiguous")
+        return self
 
 
 class SearchRequest(BaseModel):

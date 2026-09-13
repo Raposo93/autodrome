@@ -6,6 +6,7 @@ from autodrome.models.requests import (
     AlbumDestinationRequest,
     DownloadRequest,
     SearchRequest,
+    TrackCompatibilityRequest,
 )
 
 
@@ -96,6 +97,30 @@ class TestRequestModels(unittest.TestCase):
                 AlbumDestinationRequest(
                     **{"artist": "Artist", "album": "Album", **change}
                 )
+
+    def test_track_compatibility_requires_complete_unique_positions(self):
+        valid = {
+            "playlist_tracks": [
+                {"position": 1, "title": "One"},
+                {"position": 2, "title": "Two"},
+            ],
+            "release_tracks": [
+                {"global_position": 1, "title": "One"},
+                {"global_position": 2, "title": "Two"},
+            ],
+        }
+        request = TrackCompatibilityRequest(**valid)
+        self.assertEqual(request.playlist_tracks[0].title, "One")
+
+        for field, replacement in (
+            ("playlist_tracks", [{"position": 2, "title": "One"}]),
+            ("release_tracks", [
+                {"global_position": 1, "title": "One"},
+                {"global_position": 1, "title": "Two"},
+            ]),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                TrackCompatibilityRequest(**{**valid, field: replacement})
 
     def test_cover_choice_is_explicit_and_validated(self):
         request = DownloadRequest(**VALID_DOWNLOAD)

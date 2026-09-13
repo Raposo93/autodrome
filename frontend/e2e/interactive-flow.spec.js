@@ -297,6 +297,131 @@ test('same-title releases expose edition metadata before expansion', async ({ pa
   await expect(releasesPanel(page).getByText('46 tracks')).toBeVisible()
 })
 
+test('review matching is positional, cached, and ignores stale responses', async ({ page }) => {
+  const backend = new ControlledBackend()
+  const releaseTracklist = ['One', 'Two', 'Three'].map((title, index) => ({
+    title,
+    artist: 'Artist match',
+    disc_number: 1,
+    position: index + 1,
+    global_position: index + 1,
+  }))
+  const matchingTracks = ['One', 'Two (Official Audio)', 'Three (Live)'].map(
+    (title, index) => ({ position: index + 1, title, url: `track-${index + 1}` })
+  )
+  const comparison = {
+    status: 'review',
+    reason: null,
+    playlist_count: 3,
+    release_count: 3,
+    summary: { exact: 1, clean: 1, close: 0, warning: 1, mismatch: 0 },
+    tracks: [
+      { position: 1, youtube_title: 'One', release_title: 'One', score: 1, status: 'exact', reasons: [] },
+      { position: 2, youtube_title: 'Two (Official Audio)', release_title: 'Two', score: 1, status: 'clean', reasons: ['youtube_decoration'] },
+      { position: 3, youtube_title: 'Three (Live)', release_title: 'Three', score: 0.7, status: 'warning', reasons: ['version_marker:live'] },
+    ],
+  }
+
+  await openApp(page, backend)
+  await startSearch(page)
+  const search = await backend.next('search')
+  await search.reply({
+    playlists: [playlist('match', 3), playlist('other', 3)],
+    releases: [release('match', 3)],
+    errors: {},
+  })
+  const hydration = await backend.next('release:match')
+  await playlistsPanel(page).getByRole('button', { name: /Playlist match/ }).click()
+  const preflight = await backend.next('preflight')
+  await preflight.reply({ track_count: 3, tracks: matchingTracks, unavailable: 0 })
+  await releasesPanel(page).getByRole('button', { name: /Release match/ }).click()
+  await hydration.reply({ ...releaseDetails('match', 3), tracks: releaseTracklist })
+  const destination = await backend.next('destination')
+  await destination.reply({ state: 'not_found', exists: false })
+  await continueToReview(page)
+
+  const compatibility = await backend.next('compatibility')
+  expect(compatibility.body.playlist_tracks.map(track => track.title)).toEqual(
+    matchingTracks.map(track => track.title)
+  )
+  expect(compatibility.body.release_tracks.map(track => track.title)).toEqual(
+    releaseTracklist.map(track => track.title)
+  )
+  await compatibility.reply(comparison)
+  await expect(page.getByText('Review recommended', { exact: true })).toBeVisible()
+  await page.getByText('Review 3 track comparisons').click()
+  await expect(page.getByText('Minor noise', { exact: true })).toBeVisible()
+  await expect(page.getByText('Three (Live)', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Back to selections' }).click()
+  await continueToReview(page)
+  expect(backend.callCount('compatibility')).toBe(1)
+
+  await page.getByRole('button', { name: 'Back to selections' }).click()
+  await playlistsPanel(page).getByRole('button', { name: /Playlist other/ }).click()
+  const otherPreflight = await backend.next('preflight')
+  await otherPreflight.reply({
+    track_count: 3,
+    unavailable: 0,
+    tracks: ['Wrong A', 'Wrong B', 'Wrong C'].map((title, index) => ({
+      position: index + 1, title, url: `wrong-${index + 1}`,
+    })),
+  })
+  await continueToReview(page)
+  const staleCompatibility = await backend.next('compatibility')
+
+  await page.getByRole('button', { name: 'Back to selections' }).click()
+  await playlistsPanel(page).getByRole('button', { name: /Playlist match/ }).click()
+  const currentPreflight = await backend.next('preflight')
+  await currentPreflight.reply({ track_count: 3, tracks: matchingTracks, unavailable: 0 })
+  await continueToReview(page)
+  const currentCompatibility = await backend.next('compatibility')
+  await currentCompatibility.reply(comparison)
+  await staleCompatibility.reply({
+    ...comparison,
+    status: 'mismatch',
+    summary: { exact: 0, clean: 0, close: 0, warning: 0, mismatch: 3 },
+  })
+
+  await expect(page.getByText('Review recommended', { exact: true })).toBeVisible()
+  await expect(page.getByText('Likely wrong release', { exact: true })).toHaveCount(0)
+})
+
+test('review exposes count mismatch as a hard gate without title scoring', async ({ page }) => {
+  const backend = new ControlledBackend()
+  await openApp(page, backend)
+  await startSearch(page)
+  const search = await backend.next('search')
+  await search.reply({
+    playlists: [playlist('count-mismatch', 3)],
+    releases: [release('count-mismatch', 2)],
+    errors: {},
+  })
+  const hydration = await backend.next('release:count-mismatch')
+  await playlistsPanel(page).getByRole('button', { name: /Playlist count-mismatch/ }).click()
+  const preflight = await backend.next('preflight')
+  await preflight.reply({ track_count: 3 })
+  await releasesPanel(page).getByRole('button', { name: /Release count-mismatch/ }).click()
+  await hydration.reply(releaseDetails('count-mismatch', 2))
+  const destination = await backend.next('destination')
+  await destination.reply({ state: 'not_found', exists: false })
+  await continueToReview(page)
+  const compatibility = await backend.next('compatibility')
+  await compatibility.reply({
+    status: 'mismatch',
+    reason: 'track_count_mismatch',
+    playlist_count: 3,
+    release_count: 2,
+    summary: { exact: 0, clean: 0, close: 0, warning: 0, mismatch: 0 },
+    tracks: [],
+  })
+
+  await expect(page.getByText('Likely wrong release', { exact: true })).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('YouTube has 3 tracks')
+  await expect(page.getByRole('alert')).toContainText('Title scoring was skipped')
+  await expect(page.getByRole('button', { name: 'Download & Tag' })).toBeDisabled()
+})
+
 test('rapid playlist and release changes ignore stale completions', async ({ page }) => {
   const backend = new ControlledBackend()
   await openApp(page, backend)

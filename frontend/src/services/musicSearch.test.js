@@ -170,6 +170,23 @@ test('manifest mismatch leaves selection blocked with useful error', async () =>
   assert.match(state.playlistError, /extractable 12/)
 })
 
+test('missing upstream tracklists produce no fictional compatibility result', async () => {
+  const { state, context } = setup(async () => ({}))
+  let requests = 0
+  context.api.trackCompatibility = async () => {
+    requests += 1
+    return { data: { status: 'strong' } }
+  }
+  state.selectedPlaylist = { id: 'playlist', url: 'playlist', tracks: null }
+  state.selectedRelease = { id: 'release', tracks: [{ global_position: 1, title: 'One' }] }
+
+  await state.loadCompatibility()
+
+  assert.equal(requests, 0)
+  assert.equal(state.compatibilityResult, null)
+  assert.match(state.compatibilityError, /unavailable/)
+})
+
 
 test('manual mode requires confirmation and submits edited metadata independent of search', async () => {
   const { state, context } = setup(async () => ({}))
