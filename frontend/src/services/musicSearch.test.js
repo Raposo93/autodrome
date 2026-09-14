@@ -26,7 +26,7 @@ function setup(combinedSearch, playlistPreflight = async () => ({ data: { track_
   }
   for (const [name, method] of Object.entries(component.methods)) state[name] = method.bind(state)
   for (const [name, getter] of Object.entries(component.computed)) Object.defineProperty(state, name, { get: () => getter.call(state) })
-  return { state, context, search: () => component.methods.searchAll.call(state) }
+  return { state, context, component, search: () => component.methods.searchAll.call(state) }
 }
 
 for (const failed of [[], ['youtube'], ['musicbrainz'], ['youtube', 'musicbrainz']]) {
@@ -60,6 +60,30 @@ test('transport failure clears stale results and ends loading', async () => {
   assert.equal(state.errorReleases, 'Error fetching releases')
   assert.equal(state.loadingPlaylists, false)
   assert.equal(state.loadingReleases, false)
+})
+
+test('entering review refreshes the final library destination', () => {
+  const { state, component } = setup(async () => ({}))
+  const inspections = []
+  state.destinationCheck = {
+    reset() {},
+    inspect(destination) { inspections.push(destination) },
+    dispose() {},
+  }
+  state.selectedPlaylist = { id: 'playlist' }
+  state.selectedRelease = {
+    id: 'release',
+    artist: 'Röyksopp',
+    title: 'Melody A.M.',
+  }
+  state.releaseDetailsReady = true
+
+  component.watch.view.call(state, 'review')
+
+  assert.equal(
+    JSON.stringify(inspections),
+    JSON.stringify([{ artist: 'Röyksopp', album: 'Melody A.M.' }]),
+  )
 })
 
 test('each search sends its own shared result limit', async () => {

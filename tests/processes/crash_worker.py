@@ -61,6 +61,9 @@ class RecordingController:
     def __init__(self, calls_path: Path) -> None:
         self.calls_path = calls_path
 
+    async def ensure_destination_available(self, artist: str, album: str) -> None:
+        return None
+
     async def download_and_tag(self, album, **kwargs):
         calls = []
         if self.calls_path.exists():

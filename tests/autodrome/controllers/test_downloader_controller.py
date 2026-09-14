@@ -38,6 +38,32 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
             metadata_service=self.metadata_service,
         )
 
+    async def test_destination_must_be_confirmed_available(self):
+        self.organizer.inspect_album_destination.return_value = {
+            "state": "not_found"
+        }
+
+        await self.controller.ensure_destination_available("Artist", "Album")
+
+        self.organizer.inspect_album_destination.assert_called_once_with(
+            "Artist", "Album"
+        )
+
+    async def test_existing_or_unknown_destination_blocks_enqueue(self):
+        for state, error in (
+            ("exists", FileExistsError),
+            ("unknown", OSError),
+        ):
+            with self.subTest(state=state):
+                self.organizer.inspect_album_destination.return_value = {
+                    "state": state
+                }
+                with self.assertRaises(error):
+                    await self.controller.ensure_destination_available(
+                        "Artist",
+                        "Album",
+                    )
+
     async def test_download_passes_playlist_count_to_downloader(self):
         await self.controller.download_and_tag(
             "https://example.test/playlist",

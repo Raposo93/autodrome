@@ -25,6 +25,12 @@ class DownloaderController:
         self.http_client = http_client
         self.cover_selection = cover_selection
 
+    async def ensure_destination_available(self, artist: str, album: str) -> None:
+        destination = self.organizer.inspect_album_destination(artist, album)
+        if destination["state"] == "exists":
+            raise FileExistsError("Album already exists in the library")
+        if destination["state"] != "not_found":
+            raise OSError("Album destination could not be checked")
 
     async def download_and_tag(
         self, 

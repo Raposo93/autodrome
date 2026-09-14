@@ -76,6 +76,11 @@ class DownloadQueueManager:
         if missing := self.REQUIRED_KEYS - payload.keys():
             raise ValueError(f"Payload is missing required keys: {sorted(missing)}")
 
+        await self.downloader.ensure_destination_available(
+            payload["artist"],
+            payload["album"],
+        )
+
         job = DownloadJob.create(payload)
         job.retry_of = retry_of
         self._jobs[job.job_id] = job

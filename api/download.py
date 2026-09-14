@@ -23,6 +23,8 @@ async def download(payload: DownloadRequest, request: Request):
 async def _queue_operation(operation):
     try:
         return await operation
+    except FileExistsError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Download job not found") from error
     except ValueError as error:

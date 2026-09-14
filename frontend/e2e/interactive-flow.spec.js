@@ -29,10 +29,18 @@ async function startSearch(page, { artist = 'Test Artist', album = 'Test Album' 
   await page.getByRole('button', { name: 'Search music' }).click()
 }
 
-async function continueToReview(page) {
+async function continueToReview(
+  page,
+  backend = null,
+  destinationResult = { state: 'not_found', exists: false },
+) {
   const button = page.getByRole('button', { name: 'Continue to review' })
   await expect(button).toBeEnabled()
   await button.click()
+  if (backend) {
+    const destination = await backend.next('destination')
+    await destination.reply(destinationResult)
+  }
   await expect(page.getByRole('heading', { name: 'Check before you queue' })).toBeVisible()
 }
 
@@ -125,7 +133,7 @@ test('the ready desktop workflow fits without document scrolling', async ({ page
   await hydration.reply(releaseDetails('layout'))
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
-  await continueToReview(page)
+  await continueToReview(page, backend)
 
   const readyButton = page.getByRole('button', { name: 'Download & Tag' })
   await expect(readyButton).toBeEnabled()
@@ -183,7 +191,7 @@ test('happy path queues one fully checked download', async ({ page }) => {
     album: 'Release happy', relative_path: 'Artist happy/Release happy',
     mp3_count: 0, file_count: 0,
   })
-  await continueToReview(page)
+  await continueToReview(page, backend)
   const readyButton = page.getByRole('button', { name: 'Download & Tag' })
   await expect(readyButton).toBeEnabled()
 
@@ -338,7 +346,7 @@ test('review matching is positional, cached, and ignores stale responses', async
   await hydration.reply({ ...releaseDetails('match', 3), tracks: releaseTracklist })
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
-  await continueToReview(page)
+  await continueToReview(page, backend)
 
   const compatibility = await backend.next('compatibility')
   expect(compatibility.body.playlist_tracks.map(track => track.title)).toEqual(
@@ -354,7 +362,7 @@ test('review matching is positional, cached, and ignores stale responses', async
   await expect(page.getByText('Three (Live)', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Back to selections' }).click()
-  await continueToReview(page)
+  await continueToReview(page, backend)
   expect(backend.callCount('compatibility')).toBe(1)
 
   await page.getByRole('button', { name: 'Back to selections' }).click()
@@ -367,14 +375,14 @@ test('review matching is positional, cached, and ignores stale responses', async
       position: index + 1, title, url: `wrong-${index + 1}`,
     })),
   })
-  await continueToReview(page)
+  await continueToReview(page, backend)
   const staleCompatibility = await backend.next('compatibility')
 
   await page.getByRole('button', { name: 'Back to selections' }).click()
   await playlistsPanel(page).getByRole('button', { name: /Playlist match/ }).click()
   const currentPreflight = await backend.next('preflight')
   await currentPreflight.reply({ track_count: 3, tracks: matchingTracks, unavailable: 0 })
-  await continueToReview(page)
+  await continueToReview(page, backend)
   const currentCompatibility = await backend.next('compatibility')
   await currentCompatibility.reply(comparison)
   await staleCompatibility.reply({
@@ -405,7 +413,7 @@ test('review exposes count mismatch as a hard gate without title scoring', async
   await hydration.reply(releaseDetails('count-mismatch', 2))
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
-  await continueToReview(page)
+  await continueToReview(page, backend)
   const compatibility = await backend.next('compatibility')
   await compatibility.reply({
     status: 'mismatch',
@@ -454,13 +462,13 @@ test('rapid playlist and release changes ignore stale completions', async ({ pag
   await expect(page.getByText('Release r2', { exact: true })).toHaveCount(1)
   await expect(page.locator('.selection-preview')).toContainText('Playlist p2')
   await expect(page.locator('.selection-preview')).toContainText('Release r2')
-  await continueToReview(page)
+  await continueToReview(page, backend)
   await page.getByRole('button', { name: 'Back to selections' }).click()
   await expect(page.getByText('Playlist p2', { exact: true })).toHaveCount(1)
   await expect(page.getByText('Release r2', { exact: true })).toHaveCount(1)
   await expect(page.locator('.selection-preview')).toContainText('Playlist p2')
   await expect(page.locator('.selection-preview')).toContainText('Release r2')
-  await continueToReview(page)
+  await continueToReview(page, backend)
   await expect(page.getByText('Both selections are ready to download.')).toBeVisible()
   await expect(page.getByText('stale playlist mismatch')).toHaveCount(0)
   expect(backend.callCount('download')).toBe(0)
@@ -489,12 +497,12 @@ test('existing albums are explained and blocked before enqueue', async ({ page }
     artist: 'Artist existing',
     album: 'Release existing',
   })
-  await destination.reply({
+  await destination.reply({ state: 'not_found', exists: false })
+  await continueToReview(page, backend, {
     state: 'exists', exists: true, artist: 'Artist existing',
     album: 'Release existing', relative_path: 'Artist existing/Release existing',
     mp3_count: 13, file_count: 14,
   })
-  await continueToReview(page)
 
   const warning = page.getByRole('alert')
   await expect(warning).toContainText('already appears to exist')
@@ -535,7 +543,7 @@ test('late destination results cannot contaminate a newer release', async ({ pag
 
   await expect(page.getByText('Release current', { exact: true })).toHaveCount(1)
   await expect(page.locator('.selection-preview')).toContainText('Release current')
-  await continueToReview(page)
+  await continueToReview(page, backend)
   await expect(page.getByText('Both selections are ready to download.')).toBeVisible()
   await expect(page.getByText('Artist old/Release old')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Download & Tag' })).toBeEnabled()
@@ -692,7 +700,7 @@ test('missing archive artwork requires and persists the selected playlist thumbn
   await hydration.reply(releaseDetails('fallback', 2, false))
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
-  await continueToReview(page)
+  await continueToReview(page, backend)
 
   await expect(page.getByText('Cover Art Archive has no artwork for this release', { exact: false })).toBeVisible()
   await expect(page.getByText(/not authoritative/)).toBeVisible()
@@ -753,7 +761,7 @@ test('failed and manual fallback covers remain explicit and recoverable', async 
   await hydration.reply(releaseDetails('manual-cover', 2, false))
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
-  await continueToReview(page)
+  await continueToReview(page, backend)
 
   await page.getByRole('button', { name: /Use playlist thumbnail/ }).click()
   await page.getByRole('button', { name: 'Confirm Fit cover' }).click()
@@ -819,7 +827,7 @@ test('missing archive artwork can be consciously queued without a cover', async 
   await hydration.reply(releaseDetails('none', 2, false))
   const destination = await backend.next('destination')
   await destination.reply({ state: 'not_found', exists: false })
-  await continueToReview(page)
+  await continueToReview(page, backend)
 
   await page.getByRole('button', { name: /Use playlist thumbnail/ }).click()
   await expect(page.getByAltText('Original alternative cover preview')).toBeVisible()

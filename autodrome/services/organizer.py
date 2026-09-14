@@ -39,9 +39,9 @@ class Organizer:
                 "Staging and library directories must be on the same filesystem"
             )
 
-        album_folder = self._get_album_folder(artist, album)
-        if os.path.lexists(album_folder):
-            raise FileExistsError(f"Album already exists: {album_folder}")
+        existing_album_folder = self._find_existing_album_folder(artist, album)
+        if existing_album_folder is not None:
+            raise FileExistsError(f"Album already exists: {existing_album_folder}")
 
         free_bytes = shutil.disk_usage(staging_root).free
         required_bytes = conf.minimum_staging_free_bytes
@@ -184,8 +184,9 @@ class Organizer:
         artist_folder = os.path.dirname(self._get_album_folder(artist, album))
         album_folder = self._get_album_folder(artist, album)
 
-        if os.path.lexists(album_folder):
-            raise FileExistsError(f"Album already exists: {album_folder}")
+        existing_album_folder = self._find_existing_album_folder(artist, album)
+        if existing_album_folder is not None:
+            raise FileExistsError(f"Album already exists: {existing_album_folder}")
 
         artist_folder_created = not os.path.exists(artist_folder)
         os.makedirs(artist_folder, exist_ok=True)
@@ -198,6 +199,9 @@ class Organizer:
             )
 
         try:
+            artist_mode = stat.S_IMODE(os.stat(artist_folder).st_mode)
+            publication_mode = artist_mode | stat.S_IRGRP | stat.S_IXGRP
+            os.chmod(temp_folder, publication_mode)
             os.rename(temp_folder, album_folder)
         except Exception:
             if artist_folder_created and not os.listdir(artist_folder):
@@ -217,9 +221,13 @@ class Organizer:
         }
 
         try:
-            album_folder = str(
-                resolve_album_path(conf.library_path, safe_artist, safe_album)
+            album_folder = self._find_existing_album_folder(
+                safe_artist,
+                safe_album,
+                normalized=True,
             )
+            if album_folder is None:
+                raise FileNotFoundError
             destination_stat = os.lstat(album_folder)
         except FileNotFoundError:
             return {
@@ -274,6 +282,40 @@ class Organizer:
         destination = os.path.abspath(conf.library_path)
         return str(resolve_album_path(destination, safe_artist, safe_album))
 
+    def _find_existing_album_folder(
+        self,
+        artist: str,
+        album: str,
+        *,
+        normalized: bool = False,
+    ) -> Optional[str]:
+        if normalized:
+            safe_artist, safe_album = artist, album
+        else:
+            safe_artist, safe_album = self._normalized_album_components(
+                artist,
+                album,
+            )
+        album_folder = str(
+            resolve_album_path(conf.library_path, safe_artist, safe_album)
+        )
+        try:
+            os.lstat(album_folder)
+        except FileNotFoundError:
+            pass
+        else:
+            return album_folder
+
+        artist_folder = os.path.dirname(album_folder)
+        try:
+            with os.scandir(artist_folder) as entries:
+                for entry in entries:
+                    if self._sanitize_filename(entry.name) == safe_album:
+                        return entry.path
+        except FileNotFoundError:
+            return None
+        return None
+
     def _normalized_album_components(self, artist: str, album: str) -> Tuple[str, str]:
         safe_artist = self._sanitize_filename(validate_path_component(artist))
         safe_album = self._sanitize_filename(validate_path_component(album))
@@ -322,4 +364,4 @@ class Organizer:
         invalid_chars = '<>:"/\\|?¿*!¡'
         for ch in invalid_chars:
             name = name.replace(ch, '_')
-        return name.strip()
+        return name.strip().rstrip(" .")

@@ -85,7 +85,12 @@ class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
                 ("post", "/api/download/jobs/job/retry", "retry_job"),
                 ("delete", "/api/download/history", "clear_history"),
             ):
-                for error, expected in ((KeyError("missing"), 404), (ValueError("Active job"), 409), (OSError("private path"), 503)):
+                for error, expected in (
+                    (KeyError("missing"), 404),
+                    (ValueError("Active job"), 409),
+                    (FileExistsError("Album already exists in the library"), 409),
+                    (OSError("private path"), 503),
+                ):
                     getattr(app.state.queue_manager, operation).side_effect = error
                     response = await getattr(client, method)(path)
                     self.assertEqual(response.status_code, expected)

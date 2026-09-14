@@ -694,9 +694,12 @@ export default {
   },
   watch: {
     view(nextView) {
-      if (nextView === 'review' && !this.selectedPlaylist) {
+      if (nextView !== 'review') return
+      if (!this.selectedPlaylist) {
         this.navigate('select')
+        return
       }
+      this.destinationCheck.inspect(this.finalDestination)
     },
     finalDestination(destination) {
       this.destinationCheck.inspect(destination)

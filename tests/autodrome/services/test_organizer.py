@@ -1,5 +1,6 @@
 import asyncio
 import os
+import stat
 import tempfile
 from unittest import mock
 
@@ -116,6 +117,23 @@ def test_tag_and_rename_uses_unambiguous_multidisc_names(monkeypatch):
             "01-01 - First.mp3",
             "02-01 - First.mp3",
         ]
+
+
+def test_tag_and_rename_removes_trailing_dots_from_track_names(monkeypatch):
+    organizer = Organizer()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_dummy_mp3(tmpdir, "01 - Audio.mp3")
+        monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
+
+        organizer.tag_and_rename(
+            tmpdir,
+            "Artist",
+            "Album",
+            [Track(1, "Closing Song.")],
+        )
+
+        assert os.listdir(tmpdir) == ["01 - Closing Song.mp3"]
 
 
 def test_adversarial_titles_remain_distinct_after_sanitization(tmp_path, monkeypatch):
@@ -365,6 +383,28 @@ def test_move_to_library_basic(monkeypatch):
         assert sorted(os.listdir(album_path)) == ["01 - Song A.mp3", "02 - Song B.mp3"]
         assert not os.path.exists(tmpdir)
 
+
+def test_move_to_library_applies_artist_directory_permissions(tmp_path, monkeypatch):
+    library = tmp_path / "library"
+    staging = tmp_path / "staging"
+    artist = library / "Artist"
+    artist.mkdir(parents=True)
+    staging.mkdir()
+    os.chmod(artist, 0o2770)
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(library))
+    monkeypatch.setattr("autodrome.services.organizer.conf.staging_path", str(staging))
+    monkeypatch.setattr(
+        "autodrome.services.organizer.conf.minimum_staging_free_bytes", 0
+    )
+
+    organizer = Organizer()
+    with organizer.create_staging_folder("Artist", "Album") as tmpdir:
+        os.chmod(tmpdir, 0o700)
+        organizer.move_to_library(tmpdir, "Artist", "Album")
+
+    album_mode = os.stat(artist / "Album").st_mode
+    assert stat.S_IMODE(album_mode) == 0o2770
+
 def test_create_staging_folder_rejects_existing_album(monkeypatch):
     organizer = Organizer()
 
@@ -404,6 +444,53 @@ def test_destination_preflight_reports_missing_and_normalized_names(tmp_path, mo
         "file_count": 0,
     }
     assert list(tmp_path.iterdir()) == before
+
+
+def test_destination_preflight_removes_trailing_dots_and_spaces(tmp_path, monkeypatch):
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(tmp_path))
+
+    result = Organizer().inspect_album_destination("Artist. ", "Melody A.M. ")
+
+    assert result["state"] == "not_found"
+    assert result["artist"] == "Artist"
+    assert result["album"] == "Melody A.M"
+    assert result["relative_path"] == "Artist/Melody A.M"
+
+
+def test_destination_preflight_detects_legacy_trailing_dot_album(
+    tmp_path,
+    monkeypatch,
+):
+    legacy_album = tmp_path / "Artist" / "Melody A.M."
+    legacy_album.mkdir(parents=True)
+    (legacy_album / "existing.mp3").write_bytes(b"audio")
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(tmp_path))
+
+    result = Organizer().inspect_album_destination("Artist", "Melody A.M.")
+
+    assert result["state"] == "exists"
+    assert result["exists"] is True
+    assert result["relative_path"] == "Artist/Melody A.M"
+    assert result["mp3_count"] == 1
+
+
+def test_create_staging_folder_rejects_legacy_trailing_dot_album(
+    tmp_path,
+    monkeypatch,
+):
+    library = tmp_path / "library"
+    staging = tmp_path / "staging"
+    legacy_album = library / "Artist" / "Melody A.M."
+    legacy_album.mkdir(parents=True)
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(library))
+    monkeypatch.setattr("autodrome.services.organizer.conf.staging_path", str(staging))
+    monkeypatch.setattr(
+        "autodrome.services.organizer.conf.minimum_staging_free_bytes", 0
+    )
+
+    with pytest.raises(FileExistsError, match="Album already exists"):
+        with Organizer().create_staging_folder("Artist", "Melody A.M."):
+            pass
 
 
 def test_destination_preflight_counts_existing_regular_files(tmp_path, monkeypatch):
@@ -478,6 +565,31 @@ def test_album_created_after_preflight_is_not_overwritten(tmp_path, monkeypatch)
             organizer.move_to_library(staging_folder, "Artist", "Album")
 
     assert existing.read_bytes() == b"existing"
+
+
+def test_legacy_album_created_after_staging_is_not_overwritten(
+    tmp_path,
+    monkeypatch,
+):
+    library = tmp_path / "library"
+    staging = tmp_path / "staging"
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(library))
+    monkeypatch.setattr("autodrome.services.organizer.conf.staging_path", str(staging))
+    monkeypatch.setattr(
+        "autodrome.services.organizer.conf.minimum_staging_free_bytes", 0
+    )
+    organizer = Organizer()
+
+    with pytest.raises(FileExistsError, match="Album already exists"):
+        with organizer.create_staging_folder("Artist", "Melody A.M.") as staging_folder:
+            legacy = library / "Artist" / "Melody A.M."
+            legacy.mkdir(parents=True)
+            existing = legacy / "existing.mp3"
+            existing.write_bytes(b"existing")
+            organizer.move_to_library(staging_folder, "Artist", "Melody A.M.")
+
+    assert existing.read_bytes() == b"existing"
+    assert not (library / "Artist" / "Melody A.M").exists()
 
 def test_create_staging_folder_rejects_insufficient_space(monkeypatch):
     organizer = Organizer()

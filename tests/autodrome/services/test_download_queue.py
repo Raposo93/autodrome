@@ -45,6 +45,10 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job["job_id"], job_id)
         self.assertEqual(job["status"], "succeeded")
         self.assertIsNone(job["error"])
+        self.downloader.ensure_destination_available.assert_awaited_once_with(
+            "Artist",
+            "Album",
+        )
         self.downloader.download_and_tag.assert_awaited_once_with(
             progress=ANY,
             playlist_url=PAYLOAD["playlist_url"],
@@ -67,6 +71,18 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
         self.assertIn("job_started", lifecycle)
         self.assertIn("tracks=1", lifecycle)
         self.assertIn("job_succeeded", lifecycle)
+
+    async def test_enqueue_rechecks_destination_before_persisting_job(self):
+        self.downloader.ensure_destination_available.side_effect = FileExistsError(
+            "Album already exists in the library"
+        )
+
+        with self.assertRaises(FileExistsError):
+            await self.manager.enqueue(PAYLOAD)
+
+        self.assertEqual(self.manager.snapshot(), [])
+        self.websocket_manager.broadcast.assert_not_awaited()
+        self.downloader.download_and_tag.assert_not_awaited()
 
     async def test_failure_stores_error_and_removes_running_state(self):
         self.downloader.download_and_tag.side_effect = RuntimeError(
