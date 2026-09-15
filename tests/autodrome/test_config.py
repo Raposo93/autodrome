@@ -35,6 +35,10 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.max_cover_source_pixels, 40_000_000)
         self.assertEqual(settings.max_cover_upload_bytes, 10 * 1024 * 1024)
         self.assertEqual(settings.cover_storage_path, "covers/selected")
+        self.assertEqual(
+            settings.publication_catalog_path,
+            "/tmp/autodrome-library/.autodrome-publications.sqlite3",
+        )
         self.assertEqual(settings.download_concurrency, 1)
         self.assertIsNone(settings.yt_dlp_deno_path)
         self.assertFalse(settings.redis_enabled)

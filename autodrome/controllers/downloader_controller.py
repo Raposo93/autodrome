@@ -6,6 +6,10 @@ from autodrome.models.progress import report_progress, ProgressCallback
 from autodrome.services.organizer import Organizer
 from autodrome.services.cover_selection import CoverSelectionService
 from autodrome.services.cover_embedder import PreparedCover
+from autodrome.services.publication_catalog import (
+    PublicationCatalog,
+    PublicationCatalogError,
+)
 from autodrome.url_safety import validate_youtube_thumbnail_url
 from autodrome.metadata_service import MetadataService
 from autodrome.yt_downloader import YTDownloader
@@ -18,12 +22,18 @@ class DownloaderController:
         metadata_service: MetadataService,
         http_client: Optional[AsyncHttpClient] = None,
         cover_selection: Optional[CoverSelectionService] = None,
+        publication_catalog: Optional[PublicationCatalog] = None,
+        application_version: Optional[str] = None,
+        build_commit: Optional[str] = None,
     ) -> None:
         self.downloader = downloader
         self.organizer = organizer
         self.metadata_service = metadata_service
         self.http_client = http_client
         self.cover_selection = cover_selection
+        self.publication_catalog = publication_catalog
+        self.application_version = application_version
+        self.build_commit = build_commit
 
     async def ensure_destination_available(self, artist: str, album: str) -> None:
         destination = self.organizer.inspect_album_destination(artist, album)
@@ -45,12 +55,21 @@ class DownloaderController:
         cover_id: Optional[str] = None,
         cover_url: Optional[str] = None,
         cover_square_mode: Optional[str] = None,
-        progress: Optional[ProgressCallback] = None
-    ) -> None:
+        progress: Optional[ProgressCallback] = None,
+        job_id: Optional[str] = None,
+        playlist_id: Optional[str] = None,
+        playlist_title: Optional[str] = None,
+        playlist_channel: Optional[str] = None,
+        playlist_thumbnail: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         logger.debug(f"Starting download_and_tag for release_id: {release_id}")
+
+        if self.publication_catalog is not None and not job_id:
+            raise ValueError("A durable job ID is required for publication")
 
         await report_progress(progress, "metadata")
         manifest = None
+        release_data = None
         if metadata_mode == "manual":
             if release_id is not None or not manual_confirmed:
                 raise ValueError("Manual metadata requires explicit confirmation")
@@ -88,11 +107,12 @@ class DownloaderController:
 
         await report_progress(progress, "staging")
         with self.organizer.create_staging_folder(artist, album) as tmpdir:
-            await self.downloader.download_playlist(
+            used_manifest = await self.downloader.download_playlist(
                 playlist_url, tmpdir, total=len(tracks),
                 **({"progress": progress} if progress is not None else {}),
                 **({"manifest": manifest} if manifest is not None else {}),
             )
+            manifest = used_manifest or manifest
             if resolved_cover_source == "cover_art_archive":
                 await report_progress(progress, "cover")
                 prepared_cover = await self._prepare_cover(
@@ -115,9 +135,80 @@ class DownloaderController:
             await report_progress(progress, "validating")
             self.organizer.validate_album(tmpdir, artist, album, tracks)
             await report_progress(progress, "publishing")
-            self.organizer.move_to_library(tmpdir, artist, album)
+            destination_path = self.organizer.move_to_library(tmpdir, artist, album)
+
+            publication = None
+            if self.publication_catalog is not None:
+                try:
+                    publication = self.publication_catalog.record_publication(
+                        job_id=job_id,
+                        destination_path=destination_path,
+                        library_root=self.organizer.library_root,
+                        artist=artist,
+                        album=album,
+                        metadata_mode=metadata_mode,
+                        release=release_data,
+                        playlist={
+                            "id": playlist_id,
+                            "url": playlist_url,
+                            "title": playlist_title,
+                            "channel": playlist_channel,
+                            "thumbnail": playlist_thumbnail,
+                        },
+                        manifest=manifest,
+                        tracks=tracks,
+                        cover=self._publication_cover(
+                            requested_source=resolved_cover_source,
+                            prepared_cover=prepared_cover,
+                            cover_url=cover_url,
+                            square_mode=cover_square_mode,
+                        ),
+                        accepted_overrides=(
+                            ["manual_metadata_without_musicbrainz"]
+                            if manual_confirmed else []
+                        ),
+                        application_version=self.application_version,
+                        build_commit=self.build_commit,
+                    )
+                except Exception as error:
+                    relative_path = self.organizer.inspect_album_destination(
+                        artist, album
+                    ).get("relative_path", f"{artist}/{album}")
+                    raise PublicationCatalogError(
+                        "Album was published at "
+                        f"{relative_path}, but its provenance record could not be "
+                        "saved. Inspect the library and catalog before retrying; "
+                        "Autodrome will not overwrite the published album."
+                    ) from error
 
         logger.debug("download_workflow_completed release_id=%s", release_id)
+        return publication
+
+    @staticmethod
+    def _publication_cover(
+        *,
+        requested_source: str,
+        prepared_cover: Optional[PreparedCover],
+        cover_url: Optional[str],
+        square_mode: Optional[str],
+    ) -> Dict[str, Any]:
+        embedded = prepared_cover is not None
+        source = requested_source if embedded else "none"
+        dimensions = getattr(prepared_cover, "dimensions", None)
+        return {
+            "source": source,
+            "requested_source": requested_source,
+            "embedded": embedded,
+            "square_strategy": (
+                square_mode
+                if requested_source in {"youtube_thumbnail", "manual_upload"}
+                else None
+            ),
+            "source_url": cover_url if requested_source == "youtube_thumbnail" else None,
+            "mime_type": getattr(prepared_cover, "mime_type", None),
+            "width": dimensions[0] if dimensions else None,
+            "height": dimensions[1] if dimensions else None,
+        }
 
     async def _prepare_cover(
         self,
@@ -180,5 +271,9 @@ class DownloaderController:
             "date": release.date,
             "artist": release.artist,
             "cover_url": release.cover_url,
+            "track_count": len(release.tracks),
+            "country": release.country,
+            "media_format": release.media_format,
+            "medium_count": release.medium_count,
             "tracks": [track.to_dict() for track in release.tracks],
         }

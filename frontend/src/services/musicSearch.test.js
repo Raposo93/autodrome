@@ -15,7 +15,7 @@ const script = descriptor.script.content
 function setup(combinedSearch, playlistPreflight = async () => ({ data: { track_count: 1 } })) {
   const context = vm.createContext({
     createReleaseHydration,
-    api: { combinedSearch, playlistPreflight, releaseDetails: async () => ({ data: { tracks: [] } }) }, PlaylistsList: {}, ReleasesList: {}, Queue: {},
+    api: { combinedSearch, playlistPreflight, releaseDetails: async () => ({ data: { tracks: [] } }) }, PlaylistsList: {}, ReleasesList: {}, Queue: {}, PublishedAlbums: {},
   })
   vm.runInContext(script, context)
   const component = context.component
@@ -216,7 +216,10 @@ test('manual mode requires confirmation and submits edited metadata independent 
   const { state, context } = setup(async () => ({}))
   const downloads = []
   context.api.download = async payload => downloads.push(payload)
-  state.selectedPlaylist = { url: 'playlist', track_count: 1 }
+  state.selectedPlaylist = {
+    id: 'playlist-id', url: 'playlist', title: 'Observed playlist',
+    channel: 'Uploader', thumbnail: 'thumbnail', track_count: 1,
+  }
   state.playlistReady = true
   state.manualArtist = ' Final Artist '
   state.manualAlbum = ' Final Album '
@@ -229,7 +232,45 @@ test('manual mode requires confirmation and submits edited metadata independent 
   assert.equal(downloads[0].album, 'Final Album')
   assert.equal(downloads[0].metadata_mode, 'manual')
   assert.equal(downloads[0].release_id, null)
+  assert.equal(downloads[0].playlist_id, 'playlist-id')
+  assert.equal(downloads[0].playlist_title, 'Observed playlist')
+  assert.equal(downloads[0].playlist_channel, 'Uploader')
   state.manualAlbum = '   '
   await state.downloadManual()
   assert.equal(downloads.length, 1)
+})
+
+test('recreating a publication restores historical Review without enqueueing', () => {
+  const { state, context } = setup(async () => ({}))
+  let downloads = 0
+  context.api.download = async () => { downloads += 1 }
+  state.navigate = view => { state.lastView = view }
+  const result = {
+    review: {
+      metadata_mode: 'manual',
+      artist: 'Historical Artist',
+      album: 'Historical Album',
+      playlist: {
+        id: 'playlist-id', url: 'playlist', title: 'Historical playlist',
+        track_count: 1, tracks: [{ position: 1, title: 'Original upload' }],
+      },
+      release: null,
+      cover: { source: 'none', square_strategy: null },
+      accepted_overrides: ['manual_metadata_without_musicbrainz'],
+    },
+    drift: {
+      playlist: { status: 'changed', changes: [] },
+      release: { status: 'not_applicable', changes: [] },
+    },
+    enqueued: false,
+  }
+
+  state.recreatePublication(result)
+
+  assert.equal(downloads, 0)
+  assert.equal(state.lastView, 'review')
+  assert.equal(state.selectedPlaylist.tracks[0].title, 'Original upload')
+  assert.equal(state.manualArtist, 'Historical Artist')
+  assert.equal(state.manualConfirmed, true)
+  assert.equal(state.recreation, result)
 })

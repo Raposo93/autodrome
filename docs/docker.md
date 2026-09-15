@@ -68,8 +68,9 @@ El compose aplica esta topología dentro de un único bind mount:
 ```
 
 Staging y biblioteca permanecen en el mismo filesystem para conservar la
-publicación atómica. La cola y las portadas alternativas necesarias para Retry
-sobreviven a recreaciones del contenedor. No configures `STAGING_PATH` en otro
+publicación atómica. La cola, el catálogo de procedencia y las portadas
+alternativas necesarias para Retry sobreviven a recreaciones del contenedor.
+No configures `STAGING_PATH` en otro
 volumen: un rename entre filesystems puede fallar con `EXDEV`.
 
 Redis no forma parte del compose y permanece opcional. La fuente de verdad es

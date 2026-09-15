@@ -26,6 +26,10 @@ class Organizer:
         self.tagger = Tagger()
         self.cover_embedder = CoverEmbedder()
 
+    @property
+    def library_root(self) -> str:
+        return os.path.abspath(conf.library_path)
+
     @contextmanager
     def create_staging_folder(self, artist: str, album: str) -> Iterator[str]:
         library_root = os.path.abspath(conf.library_path)
@@ -180,7 +184,7 @@ class Organizer:
         temp_folder: str,
         artist: str,
         album: str
-    ) -> None:
+    ) -> str:
         artist_folder = os.path.dirname(self._get_album_folder(artist, album))
         album_folder = self._get_album_folder(artist, album)
 
@@ -209,6 +213,7 @@ class Organizer:
             raise
 
         logger.info("album_published path=%s", album_folder)
+        return album_folder
 
     def inspect_album_destination(self, artist: str, album: str) -> dict:
         """Inspect a final destination without creating or changing library files."""

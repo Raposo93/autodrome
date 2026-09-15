@@ -1,5 +1,10 @@
 <template>
   <div class="music-search">
+    <PublishedAlbums
+      v-if="view === 'published'"
+      @navigate="navigate"
+      @recreate="recreatePublication"
+    />
     <section v-if="view === 'dashboard'" class="dashboard-view">
       <header class="dashboard-hero">
         <button
@@ -17,9 +22,12 @@
             when you are ready.
           </p>
         </div>
-        <button class="new-download-button" type="button" @click="beginNewDownload">
-          <span aria-hidden="true">+</span> New download
-        </button>
+        <div class="dashboard-primary-actions">
+          <button type="button" @click="navigate('published')">Published albums</button>
+          <button class="new-download-button" type="button" @click="beginNewDownload">
+            <span aria-hidden="true">+</span> New download
+          </button>
+        </div>
       </header>
 
       <p v-if="dashboardNotice" class="dashboard-notice" role="status">
@@ -198,6 +206,41 @@
     </header>
 
     <section v-if="view === 'review'" class="download-panel" aria-labelledby="download-title">
+      <section v-if="recreation" class="recreation-notice" aria-labelledby="recreation-title">
+        <p class="panel-kicker">Recreated from durable provenance</p>
+        <h2 id="recreation-title">Historical decisions are preserved</h2>
+        <p>
+          Nothing was queued. The original manifest and MusicBrainz metadata remain selected;
+          current provider responses are shown separately below.
+        </p>
+        <p>
+          Original cover: {{ recreation.review.cover.source.replaceAll('_', ' ') }}<template
+            v-if="recreation.review.cover.square_strategy"
+          > · {{ recreation.review.cover.square_strategy }}</template>.
+        </p>
+        <div class="recreation-drift">
+          <div :class="`drift-card drift-card--${recreation.drift.playlist.status}`">
+            <strong>YouTube: {{ driftLabel(recreation.drift.playlist) }}</strong>
+            <span v-if="recreation.drift.playlist.error">{{ recreation.drift.playlist.error }}</span>
+            <ul v-else-if="recreation.drift.playlist.changes.length">
+              <li v-for="change in recreation.drift.playlist.changes" :key="change.position">
+                Position {{ change.position }}: {{ change.status }}
+                <template v-if="change.original?.title"> · was “{{ change.original.title }}”</template>
+                <template v-if="change.current?.title"> · now “{{ change.current.title }}”</template>
+              </li>
+            </ul>
+          </div>
+          <div :class="`drift-card drift-card--${recreation.drift.release.status}`">
+            <strong>MusicBrainz: {{ driftLabel(recreation.drift.release) }}</strong>
+            <span v-if="recreation.drift.release.error">{{ recreation.drift.release.error }}</span>
+            <ul v-else-if="recreation.drift.release.changes.length">
+              <li v-for="change in recreation.drift.release.changes" :key="change.field">
+                {{ change.field }} changed
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
       <div class="download-heading">
         <p class="eyebrow">Current selection</p>
         <h2 id="download-title">Review download</h2>
@@ -549,6 +592,7 @@ import { trackCountError } from '../services/downloadSelection.js'
 import PlaylistsList from './PlaylistsList.vue'
 import ReleasesList from './ReleasesList.vue'
 import Queue from './Queue.vue'
+import PublishedAlbums from './PublishedAlbums.vue'
 
 export default {
   emits: ['navigate', 'show-status'],
@@ -561,7 +605,8 @@ export default {
   components: {
     PlaylistsList,
     ReleasesList,
-    Queue
+    Queue,
+    PublishedAlbums,
   },
   computed: {
     canReview() {
@@ -751,7 +796,8 @@ export default {
       compatibilityKey: null,
       compatibilityGeneration: 0,
       defaultPlaylistImg: '/default__no_cover.jpg',
-      defaultReleaseImg: '/default__no_cover.jpg'
+      defaultReleaseImg: '/default__no_cover.jpg',
+      recreation: null,
     }
   },
   beforeUnmount() {
@@ -812,6 +858,7 @@ export default {
       this.releaseDetailsLoading = false
       this.releaseDetailsReady = false
       this.downloadError = null
+      this.recreation = null
       this.resetCompatibility()
       this.resetCoverChoice()
     },
@@ -827,6 +874,44 @@ export default {
         review: 'Review recommended',
         mismatch: 'Likely wrong release',
       }[status] || 'Unknown'
+    },
+    driftLabel(drift) {
+      return {
+        unchanged: 'no drift detected',
+        changed: `${drift.changes.length} change${drift.changes.length === 1 ? '' : 's'} detected`,
+        unavailable: 'current provider response unavailable',
+        not_applicable: 'not applicable',
+      }[drift.status] || 'unknown state'
+    },
+    recreatePublication(result) {
+      this.clearWorkflow()
+      this.recreation = result
+      const review = result.review
+      this.selectedPlaylist = review.playlist
+      this.playlists = [review.playlist]
+      this.playlistReady = true
+      this.artist = review.artist
+      this.album = review.album
+      if (review.release) {
+        this.selectedRelease = review.release
+        this.releases = [review.release]
+        this.releaseDetailsReady = true
+        this.releaseDetailsLoading = false
+        this.coverSelection = review.cover?.source === 'cover_art_archive'
+          ? null
+          : {
+              source: review.cover?.source || 'none',
+              square_mode: review.cover?.square_strategy || undefined,
+            }
+        this.loadCompatibility()
+      } else {
+        this.manualPrompt = true
+        this.manualConfirmed = true
+        this.manualArtist = review.artist
+        this.manualAlbum = review.album
+        this.coverSelection = { source: 'none' }
+      }
+      this.navigate('review')
     },
     trackStatusLabel(status) {
       return {
@@ -1029,6 +1114,7 @@ export default {
       try {
         await api.download({
           playlist_url: this.selectedPlaylist.url,
+          ...this.selectedPlaylistProvenance(),
           track_count: this.selectedPlaylist.track_count,
           release_id: null, metadata_mode: 'manual', manual_confirmed: true,
           cover_source: 'none',
@@ -1163,6 +1249,14 @@ export default {
           : {}),
       }
     },
+    selectedPlaylistProvenance() {
+      return {
+        playlist_id: this.selectedPlaylist?.id || null,
+        playlist_title: this.selectedPlaylist?.title || null,
+        playlist_channel: this.selectedPlaylist?.channel || null,
+        playlist_thumbnail: this.selectedPlaylist?.thumbnail || null,
+      }
+    },
     async downloadSelected() {
       if (this.downloading) return
       if (!this.selectionReady) {
@@ -1175,6 +1269,7 @@ export default {
       try {
         await api.download({
           playlist_url: this.selectedPlaylist.url,
+          ...this.selectedPlaylistProvenance(),
           artist: this.selectedRelease.artist,
           album: this.selectedRelease.title,
           release_id: this.selectedRelease.id,

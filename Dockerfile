@@ -31,6 +31,7 @@ ENV API_HOST=0.0.0.0 \
     HOME=/home/autodrome \
     LIBRARY_PATH=/music \
     PYTHONUNBUFFERED=1 \
+    PUBLICATION_CATALOG_PATH=/music/.autodrome-publications.sqlite3 \
     QUEUE_STATE_PATH=/music/.autodrome-queue.json \
     STAGING_PATH=/music/.autodrome-staging \
     YT_DLP_DENO_PATH=/usr/local/bin/deno

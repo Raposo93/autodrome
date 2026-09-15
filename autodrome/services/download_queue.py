@@ -234,6 +234,7 @@ class DownloadQueueManager:
                 download_task = asyncio.create_task(
                     self.downloader.download_and_tag(
                         progress=progress,
+                        job_id=job_id,
                         playlist_url=payload["playlist_url"],
                         artist=payload["artist"],
                         album=payload["album"],
@@ -242,6 +243,10 @@ class DownloadQueueManager:
                         **{
                             key: payload[key]
                             for key in (
+                                "playlist_id",
+                                "playlist_title",
+                                "playlist_channel",
+                                "playlist_thumbnail",
                                 "cover_source",
                                 "cover_id",
                                 "cover_url",
@@ -430,9 +435,15 @@ class DownloadQueueManager:
                 raise ValueError(f"Duplicate persisted job ID: {job.job_id}")
 
             if job.status == "running":
+                publication_uncertain = (job.progress or {}).get("phase") == "publishing"
                 job.transition(
                     "interrupted",
-                    "Application restarted before the download completed",
+                    (
+                        "Application restarted during publication; inspect the library "
+                        "and publication history before retrying"
+                        if publication_uncertain
+                        else "Application restarted before the download completed"
+                    ),
                 )
                 recovered_active_job = True
                 self._recovered_running_jobs += 1

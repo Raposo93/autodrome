@@ -59,6 +59,10 @@ class Config:
             "QUEUE_STATE_PATH",
             os.path.join(self.library_path, ".autodrome-queue.json"),
         )
+        self.publication_catalog_path = os.getenv(
+            "PUBLICATION_CATALOG_PATH",
+            os.path.join(self.library_path, ".autodrome-publications.sqlite3"),
+        )
         self.download_concurrency = self._read_int(
             "DOWNLOAD_CONCURRENCY",
             1,

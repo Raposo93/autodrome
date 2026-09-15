@@ -14,7 +14,7 @@ async def test_frontend_routes_and_missing_assets(tmp_path):
     app = FastAPI()
     app.mount('/', FrontendFiles(directory=tmp_path))
     async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
-        for path in ('/', '/library/album'):
+        for path in ('/', '/library/album', '/published'):
             response = await client.get(path)
             assert response.status_code == 200
             assert '<h1>Autodrome</h1>' in response.text

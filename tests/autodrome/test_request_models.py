@@ -21,9 +21,15 @@ VALID_DOWNLOAD = {
 
 class TestRequestModels(unittest.TestCase):
     def test_valid_download_is_normalized(self):
-        request = DownloadRequest(**{**VALID_DOWNLOAD, "artist": "  Artist  "})
+        request = DownloadRequest(**{
+            **VALID_DOWNLOAD,
+            "playlist_url": VALID_DOWNLOAD["playlist_url"] + "&si=tracking-value",
+            "artist": "  Artist  ",
+        })
 
         self.assertEqual(request.artist, "Artist")
+        self.assertEqual(request.playlist_id, "PL1234567890")
+        self.assertEqual(request.playlist_url, VALID_DOWNLOAD["playlist_url"])
         self.assertEqual(request.model_dump(mode="json")["release_id"], VALID_DOWNLOAD["release_id"])
 
     def test_download_preserves_known_zero_and_unknown_counts(self):
@@ -53,6 +59,9 @@ class TestRequestModels(unittest.TestCase):
         ):
             with self.subTest(url=url), self.assertRaises(ValidationError):
                 DownloadRequest(**{**VALID_DOWNLOAD, "playlist_url": url})
+
+        with self.assertRaisesRegex(ValidationError, "does not match"):
+            DownloadRequest(**VALID_DOWNLOAD, playlist_id="PL0000000000")
 
     def test_download_rejects_unsafe_path_components(self):
         for component in (".", "..", "/tmp/album", "C:\\Music\\Album"):

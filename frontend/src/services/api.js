@@ -24,6 +24,17 @@ export default {
   systemStatus() {
     return apiClient.get('/status/')
   },
+  publications() {
+    return apiClient.get('/publications/')
+  },
+
+  publication(publicationId) {
+    return apiClient.get(`/publications/${encodeURIComponent(publicationId)}`)
+  },
+
+  recreatePublication(publicationId) {
+    return apiClient.post(`/publications/${encodeURIComponent(publicationId)}/recreate`)
+  },
   combinedSearch(artist, album, resultLimit = 10, maxTracks = null) {
     const params = { artist, album, result_limit: resultLimit }
     if (maxTracks !== null && maxTracks !== undefined) {

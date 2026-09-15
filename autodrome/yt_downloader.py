@@ -67,7 +67,7 @@ class YTDownloader:
         total: Optional[int] = None,
         manifest=None,
         progress: Optional[ProgressCallback] = None,
-    ) -> None:
+    ) -> dict:
         logger.debug("playlist_download_started destination=%s", dest)
 
         await report_progress(progress, "manifest")
@@ -77,6 +77,20 @@ class YTDownloader:
             track_urls = [track["url"] for track in manifest["tracks"]]
         else:
             track_urls = await self.get_playlist_track_urls(url)
+            cached = self._manifests.get(url)
+            manifest = cached[1] if cached else {
+                "tracks": [
+                    {
+                        "position": position,
+                        "id": None,
+                        "url": track_url,
+                        "title": f"Track {position}",
+                    }
+                    for position, track_url in enumerate(track_urls, 1)
+                ],
+                "track_count": len(track_urls),
+                "unavailable": 0,
+            }
         self.validate_manifest(track_urls, total)
 
         hook = self._build_progress_hook(total or len(track_urls))
@@ -91,6 +105,7 @@ class YTDownloader:
             raise PlaylistDownloadError(failures)
 
         await self._check_downloaded_files(dest)
+        return manifest
 
     async def _download_tracks(
         self,
@@ -168,19 +183,32 @@ class YTDownloader:
                 "[YTDownloader] The playlist does not contain downloadable tracks"
             )
 
-    async def get_playlist_manifest(self, url: str, total=None):
+    async def get_playlist_manifest(
+        self,
+        url: str,
+        total=None,
+        *,
+        refresh=False,
+        allow_unavailable=False,
+    ):
         cached = self._manifests.get(url)
-        if cached and time.monotonic() - cached[0] < self.manifest_ttl_seconds:
+        if (
+            not refresh
+            and cached
+            and time.monotonic() - cached[0] < self.manifest_ttl_seconds
+        ):
             manifest = cached[1]
         else:
             manifest = await asyncio.to_thread(self._extract_manifest, url)
-            if manifest["unavailable"]:
+            if manifest["unavailable"] and not allow_unavailable:
                 raise RuntimeError("Playlist contains unavailable or unextractable entries")
+            if not allow_unavailable:
+                self.validate_manifest(manifest["tracks"], total)
+                if len(self._manifests) >= 16:
+                    self._manifests.pop(next(iter(self._manifests)))
+                self._manifests[url] = (time.monotonic(), manifest)
+        if not allow_unavailable:
             self.validate_manifest(manifest["tracks"], total)
-            if len(self._manifests) >= 16:
-                self._manifests.pop(next(iter(self._manifests)))
-            self._manifests[url] = (time.monotonic(), manifest)
-        self.validate_manifest(manifest["tracks"], total)
         return manifest
 
     async def get_playlist_track_urls(self, url: str) -> List[str]:

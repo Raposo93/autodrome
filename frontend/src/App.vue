@@ -26,6 +26,7 @@ import api, { setApiToken } from './services/api.js'
 
 function viewFromPath(path) {
   if (path === '/status') return 'status'
+  if (path === '/published') return 'published'
   if (path === '/new/review') return 'review'
   if (path === '/new') return 'select'
   return 'dashboard'
@@ -63,6 +64,7 @@ export default {
         select: '/new',
         review: '/new/review',
         status: '/status',
+        published: '/published',
       }
       window.history.pushState({}, '', paths[view] || '/')
     },

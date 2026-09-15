@@ -30,6 +30,7 @@ def test_compose_keeps_all_durable_paths_on_one_music_mount():
     assert environment["LIBRARY_PATH"] == "/music"
     assert environment["STAGING_PATH"].startswith("/music/")
     assert environment["QUEUE_STATE_PATH"].startswith("/music/")
+    assert environment["PUBLICATION_CATALOG_PATH"].startswith("/music/")
     assert environment["COVER_STORAGE_PATH"].startswith("/music/")
     assert service["volumes"] == [
         "${MUSIC_PATH:?Set MUSIC_PATH to a writable host music directory}:/music"

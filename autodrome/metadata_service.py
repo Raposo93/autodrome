@@ -73,9 +73,9 @@ class MetadataService:
         }
         self.redis_cache.set_release(release.id, cache_data)
 
-    async def get_release(self, release_id: str) -> Release:
+    async def get_release(self, release_id: str, *, refresh: bool = False) -> Release:
         """Fetch the metadata required to download a release by its ID."""
-        cached = self.redis_cache.get_release(release_id)
+        cached = None if refresh else self.redis_cache.get_release(release_id)
         release = self._release_from_cache(release_id, cached)
         if release is not None:
             logger.debug(f"Cache hit for release {release_id}")

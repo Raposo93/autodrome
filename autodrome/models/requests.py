@@ -1,5 +1,5 @@
 from typing import Annotated, List, Optional, Literal
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
@@ -29,6 +29,10 @@ class DownloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     playlist_url: str
+    playlist_id: Optional[NonEmptyText] = None
+    playlist_title: Optional[TrackTitle] = None
+    playlist_channel: Optional[NonEmptyText] = None
+    playlist_thumbnail: Optional[str] = None
     artist: NonEmptyText
     album: NonEmptyText
     release_id: Optional[UUID] = None
@@ -42,6 +46,11 @@ class DownloadRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_metadata_mode(self):
+        playlist_ids = parse_qs(urlsplit(self.playlist_url).query).get("list", [])
+        if len(playlist_ids) == 1:
+            if self.playlist_id is not None and self.playlist_id != playlist_ids[0]:
+                raise ValueError("Playlist identifier does not match its URL")
+            self.playlist_id = playlist_ids[0]
         if self.metadata_mode == "manual":
             if self.release_id is not None or not self.manual_confirmed:
                 raise ValueError("Manual metadata requires confirmation and no MusicBrainz release")
@@ -76,6 +85,13 @@ class DownloadRequest(BaseModel):
         ):
             raise ValueError("No-cover selection cannot include an image")
         return self
+
+    @field_validator("playlist_thumbnail")
+    @classmethod
+    def validate_playlist_thumbnail(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return validate_youtube_thumbnail_url(value)
 
     @field_validator("artist", "album")
     @classmethod
@@ -116,7 +132,15 @@ class DownloadRequest(BaseModel):
         ):
             raise ValueError("Playlist URL contains an invalid playlist identifier")
 
-        return value
+        return urlunsplit(
+            (
+                "https",
+                "www.youtube.com",
+                "/playlist",
+                urlencode({"list": playlist_id}),
+                "",
+            )
+        )
 
 
 class PlaylistPreflightRequest(BaseModel):

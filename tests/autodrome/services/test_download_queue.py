@@ -51,6 +51,7 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
         )
         self.downloader.download_and_tag.assert_awaited_once_with(
             progress=ANY,
+            job_id=job_id,
             playlist_url=PAYLOAD["playlist_url"],
             artist=PAYLOAD["artist"],
             album=PAYLOAD["album"],
@@ -417,6 +418,28 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
         finally:
             await restarted_manager.stop()
 
+    async def test_restart_during_publication_requires_library_inspection(self):
+        job = DownloadJob.create(PAYLOAD)
+        job.transition("running")
+        job.progress = {
+            "phase": "publishing", "current": None,
+            "total": None, "completed": None,
+        }
+        with open(self.state_path, "w", encoding="utf-8") as state_file:
+            json.dump({"version": 1, "jobs": [job.to_storage_dict()]}, state_file)
+
+        restarted_downloader = AsyncMock()
+        restarted_manager = DownloadQueueManager(
+            restarted_downloader,
+            AsyncMock(),
+            self.state_path,
+        )
+        recovered = restarted_manager.snapshot()[0]
+
+        self.assertEqual(recovered["status"], "interrupted")
+        self.assertIn("inspect the library and publication history", recovered["error"])
+        restarted_downloader.download_and_tag.assert_not_awaited()
+
     async def test_terminal_jobs_are_preserved_without_rerunning(self):
         succeeded_job = DownloadJob.create(PAYLOAD)
         succeeded_job.transition("succeeded")
@@ -528,7 +551,9 @@ class TestDownloadQueueManager(unittest.IsolatedAsyncioTestCase):
                 await restored.retry_job(original.job_id)
             restored.start()
             await asyncio.wait_for(restored.queue.join(), timeout=1)
-            self.downloader.download_and_tag.assert_awaited_once_with(**PAYLOAD, progress=ANY)
+            self.downloader.download_and_tag.assert_awaited_once_with(
+                **PAYLOAD, progress=ANY, job_id=retry_id
+            )
             self.assertEqual(restored._jobs[retry_id].status, "succeeded")
             self.assertEqual(restored._jobs[retry_id].retry_of, original.job_id)
             self.assertEqual(restored._jobs[original.job_id].error, "original failure")
@@ -720,7 +745,9 @@ class TestManualQueue(unittest.IsolatedAsyncioTestCase):
             try:
                 restored.start()
                 await asyncio.wait_for(restored.queue.join(), 1)
-                downloader.download_and_tag.assert_awaited_once_with(**payload, progress=ANY)
+                downloader.download_and_tag.assert_awaited_once_with(
+                    **payload, progress=ANY, job_id=retry
+                )
                 self.assertEqual(restored._jobs[retry].payload, payload)
                 self.assertEqual(restored._jobs[original].status, 'failed')
             finally:
@@ -750,7 +777,7 @@ class TestCoverChoiceQueue(unittest.IsolatedAsyncioTestCase):
                 restored.start()
                 await asyncio.wait_for(restored.queue.join(), 1)
                 downloader.download_and_tag.assert_awaited_once_with(
-                    **payload, progress=ANY
+                    **payload, progress=ANY, job_id=retry
                 )
                 self.assertEqual(restored._jobs[retry].payload, payload)
             finally:

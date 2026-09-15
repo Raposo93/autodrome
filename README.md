@@ -16,6 +16,7 @@ del producto. Producción arranca mediante el comando instalado `autodrome`;
 - Metadatos y nombres correctos para releases de uno o varios discos.
 - Validación, optimización y MIME real de las portadas embebidas.
 - Preparación en staging y publicación atómica sin sobrescribir álbumes.
+- Historial durable de publicaciones con procedencia, mapping y SHA-256 finales.
 - Redis opcional como caché; nunca se necesita para completar una descarga.
 - Diagnóstico seguro de almacenamiento, worker y dependencias desde `/status`.
 
@@ -332,6 +333,8 @@ La configuración principal vive en `.env`:
   `LIBRARY_PATH/.autodrome-staging`.
 - `QUEUE_STATE_PATH`: estado durable de la cola; por defecto,
   `LIBRARY_PATH/.autodrome-queue.json`.
+- `PUBLICATION_CATALOG_PATH`: catálogo SQLite durable de álbumes publicados;
+  por defecto, `LIBRARY_PATH/.autodrome-publications.sqlite3`.
 - `MIN_STAGING_FREE_BYTES`: espacio mínimo antes de descargar; 1 GiB por
   defecto.
 - `PRESERVE_FAILED_STAGING`: conserva (`true`) o elimina (`false`) los trabajos
@@ -443,6 +446,15 @@ sin reemplazarlo.
 
 Al reiniciar, los trabajos `queued` se reanudan en orden. Un trabajo que estaba
 `running` pasa a `interrupted` y conserva el último error; no se repite a ciegas.
+
+Cada publicación completada queda registrada en el catálogo SQLite configurado
+por `PUBLICATION_CATALOG_PATH`. La vista **Published albums** permite inspeccionar
+la release, playlist, manifest, correspondencia de pistas, portada, versión del
+build y checksums de los ficheros finales. **Recreate in Review** reconstruye las
+decisiones históricas sin encolar nada y compara por separado el estado actual
+de YouTube y MusicBrainz para mostrar drift. Si el rename final termina pero el
+catálogo no puede guardarse, el job falla con el destino publicado explícito:
+inspecciona biblioteca y catálogo antes de intentar cualquier recuperación.
 
 Desde la cola, **Cancel** impide que un trabajo `queued` llegue a ejecutarse y lo
 conserva como `cancelled`. No interrumpe trabajos que ya estén `running`.

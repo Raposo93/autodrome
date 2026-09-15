@@ -10,12 +10,14 @@ from fastapi.responses import JSONResponse
 
 from api.download import download_router
 from api.frontend import FrontendFiles
+from api.publications import publication_router
 from api.search import search_router
 from api.status import status_router
 from api.websocket import websocket_router
 from autodrome import config
 from autodrome.controllers.downloader_controller import DownloaderController
 from autodrome.controllers.search_controller import SearchController
+from autodrome.controllers.publication_controller import PublicationController
 from autodrome.http_client_async import AsyncHttpClient
 from autodrome.metadata_service import MetadataService
 from autodrome.security import extract_bearer_token, token_matches
@@ -23,10 +25,12 @@ from autodrome.services import websocket_manager
 from autodrome.services.cover_selection import CoverSelectionService
 from autodrome.services.download_queue import DownloadQueueManager
 from autodrome.services.organizer import Organizer
+from autodrome.services.publication_catalog import PublicationCatalog
 from autodrome.services.redis_cache import NullCache, RedisCache
 from autodrome.services.system_status import SystemStatusService
 from autodrome.services.websocket_tickets import WebSocketTicketStore
 from autodrome.yt_downloader import YTDownloader
+from autodrome.version import build_commit
 
 
 FRONTEND_DIRECTORY = Path(__file__).resolve().parent / "static"
@@ -50,6 +54,7 @@ async def lifespan(app: FastAPI):
         metadata_service=metadata_service,
     )
     organizer = Organizer()
+    publication_catalog = PublicationCatalog(conf.publication_catalog_path)
     cover_selection = CoverSelectionService(
         http_client=http_client,
         embedder=organizer.cover_embedder,
@@ -64,6 +69,14 @@ async def lifespan(app: FastAPI):
         metadata_service=metadata_service,
         http_client=http_client,
         cover_selection=cover_selection,
+        publication_catalog=publication_catalog,
+        application_version=conf.version,
+        build_commit=build_commit(),
+    )
+    publication_controller = PublicationController(
+        catalog=publication_catalog,
+        downloader=downloader_controller.downloader,
+        metadata_service=metadata_service,
     )
     ws_manager = websocket_manager.WebSocketManager()
     queue_manager = DownloadQueueManager(
@@ -83,6 +96,7 @@ async def lifespan(app: FastAPI):
     app.state.config = conf
     app.state.search_controller = search_controller
     app.state.downloader_controller = downloader_controller
+    app.state.publication_controller = publication_controller
     app.state.cover_selection = cover_selection
     app.state.queue_manager = queue_manager
     app.state.system_status = system_status
@@ -129,6 +143,7 @@ app.include_router(search_router, prefix="/api/search")
 app.include_router(download_router, prefix="/api/download")
 app.include_router(websocket_router)
 app.include_router(status_router, prefix="/api/status")
+app.include_router(publication_router, prefix="/api/publications")
 
 
 @app.get("/api/auth")

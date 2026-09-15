@@ -75,6 +75,15 @@ export class ControlledBackend {
     const method = request.method()
     if (method === 'GET' && path === '/api/search/') return 'search'
     if (method === 'GET' && path === '/api/status/') return 'status'
+    if (method === 'GET' && path === '/api/publications/') return 'publications'
+    const publicationRecreate = path.match(/^\/api\/publications\/([^/]+)\/recreate$/)
+    if (method === 'POST' && publicationRecreate) {
+      return `publication-recreate:${decodeURIComponent(publicationRecreate[1])}`
+    }
+    const publication = path.match(/^\/api\/publications\/([^/]+)$/)
+    if (method === 'GET' && publication) {
+      return `publication:${decodeURIComponent(publication[1])}`
+    }
     if (method === 'GET' && path.startsWith('/api/search/releases/')) {
       return `release:${decodeURIComponent(path.slice('/api/search/releases/'.length))}`
     }

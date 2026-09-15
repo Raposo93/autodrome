@@ -12,6 +12,7 @@ from autodrome.services.ytdlp_runtime import (
     UnsupportedDenoVersion,
     read_deno_version,
 )
+from autodrome.version import build_commit
 
 
 Component = Dict[str, Any]
@@ -56,7 +57,7 @@ class SystemStatusService:
         storage_error = self._sanitized_storage_error()
         return {
             "version": self.settings.version or "unknown",
-            "commit": self._build_commit(),
+            "commit": build_commit(),
             "components": {
                 "library": self._safe_sync_check(
                     lambda: self._check_directory(self.settings.library_path),
@@ -366,16 +367,6 @@ class SystemStatusService:
         except PackageNotFoundError:
             ejs_version = None
         return yt_dlp_version, ejs_version
-
-    @staticmethod
-    def _build_commit() -> Optional[str]:
-        for variable in ("AUTODROME_COMMIT", "GIT_COMMIT"):
-            value = os.getenv(variable, "").strip().lower()
-            if 7 <= len(value) <= 40 and all(
-                character in "0123456789abcdef" for character in value
-            ):
-                return value
-        return None
 
     @staticmethod
     def _filesystem_error_message(error: OSError) -> str:

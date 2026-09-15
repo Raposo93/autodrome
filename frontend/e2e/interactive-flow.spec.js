@@ -101,6 +101,67 @@ test('dashboard reveals the download flow without reopening it on refresh', asyn
   await expect(page.getByLabel('Artist')).toHaveCount(0)
 })
 
+test('published provenance can be inspected and recreated without enqueueing', async ({ page }) => {
+  const backend = new ControlledBackend()
+  await openApp(page, backend)
+  await page.getByRole('button', { name: 'Published albums' }).click()
+  const history = await backend.next('publications')
+  const summary = {
+    publication_id: 'pub-1', job_id: 'job-1', published_at: '2026-09-15T12:00:00Z',
+    track_count: 1,
+    destination: { relative_path: 'Historical Artist/Historical Album' },
+    metadata: { mode: 'manual', artist: 'Historical Artist', album: 'Historical Album' },
+    release: null,
+    playlist: { id: 'playlist-id', url: 'https://youtube.test/playlist?list=playlist-id', title: 'Historical playlist' },
+    cover: { source: 'none', square_strategy: null },
+    autodrome: { version: 'autodrome/test', commit: 'abcdef1' },
+  }
+  await history.reply([summary])
+  await expect(page.getByRole('heading', { name: 'Published albums' })).toBeVisible()
+  await expect(page.getByText('Historical Artist — Historical Album')).toBeVisible()
+
+  await page.getByRole('button', { name: 'View provenance' }).click()
+  const detailRequest = await backend.next('publication:pub-1')
+  const detail = {
+    ...summary,
+    record_version: 1,
+    metadata: {
+      ...summary.metadata, date: null,
+      tracks: [{ disc_number: 1, position: 1, global_position: 1, title: 'Original track', artist: null }],
+    },
+    manifest: { track_count: 1, unavailable: 0, tracks: [{ position: 1, id: 'video-1', url: 'video', title: 'Original upload' }] },
+    mapping: [{ playlist_position: 1, video_id: 'video-1', metadata_position: 1, disc_number: 1, track_position: 1, title: 'Original track', published_file: '01 - Original track.mp3' }],
+    files: [{ name: '01 - Original track.mp3', size: 123, sha256: 'a'.repeat(64) }],
+    accepted_overrides: ['manual_metadata_without_musicbrainz'],
+  }
+  await detailRequest.reply(detail)
+  await expect(page.getByText(`SHA-256 ${'a'.repeat(64)}`)).toBeVisible()
+  await expect(page.getByText('Original upload')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Recreate in Review' }).click()
+  const recreate = await backend.next('publication-recreate:pub-1')
+  await recreate.reply({
+    publication: detail,
+    review: {
+      metadata_mode: 'manual', artist: 'Historical Artist', album: 'Historical Album',
+      playlist: { ...summary.playlist, track_count: 1, tracks: detail.manifest.tracks },
+      release: null, cover: detail.cover,
+      accepted_overrides: detail.accepted_overrides,
+    },
+    drift: {
+      playlist: { status: 'changed', changed: true, error: null, changes: [{ position: 1, status: 'changed', original: detail.manifest.tracks[0], current: { position: 1, title: 'Current upload' } }] },
+      release: { status: 'not_applicable', changed: false, error: null, changes: [] },
+    },
+    enqueued: false,
+  })
+  const destination = await backend.next('destination')
+  await destination.reply({ state: 'exists', exists: true, relative_path: 'Historical Artist/Historical Album', mp3_count: 1 })
+  await expect(page.getByRole('heading', { name: 'Historical decisions are preserved' })).toBeVisible()
+  await expect(page.getByText(/was “Original upload”.*now “Current upload”/)).toBeVisible()
+  await expect(page.getByText('This album already appears to exist in the library.')).toBeVisible()
+  expect(backend.callCount('download')).toBe(0)
+})
+
 test('a stale review URL falls back to a fresh selection screen', async ({ page }) => {
   const backend = new ControlledBackend()
   await backend.install(page)
@@ -201,6 +262,10 @@ test('happy path queues one fully checked download', async ({ page }) => {
   const download = await backend.next('download')
   expect(download.body).toEqual({
     playlist_url: 'https://youtube.test/playlist?list=happy',
+    playlist_id: 'happy',
+    playlist_title: 'Playlist happy',
+    playlist_channel: 'Channel happy',
+    playlist_thumbnail: 'https://i.ytimg.com/vi/happy/mqdefault.jpg',
     artist: 'Artist happy',
     album: 'Release happy',
     release_id: 'happy',
@@ -666,6 +731,10 @@ test('manual mode is explicit and does not acquire MusicBrainz metadata', async 
   const download = await backend.next('download')
   expect(download.body).toEqual({
     playlist_url: 'https://youtube.test/playlist?list=manual',
+    playlist_id: 'manual',
+    playlist_title: 'Playlist manual',
+    playlist_channel: 'Channel manual',
+    playlist_thumbnail: 'https://i.ytimg.com/vi/manual/mqdefault.jpg',
     track_count: 3,
     release_id: null,
     metadata_mode: 'manual',
@@ -730,6 +799,10 @@ test('missing archive artwork requires and persists the selected playlist thumbn
   const download = await backend.next('download')
   expect(download.body).toEqual({
     playlist_url: 'https://youtube.test/playlist?list=fallback',
+    playlist_id: 'fallback',
+    playlist_title: 'Playlist fallback',
+    playlist_channel: 'Channel fallback',
+    playlist_thumbnail: 'https://i.ytimg.com/vi/fallback/mqdefault.jpg',
     artist: 'Artist fallback',
     album: 'Release fallback',
     release_id: 'fallback',

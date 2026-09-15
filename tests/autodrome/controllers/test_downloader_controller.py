@@ -6,19 +6,34 @@ from autodrome.metadata_service import MetadataService
 from autodrome.models.release import Release
 from autodrome.models.track import Track
 from autodrome.services.redis_cache import RedisCache
+from autodrome.services.publication_catalog import PublicationCatalogError
 from autodrome.yt_downloader import PlaylistDownloadError
 
 
 class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.downloader = MagicMock()
-        self.downloader.download_playlist = AsyncMock()
+        self.manifest = {
+            "unavailable": 0,
+            "tracks": [
+                {
+                    "position": 1,
+                    "id": "video-1",
+                    "url": "https://youtube.test/watch?v=video-1",
+                    "title": "First upload",
+                }
+            ],
+        }
+        self.downloader.download_playlist = AsyncMock(return_value=self.manifest)
+        self.downloader.get_playlist_manifest = AsyncMock(return_value=self.manifest)
 
         self.organizer = MagicMock()
         self.organizer.cover_embedder.prepare_cover.return_value = "prepared-caa"
         self.organizer.create_staging_folder.return_value.__enter__.return_value = (
             "/tmp/autodrome-download"
         )
+        self.organizer.move_to_library.return_value = "/library/Artist/Album"
+        self.organizer.library_root = "/library"
         self.metadata_service = MagicMock()
         self.metadata_service.get_release = AsyncMock(
             return_value=Release(
@@ -339,3 +354,55 @@ class TestManualDownload(unittest.IsolatedAsyncioTestCase):
                                                    metadata_mode="manual", manual_confirmed=True)
         self.organizer.create_staging_folder.assert_not_called()
         self.downloader.download_playlist.assert_not_awaited()
+
+    async def test_success_records_final_publication_provenance(self):
+        catalog = MagicMock()
+        self.controller.publication_catalog = catalog
+        self.controller.application_version = "autodrome/test"
+        self.controller.build_commit = "abcdef1"
+
+        await self.controller.download_and_tag(
+            "https://www.youtube.com/playlist?list=PL1234567890",
+            "Artist",
+            "Album",
+            "release-1",
+            track_count=1,
+            job_id="job-1",
+            playlist_id="PL1234567890",
+            playlist_title="Album playlist",
+            playlist_channel="Uploader",
+        )
+
+        self.organizer.move_to_library.assert_called_once()
+        call = catalog.record_publication.call_args.kwargs
+        self.assertEqual(call["job_id"], "job-1")
+        self.assertEqual(call["destination_path"], "/library/Artist/Album")
+        self.assertIs(call["manifest"], self.manifest)
+        self.assertEqual(call["playlist"]["title"], "Album playlist")
+        self.assertEqual(call["release"]["tracks"][0]["title"], "First")
+        self.assertEqual(call["application_version"], "autodrome/test")
+
+    async def test_catalog_failure_after_rename_is_diagnostic_and_not_republished(self):
+        catalog = MagicMock()
+        catalog.record_publication.side_effect = OSError("disk full")
+        self.controller.publication_catalog = catalog
+        self.organizer.inspect_album_destination.return_value = {
+            "relative_path": "Artist/Album",
+            "state": "exists",
+        }
+
+        with self.assertRaisesRegex(
+            PublicationCatalogError,
+            "published at Artist/Album.*will not overwrite",
+        ):
+            await self.controller.download_and_tag(
+                "https://www.youtube.com/playlist?list=PL1234567890",
+                "Artist",
+                "Album",
+                "release-1",
+                track_count=1,
+                job_id="job-1",
+            )
+
+        self.organizer.move_to_library.assert_called_once()
+        catalog.record_publication.assert_called_once()

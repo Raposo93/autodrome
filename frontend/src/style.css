@@ -333,6 +333,62 @@ input:focus-visible {
   font-size: 1.15rem;
 }
 
+.dashboard-primary-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard-primary-actions > button:first-child {
+  min-height: 48px;
+  padding: 0 16px;
+  color: #ffffff;
+  font-weight: 750;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 12px;
+}
+
+.recreation-notice {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  color: var(--brand-dark);
+  background: #eef8f7;
+  border: 1px solid #afd9d5;
+  border-radius: 14px;
+}
+
+.recreation-notice h2,
+.recreation-notice p {
+  margin: 0;
+}
+
+.recreation-drift {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.drift-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.drift-card--changed,
+.drift-card--unavailable {
+  border-color: #d69d62;
+}
+
+.drift-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
 .dashboard-notice {
   margin: 0;
   padding: 13px 16px;
@@ -1574,6 +1630,15 @@ input:focus-visible {
 
   .new-download-button {
     width: 100%;
+  }
+
+  .dashboard-primary-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .recreation-drift {
+    grid-template-columns: 1fr;
   }
 
   .review-navigation {
