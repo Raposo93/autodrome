@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 import {
   ControlledBackend,
@@ -1025,3 +1026,76 @@ test('missing archive artwork can be consciously queued without a cover', async 
   expect(backend.callCount('cover-manual')).toBe(0)
   await download.reply({ job_id: 'none-job' }, 202)
 })
+
+
+const recreatedCoverPayloads = JSON.parse(readFileSync(
+  new URL('../../tests/fixtures/recreated_cover_downloads.json', import.meta.url), 'utf8',
+))
+
+for (const [source, expectedPayload] of Object.entries(recreatedCoverPayloads)) {
+  test(`recreated ${source} requires a new confirmed image before download`, async ({ page }) => {
+    const backend = new ControlledBackend()
+    await openApp(page, backend)
+    await page.getByRole('button', { name: 'Published albums' }).click()
+    const history = await backend.next('publications')
+    const selectedPlaylist = {
+      id: expectedPayload.playlist_id, url: expectedPayload.playlist_url,
+      title: expectedPayload.playlist_title, channel: expectedPayload.playlist_channel,
+      thumbnail: expectedPayload.playlist_thumbnail, track_count: 1,
+      tracks: [{ position: 1, title: 'Track' }],
+    }
+    const selectedRelease = {
+      id: expectedPayload.release_id, title: expectedPayload.album,
+      artist: expectedPayload.artist, cover_url: null, track_count: 1,
+      tracks: [{ global_position: 1, number: 1, title: 'Track' }],
+    }
+    const publication = {
+      publication_id: 'historical', job_id: 'old-job', published_at: '2026-09-15T12:00:00Z',
+      track_count: 1, destination: { relative_path: 'Historical Artist/Historical Album' },
+      metadata: { mode: 'musicbrainz', artist: expectedPayload.artist, album: expectedPayload.album },
+      cover: { source, square_strategy: 'crop' },
+    }
+    await history.reply([publication])
+    await page.getByRole('button', { name: 'Recreate in Review' }).click()
+    const recreate = await backend.next('publication-recreate:historical')
+    await recreate.reply({
+      publication,
+      review: {
+        artist: expectedPayload.artist, album: expectedPayload.album,
+        playlist: selectedPlaylist, release: selectedRelease, cover: publication.cover,
+      },
+      drift: {
+        playlist: { status: 'unchanged', changes: [] },
+        release: { status: 'unchanged', changes: [] },
+      },
+      enqueued: false,
+    })
+    const destination = await backend.next('destination')
+    await destination.reply({ state: 'not_found', exists: false })
+    await expect(page.getByText('The historical image is not restored.', { exact: false })).toBeVisible()
+    const downloadButton = page.getByRole('button', { name: 'Download & Tag' })
+    await expect(downloadButton).toBeDisabled()
+    expect(backend.callCount('download')).toBe(0)
+
+    if (source === 'manual_upload') {
+      await page.locator('.cover-option--upload input').setInputFiles({
+        name: 'cover.png', mimeType: 'image/png',
+        buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+      })
+    } else {
+      await page.getByRole('button', { name: /Use playlist thumbnail/ }).click()
+    }
+    await expect(downloadButton).toBeDisabled()
+    await page.getByRole('button', { name: 'Confirm Fit cover' }).click()
+    const cover = await backend.next(source === 'manual_upload' ? 'cover-manual' : 'cover-youtube')
+    await expect(downloadButton).toBeDisabled()
+    await cover.reply({ cover_id: expectedPayload.cover_id, square_mode: 'fit' }, 201)
+    await expect(downloadButton).toBeEnabled()
+    await downloadButton.click()
+    const download = await backend.next('download')
+    // The same payload fixtures are validated by the real FastAPI download route.
+    expect(download.body).toEqual(expectedPayload)
+    await download.reply({ job_id: 'new-job' }, 202)
+    await expect(page.getByText('Download queued successfully.')).toBeVisible()
+  })
+}

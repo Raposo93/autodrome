@@ -1,4 +1,6 @@
+import json
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI
@@ -195,6 +197,32 @@ class TestDownloadEndpoint(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 502)
             self.assertIn("Choose another cover option", response.text)
             self.assertNotIn("private provider detail", response.text)
+
+
+class TestRecreatedCoverPayloads(unittest.IsolatedAsyncioTestCase):
+    async def test_browser_payloads_are_accepted_and_missing_images_are_rejected(self):
+        fixture = Path(__file__).parents[1] / "fixtures" / "recreated_cover_downloads.json"
+        payloads = json.loads(fixture.read_text())
+        app = FastAPI()
+        app.include_router(download_router, prefix="/api/download")
+        app.state.queue_manager = MagicMock()
+        app.state.queue_manager.enqueue = AsyncMock(return_value="new-job")
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            for source, payload in payloads.items():
+                with self.subTest(source=source):
+                    invalid = {
+                        key: value for key, value in payload.items()
+                        if key not in {"cover_id", "cover_url"}
+                    }
+                    app.state.queue_manager.enqueue.reset_mock()
+                    response = await client.post("/api/download/", json=invalid)
+                    self.assertEqual(response.status_code, 422)
+                    app.state.queue_manager.enqueue.assert_not_awaited()
+                    response = await client.post("/api/download/", json=payload)
+                    self.assertEqual(response.status_code, 202)
+                    queued = app.state.queue_manager.enqueue.call_args.args[0]
+                    for key, value in payload.items():
+                        self.assertEqual(queued[key], value)
 
 
 if __name__ == "__main__":

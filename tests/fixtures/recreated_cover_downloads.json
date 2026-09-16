@@ -1,0 +1,31 @@
+{
+  "manual_upload": {
+    "playlist_url": "https://www.youtube.com/playlist?list=PL1234567890",
+    "playlist_id": "PL1234567890",
+    "playlist_title": "Historical playlist",
+    "playlist_channel": "Uploader",
+    "playlist_thumbnail": "https://i.ytimg.com/vi/video/mqdefault.jpg",
+    "artist": "Historical Artist",
+    "album": "Historical Album",
+    "release_id": "12345678-1234-1234-1234-123456789abc",
+    "track_count": 1,
+    "cover_id": "abcdefab-1234-1234-1234-abcdefabcdef",
+    "cover_square_mode": "fit",
+    "cover_source": "manual_upload"
+  },
+  "youtube_thumbnail": {
+    "playlist_url": "https://www.youtube.com/playlist?list=PL1234567890",
+    "playlist_id": "PL1234567890",
+    "playlist_title": "Historical playlist",
+    "playlist_channel": "Uploader",
+    "playlist_thumbnail": "https://i.ytimg.com/vi/video/mqdefault.jpg",
+    "artist": "Historical Artist",
+    "album": "Historical Album",
+    "release_id": "12345678-1234-1234-1234-123456789abc",
+    "track_count": 1,
+    "cover_id": "abcdefab-1234-1234-1234-abcdefabcdef",
+    "cover_square_mode": "fit",
+    "cover_source": "youtube_thumbnail",
+    "cover_url": "https://i.ytimg.com/vi/video/mqdefault.jpg"
+  }
+}

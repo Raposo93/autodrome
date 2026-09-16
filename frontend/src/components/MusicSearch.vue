@@ -218,6 +218,10 @@
             v-if="recreation.review.cover.square_strategy"
           > · {{ recreation.review.cover.square_strategy }}</template>.
         </p>
+        <p v-if="['manual_upload', 'youtube_thumbnail'].includes(recreation.review.cover.source)">
+          Choose and confirm a new cover image, or explicitly continue without cover.
+          The historical image is not restored.
+        </p>
         <div class="recreation-drift">
           <div :class="`drift-card drift-card--${recreation.drift.playlist.status}`">
             <strong>YouTube: {{ driftLabel(recreation.drift.playlist) }}</strong>
@@ -897,12 +901,9 @@ export default {
         this.releases = [review.release]
         this.releaseDetailsReady = true
         this.releaseDetailsLoading = false
-        this.coverSelection = review.cover?.source === 'cover_art_archive'
-          ? null
-          : {
-              source: review.cover?.source || 'none',
-              square_mode: review.cover?.square_strategy || undefined,
-            }
+        this.coverSelection = review.cover?.source === 'none'
+          ? { source: 'none' }
+          : null
         this.loadCompatibility()
       } else {
         this.manualPrompt = true

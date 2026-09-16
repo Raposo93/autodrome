@@ -98,3 +98,8 @@ sin encolar una descarga. Compara por separado las respuestas actuales de
 YouTube y MusicBrainz y muestra cambios o errores de consulta. Los datos históricos
 se conservan; no se sustituyen silenciosamente por los actuales. El destino
 existente sigue bloqueando una nueva descarga sobre el mismo álbum.
+
+Si la publicación usó una portada alternativa, la decisión histórica se muestra
+como referencia. Para descargar de nuevo, selecciona y confirma otra vez la imagen
+o elige explícitamente continuar sin portada: los bytes preparados del trabajo
+original no se restauran desde el historial.
