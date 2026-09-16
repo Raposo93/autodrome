@@ -17,7 +17,7 @@ from autodrome.models.track import Track
 from autodrome.services.track_files import match_track_files
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 RECORD_VERSION = 1
 SENSITIVE_KEY_PARTS = ("password", "secret", "token", "credential", "ticket")
 
@@ -55,32 +55,54 @@ class PublicationCatalog:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self._connection() as connection:
+                # Keep schema replacement and copied history in one transaction.
+                connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
                 if version > SCHEMA_VERSION:
                     raise PublicationCatalogError(
                         f"Unsupported publication catalog version: {version}"
                     )
-                if version == 0:
-                    connection.executescript(
+                if version in {0, 1}:
+                    connection.execute(
                         """
-                        CREATE TABLE publications (
+                        CREATE TABLE publications_v2 (
                             publication_id TEXT PRIMARY KEY,
                             job_id TEXT NOT NULL UNIQUE,
                             published_at TEXT NOT NULL,
-                            destination TEXT NOT NULL UNIQUE,
+                            destination TEXT NOT NULL,
                             artist TEXT NOT NULL,
                             album TEXT NOT NULL,
                             metadata_mode TEXT NOT NULL,
                             release_id TEXT,
                             record_json TEXT NOT NULL
-                        );
-                        CREATE INDEX publications_release_id
-                            ON publications(release_id);
-                        CREATE INDEX publications_published_at
-                            ON publications(published_at DESC);
-                        PRAGMA user_version = 1;
+                        )
                         """
                     )
+                    if version == 1:
+                        connection.execute(
+                            """
+                            INSERT INTO publications_v2 (
+                                publication_id, job_id, published_at, destination,
+                                artist, album, metadata_mode, release_id, record_json
+                            ) SELECT publication_id, job_id, published_at, destination,
+                                artist, album, metadata_mode, release_id, record_json
+                            FROM publications
+                            """
+                        )
+                        connection.execute("DROP TABLE publications")
+                    connection.execute(
+                        "ALTER TABLE publications_v2 RENAME TO publications"
+                    )
+                    connection.execute(
+                        "CREATE INDEX publications_release_id ON publications(release_id)"
+                    )
+                    connection.execute(
+                        "CREATE INDEX publications_published_at ON publications(published_at DESC)"
+                    )
+                    connection.execute(
+                        "CREATE INDEX publications_destination ON publications(destination)"
+                    )
+                    connection.execute("PRAGMA user_version = 2")
             self._fsync_directory(self.path.parent)
         except PublicationCatalogError:
             raise
@@ -236,7 +258,7 @@ class PublicationCatalog:
             if existing_record is not None:
                 return existing_record
             raise PublicationCatalogError(
-                "A different publication already owns this library destination"
+                "A conflicting publication identity already exists"
             ) from error
         except Exception as error:
             raise PublicationCatalogError(

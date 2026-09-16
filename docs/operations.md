@@ -40,6 +40,12 @@ Tras publicar, Autodrome registra la procedencia en el catálogo SQLite indicado
 por `PUBLICATION_CATALOG_PATH`. La vista **Published albums** permite inspeccionar
 fuentes, decisiones y checksums; consulta la [guía de uso](usage.md#álbumes-publicados).
 
+Si se mueve o elimina un álbum y se libera su destino, una nueva descarga registra
+otra publicación con su propia procedencia y checksums. El historial anterior se
+conserva. Los catálogos anteriores se migran automáticamente al arrancar mediante
+una transacción; la migración no cambia archivos de música ni permite sobrescribir
+un destino existente.
+
 Si el rename termina pero falla guardar el catálogo, el trabajo informa del fallo
 y del destino publicado. Puede existir un álbum completo aunque la cola no
 muestre `succeeded`. Revisa biblioteca, historial y logs antes de recuperar ese
