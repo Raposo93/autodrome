@@ -13,6 +13,8 @@ source of truth.
   shape expected by the frontend. It covers two discs, duplicate titles with
   distinct positions, track artists, a collaboration join phrase, recording-level
   credits, and explicit `Unknown`/album-artist fallbacks for missing metadata.
+- `track_matching.json` captures the Black Sabbath artist-prefix regression and
+  an extreme playlist/MusicBrainz duration discrepancy.
 - `generated_playlist()` creates the 99, 100, and 101-track playlist boundaries.
   Every video ID encodes the original audio identity.
 - `generated_musicbrainz_release()` creates matching single- or multi-disc

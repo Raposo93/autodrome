@@ -10,8 +10,10 @@ class Track:
         position: Optional[int] = None,
         global_position: Optional[int] = None,
         artist: Optional[str] = None,
+        duration_seconds: Optional[float] = None,
     ):
         self.artist = artist
+        self.duration_seconds = duration_seconds
         self.number = number
         self.title = title
         self.disc_number = disc_number
@@ -27,7 +29,7 @@ class Track:
         )
 
     def to_dict(self):
-        return {
+        data = {
             "artist": self.artist,
             "number": self.number,
             "title": self.title,
@@ -35,3 +37,6 @@ class Track:
             "position": self.position,
             "global_position": self.global_position,
         }
+        if self.duration_seconds is not None:
+            data["duration_seconds"] = self.duration_seconds
+        return data

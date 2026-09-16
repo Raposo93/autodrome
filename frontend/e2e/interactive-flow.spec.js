@@ -375,12 +375,18 @@ test('review matching is positional, cached, and ignores stale responses', async
   const releaseTracklist = ['One', 'Two', 'Three'].map((title, index) => ({
     title,
     artist: 'Artist match',
+    duration_seconds: 240 + index,
     disc_number: 1,
     position: index + 1,
     global_position: index + 1,
   }))
   const matchingTracks = ['One', 'Two (Official Audio)', 'Three (Live)'].map(
-    (title, index) => ({ position: index + 1, title, url: `track-${index + 1}` })
+    (title, index) => ({
+      position: index + 1,
+      title,
+      duration_seconds: 240 + index,
+      url: `track-${index + 1}`,
+    })
   )
   const comparison = {
     status: 'review',
@@ -414,11 +420,18 @@ test('review matching is positional, cached, and ignores stale responses', async
   await continueToReview(page, backend)
 
   const compatibility = await backend.next('compatibility')
+  expect(compatibility.body.artist).toBe('Artist match')
   expect(compatibility.body.playlist_tracks.map(track => track.title)).toEqual(
     matchingTracks.map(track => track.title)
   )
+  expect(compatibility.body.playlist_tracks.map(track => track.duration_seconds)).toEqual(
+    matchingTracks.map(track => track.duration_seconds)
+  )
   expect(compatibility.body.release_tracks.map(track => track.title)).toEqual(
     releaseTracklist.map(track => track.title)
+  )
+  expect(compatibility.body.release_tracks.map(track => track.duration_seconds)).toEqual(
+    releaseTracklist.map(track => track.duration_seconds)
   )
   await compatibility.reply(comparison)
   await expect(page.getByText('Review recommended', { exact: true })).toBeVisible()

@@ -75,6 +75,41 @@ class TestSearchEndpoint(unittest.IsolatedAsyncioTestCase):
         )
         self.app.state.search_controller.assert_not_called()
 
+    async def test_track_compatibility_accepts_artist_and_duration_context(self):
+        payload = {
+            "artist": "Black Sabbath",
+            "playlist_tracks": [
+                {
+                    "position": 1,
+                    "title": "Black Sabbath - The Youth",
+                    "duration_seconds": 3477,
+                },
+            ],
+            "release_tracks": [
+                {
+                    "global_position": 1,
+                    "title": "The Youth",
+                    "duration_seconds": 240,
+                },
+            ],
+        }
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/search/compatibility",
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertEqual(result["status"], "mismatch")
+        self.assertEqual(result["tracks"][0]["status"], "mismatch")
+        self.assertEqual(
+            result["tracks"][0]["reasons"],
+            ["artist_prefix", "duration_mismatch"],
+        )
+
     async def test_custom_shared_result_limit_is_forwarded(self):
         async with AsyncClient(
             transport=ASGITransport(app=self.app), base_url="http://test"

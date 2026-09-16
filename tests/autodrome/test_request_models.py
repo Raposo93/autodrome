@@ -121,6 +121,19 @@ class TestRequestModels(unittest.TestCase):
         request = TrackCompatibilityRequest(**valid)
         self.assertEqual(request.playlist_tracks[0].title, "One")
 
+        contextual = TrackCompatibilityRequest(
+            **{
+                **valid,
+                "artist": " Black Sabbath ",
+                "playlist_tracks": [
+                    {"position": 1, "title": "One", "duration_seconds": 241.5},
+                    {"position": 2, "title": "Two"},
+                ],
+            }
+        )
+        self.assertEqual(contextual.artist, "Black Sabbath")
+        self.assertEqual(contextual.playlist_tracks[0].duration_seconds, 241.5)
+
         for field, replacement in (
             ("playlist_tracks", [{"position": 2, "title": "One"}]),
             ("release_tracks", [

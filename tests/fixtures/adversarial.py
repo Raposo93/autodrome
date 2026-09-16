@@ -24,6 +24,11 @@ def complex_release_fixture() -> Dict[str, Any]:
     return copy.deepcopy(_load_json("complex_release.json"))
 
 
+def track_matching_fixture() -> Dict[str, Any]:
+    """Return representative artist-prefix and duration matching cases."""
+    return copy.deepcopy(_load_json("track_matching.json"))
+
+
 def generated_playlist(track_count: int) -> Dict[str, Any]:
     """Build a stable yt-dlp playlist whose IDs encode original audio identity."""
     if track_count < 1:

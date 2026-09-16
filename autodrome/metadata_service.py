@@ -395,10 +395,24 @@ class MetadataService:
                         disc_number=disc_number,
                         position=position,
                         global_position=global_position,
+                        duration_seconds=self._musicbrainz_duration_seconds(
+                            track_data
+                        ),
                     )
                 )
 
         return tracks
+
+    @staticmethod
+    def _musicbrainz_duration_seconds(track_data: Dict[str, Any]) -> Optional[float]:
+        length = track_data.get("length")
+        if length is None:
+            length = (track_data.get("recording") or {}).get("length")
+        if isinstance(length, bool) or not isinstance(length, (int, float)):
+            return None
+        if length <= 0:
+            return None
+        return length / 1000
 
     def _parse_releases(self, data: Dict[str, Any], artist: Optional[str]) -> List[Release]:
         if not isinstance(data, dict) or not isinstance(data.get("releases"), list):

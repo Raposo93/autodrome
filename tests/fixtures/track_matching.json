@@ -1,0 +1,33 @@
+{
+  "black_sabbath": {
+    "artist": "Black Sabbath",
+    "playlist_tracks": [
+      {"position": 1, "title": "Black Sabbath - Sabbath Bloody Sabbath"},
+      {"position": 2, "title": "Black Sabbath: A National Acrobat"},
+      {"position": 3, "title": "Black Sabbath | Fluff"},
+      {"position": 4, "title": "Black Sabbath — Sabbra Cadabra"},
+      {"position": 5, "title": "Black Sabbath - Killing Yourself to Live"},
+      {"position": 6, "title": "Black Sabbath - Track 6"},
+      {"position": 7, "title": "Black Sabbath - Looking for Today"},
+      {"position": 8, "title": "Black Sabbath - Spiral Architect"}
+    ],
+    "release_tracks": [
+      {"global_position": 1, "title": "Sabbath Bloody Sabbath"},
+      {"global_position": 2, "title": "A National Acrobat"},
+      {"global_position": 3, "title": "Fluff"},
+      {"global_position": 4, "title": "Sabbra Cadabra"},
+      {"global_position": 5, "title": "Killing Yourself to Live"},
+      {"global_position": 6, "title": "Who Are You?"},
+      {"global_position": 7, "title": "Looking for Today"},
+      {"global_position": 8, "title": "Spiral Architect"}
+    ]
+  },
+  "extreme_duration": {
+    "playlist_tracks": [
+      {"position": 1, "title": "The Youth", "duration_seconds": 3477}
+    ],
+    "release_tracks": [
+      {"global_position": 1, "title": "The Youth", "duration_seconds": 240}
+    ]
+  }
+}

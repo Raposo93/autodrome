@@ -25,6 +25,7 @@ async def track_compatibility(payload: TrackCompatibilityRequest):
     return compare_tracklists(
         [track.model_dump() for track in payload.playlist_tracks],
         [track.model_dump() for track in payload.release_tracks],
+        artist=payload.artist,
     )
 
 @search_router.get("/")

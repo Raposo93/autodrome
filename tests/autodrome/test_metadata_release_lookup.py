@@ -46,7 +46,12 @@ class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
                 {
                     "tracks": [
                         {"number": "1", "position": 1, "title": "First"},
-                        {"number": "2", "position": 2, "title": "Second"},
+                        {
+                            "number": "2",
+                            "position": 2,
+                            "title": "Second",
+                            "recording": {"length": 245000},
+                        },
                     ]
                 }
             ],
@@ -104,6 +109,7 @@ class TestMetadataReleaseLookup(unittest.IsolatedAsyncioTestCase):
                     "position": 2,
                     "global_position": 2,
                     "artist": None,
+                    "duration_seconds": 245.0,
                 },
             ],
         )

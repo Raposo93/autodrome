@@ -928,6 +928,7 @@ export default {
         playlist: this.selectedPlaylist.url,
         playlist_tracks: this.selectedPlaylist.tracks,
         release: this.selectedRelease.id,
+        artist: this.selectedRelease.artist,
         release_tracks: this.selectedRelease.tracks,
       })
     },
@@ -965,13 +966,16 @@ export default {
       this.compatibilityLoading = true
       try {
         const response = await api.trackCompatibility({
+          artist: this.selectedRelease.artist || null,
           playlist_tracks: playlistTracks.map(track => ({
             position: track.position,
             title: track.title,
+            duration_seconds: track.duration_seconds ?? null,
           })),
           release_tracks: releaseTracks.map(track => ({
             global_position: track.global_position,
             title: track.title,
+            duration_seconds: track.duration_seconds ?? null,
           })),
         })
         if (generation !== this.compatibilityGeneration) return

@@ -1,5 +1,7 @@
 import unittest
 
+from tests.fixtures import track_matching_fixture
+
 from autodrome.services.track_matching import (
     clean_youtube_title,
     compare_track_titles,
@@ -62,6 +64,53 @@ class TestTrackTitleMatching(unittest.TestCase):
 
         self.assertEqual(comparison["status"], "mismatch")
 
+    def test_only_the_known_artist_prefix_is_removed(self):
+        for separator in (" - ", ": ", " | ", " – ", " — "):
+            with self.subTest(separator=separator):
+                comparison = compare_track_titles(
+                    f"Black Sabbath{separator}Fluff",
+                    "Fluff",
+                    artist="black sabbath",
+                )
+                self.assertEqual(comparison["status"], "clean")
+                self.assertIn("artist_prefix", comparison["reasons"])
+
+        other_artist = compare_track_titles(
+            "Uploader Channel - Fluff",
+            "Fluff",
+            artist="Black Sabbath",
+        )
+        self.assertEqual(other_artist["status"], "mismatch")
+
+    def test_artist_cleanup_preserves_version_markers(self):
+        comparison = compare_track_titles(
+            "Black Sabbath - Fluff (Live)",
+            "Fluff",
+            artist="Black Sabbath",
+        )
+
+        self.assertEqual(comparison["status"], "warning")
+        self.assertIn("artist_prefix", comparison["reasons"])
+        self.assertIn("version_marker:live", comparison["reasons"])
+
+    def test_duration_only_rejects_clearly_incompatible_matches(self):
+        close = compare_track_titles(
+            "The Youth",
+            "The Youth",
+            youtube_duration_seconds=260,
+            release_duration_seconds=240,
+        )
+        extreme = compare_track_titles(
+            "The Youth",
+            "The Youth",
+            youtube_duration_seconds=3477,
+            release_duration_seconds=240,
+        )
+
+        self.assertEqual(close["status"], "exact")
+        self.assertEqual(extreme["status"], "mismatch")
+        self.assertIn("duration_mismatch", extreme["reasons"])
+
 
 class TestTracklistMatching(unittest.TestCase):
     def test_position_to_global_position_drives_the_comparison(self):
@@ -90,7 +139,7 @@ class TestTracklistMatching(unittest.TestCase):
         self.assertEqual(result["tracks"], [])
         self.assertTrue(all(count == 0 for count in result["summary"].values()))
 
-    def test_global_rules_do_not_average_away_warnings_or_mismatches(self):
+    def test_global_rules_distinguish_local_review_from_global_mismatch(self):
         review = compare_tracklists(
             playlist_tracks("One", "Tractor (Live)", "Three"),
             release_tracks("One", "Tractor", "Three"),
@@ -102,7 +151,7 @@ class TestTracklistMatching(unittest.TestCase):
 
         self.assertEqual(review["status"], "review")
         self.assertEqual(review["summary"]["warning"], 1)
-        self.assertEqual(mismatch["status"], "mismatch")
+        self.assertEqual(mismatch["status"], "review")
         self.assertEqual(mismatch["summary"]["mismatch"], 1)
 
     def test_duplicate_titles_stay_in_their_original_positions(self):
@@ -115,6 +164,40 @@ class TestTracklistMatching(unittest.TestCase):
             [(track["position"], track["status"]) for track in result["tracks"]],
             [(1, "exact"), (2, "mismatch"), (3, "mismatch")],
         )
+
+    def test_black_sabbath_fixture_is_seven_clean_and_one_review(self):
+        fixture = track_matching_fixture()["black_sabbath"]
+
+        result = compare_tracklists(
+            fixture["playlist_tracks"],
+            fixture["release_tracks"],
+            artist=fixture["artist"],
+        )
+
+        self.assertEqual(result["status"], "review")
+        self.assertEqual(result["summary"]["clean"], 7)
+        self.assertEqual(result["summary"]["mismatch"], 1)
+        self.assertEqual(result["tracks"][5]["status"], "mismatch")
+
+    def test_extreme_duration_fixture_is_a_strong_mismatch(self):
+        fixture = track_matching_fixture()["extreme_duration"]
+
+        result = compare_tracklists(
+            fixture["playlist_tracks"],
+            fixture["release_tracks"],
+        )
+
+        self.assertEqual(result["status"], "mismatch")
+        self.assertEqual(result["summary"]["mismatch"], 1)
+        self.assertIn("duration_mismatch", result["tracks"][0]["reasons"])
+
+    def test_missing_artist_and_duration_keep_the_conservative_behavior(self):
+        result = compare_tracklists(
+            playlist_tracks("Black Sabbath - Fluff"),
+            release_tracks("Fluff"),
+        )
+
+        self.assertEqual(result["status"], "mismatch")
 
 
 if __name__ == "__main__":

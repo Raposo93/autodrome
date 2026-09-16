@@ -284,7 +284,20 @@ class YTDownloader:
             if not track_url:
                 track_url = entry.get("url")
             if track_url:
-                tracks.append({"position": position, "id": entry.get("id"), "url": track_url, "title": entry.get("title") or f"Track {position}"})
+                duration = entry.get("duration")
+                if (
+                    isinstance(duration, bool)
+                    or not isinstance(duration, (int, float))
+                    or duration <= 0
+                ):
+                    duration = None
+                tracks.append({
+                    "position": position,
+                    "id": entry.get("id"),
+                    "url": track_url,
+                    "title": entry.get("title") or f"Track {position}",
+                    "duration_seconds": duration,
+                })
             else:
                 unavailable += 1
 

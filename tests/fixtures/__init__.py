@@ -5,6 +5,7 @@ from .adversarial import (
     generated_musicbrainz_release,
     generated_playlist,
     playlist_from_hell,
+    track_matching_fixture,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "generated_musicbrainz_release",
     "generated_playlist",
     "playlist_from_hell",
+    "track_matching_fixture",
 ]

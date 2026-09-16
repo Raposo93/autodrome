@@ -47,6 +47,24 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manifest_options["js_runtimes"], expected)
         self.assertEqual(download_options["js_runtimes"], expected)
 
+    @patch("autodrome.yt_downloader.YoutubeDL")
+    def test_manifest_preserves_valid_optional_durations(self, youtube_dl):
+        extractor = MagicMock()
+        extractor.extract_info.return_value = {
+            "entries": [
+                {"id": "one", "title": "One", "duration": 241.5},
+                {"id": "two", "title": "Two", "duration": None},
+            ]
+        }
+        youtube_dl.return_value.__enter__.return_value = extractor
+
+        manifest = self.downloader._extract_manifest("fixture://durations")
+
+        self.assertEqual(
+            [track["duration_seconds"] for track in manifest["tracks"]],
+            [241.5, None],
+        )
+
     async def test_download_playlist_downloads_track_urls_sequentially(self):
         self.downloader.get_playlist_track_urls = AsyncMock(
             return_value=[

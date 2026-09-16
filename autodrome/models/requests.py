@@ -179,6 +179,7 @@ class PlaylistMatchTrack(BaseModel):
 
     position: int = Field(ge=1, le=10_000)
     title: TrackTitle
+    duration_seconds: Optional[float] = Field(default=None, gt=0, le=86_400)
 
 
 class ReleaseMatchTrack(BaseModel):
@@ -186,6 +187,7 @@ class ReleaseMatchTrack(BaseModel):
 
     global_position: int = Field(ge=1, le=10_000)
     title: TrackTitle
+    duration_seconds: Optional[float] = Field(default=None, gt=0, le=86_400)
 
 
 class TrackCompatibilityRequest(BaseModel):
@@ -199,6 +201,7 @@ class TrackCompatibilityRequest(BaseModel):
         min_length=1,
         max_length=1000,
     )
+    artist: Optional[NonEmptyText] = None
 
     @model_validator(mode="after")
     def require_contiguous_positions(self) -> "TrackCompatibilityRequest":
