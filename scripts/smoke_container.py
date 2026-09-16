@@ -10,7 +10,7 @@ from importlib.metadata import version
 from websockets.sync.client import connect
 
 from autodrome.config import Config
-from autodrome.services.system_status import SystemStatusService
+from autodrome.version import build_commit
 
 
 BASE_URL = "http://127.0.0.1:5000"
@@ -51,7 +51,7 @@ def main() -> None:
     if settings.version != f"autodrome/{version('autodrome')}":
         raise RuntimeError("Container is not using installed package version metadata")
     expected_commit = os.getenv("EXPECTED_AUTODROME_COMMIT")
-    if expected_commit and SystemStatusService._build_commit() != expected_commit:
+    if expected_commit and build_commit() != expected_commit:
         raise RuntimeError("Container does not identify the expected build commit")
 
 
