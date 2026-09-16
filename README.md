@@ -537,6 +537,11 @@ El comando ejecuta comprobaciones Git, la suite backend, las pruebas unitarias y
 E2E del frontend y el build de Vite. Un resultado correcto termina con
 `All checks passed.`
 
+Las campañas de caos reproducibles son opt-in y solo usan proveedores simulados,
+bibliotecas temporales y seeds explícitas. Consulta
+[`docs/chaos-testing.md`](docs/chaos-testing.md) para ejecutar o reproducir una
+campaña.
+
 Las dependencias Python están fijadas en `requirements.lock`. Si cambian
 `requirements.txt` o `requirements-dev.txt`, regenera el lock con:
 

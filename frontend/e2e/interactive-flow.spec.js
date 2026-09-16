@@ -44,6 +44,25 @@ async function continueToReview(
   await expect(page.getByRole('heading', { name: 'Check before you queue' })).toBeVisible()
 }
 
+function shuffledBySeed(seed, values) {
+  let state = seed >>> 0
+  const shuffled = [...values]
+  const random = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    return state / 2 ** 32
+  }
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const replacement = Math.floor(random() * (index + 1))
+    ;[shuffled[index], shuffled[replacement]] = [shuffled[replacement], shuffled[index]]
+  }
+  return shuffled
+}
+
+const configuredChaosSeeds = process.env.AUTODROME_CHAOS_SEEDS
+const selectionChaosSeeds = configuredChaosSeeds
+  ? configuredChaosSeeds.split(',').map(value => Number.parseInt(value, 10))
+  : [666, 20260916]
+
 test('system status route renders partial diagnostics and every state', async ({ page }) => {
   const backend = new ControlledBackend()
   await backend.install(page)
@@ -551,6 +570,85 @@ test('rapid playlist and release changes ignore stale completions', async ({ pag
   await expect(page.getByText('stale playlist mismatch')).toHaveCount(0)
   expect(backend.callCount('download')).toBe(0)
 })
+
+for (const seed of selectionChaosSeeds) {
+  test(`seeded selection chaos ignores stale completions seed=${seed}`, async ({ page }) => {
+    const events = []
+    const reproduce =
+      `python scripts/chaos_test.py --scenario selection-race --seed ${seed}`
+    try {
+      const backend = new ControlledBackend()
+      const prefix = `chaos-${seed}`
+      await openApp(page, backend)
+      await startSearch(page)
+      const search = await backend.next('search')
+      await search.reply({
+        playlists: [playlist(`${prefix}-p1`), playlist(`${prefix}-p2`)],
+        releases: [release(`${prefix}-r1`), release(`${prefix}-r2`)],
+        errors: {},
+      })
+      events.push('search-results')
+
+      const staleHydration = await backend.next(`release:${prefix}-r1`)
+      await playlistsPanel(page)
+        .getByRole('button', { name: new RegExp(`Playlist ${prefix}-p1`) })
+        .click()
+      const stalePreflight = await backend.next('preflight')
+      await playlistsPanel(page)
+        .getByRole('button', { name: new RegExp(`Playlist ${prefix}-p2`) })
+        .click()
+      const currentPreflight = await backend.next('preflight')
+      await releasesPanel(page)
+        .getByRole('button', { name: new RegExp(`Release ${prefix}-r1`) })
+        .click()
+      await releasesPanel(page)
+        .getByRole('button', { name: new RegExp(`Release ${prefix}-r2`) })
+        .click()
+      events.push('new-selection-owns-ui')
+
+      const responses = {
+        stalePreflight: () => stalePreflight.reject(409, {
+          detail: `stale playlist mismatch seed=${seed}`,
+        }),
+        currentPreflight: () => currentPreflight.reply({ track_count: 2 }),
+        staleHydration: () => staleHydration.reply(releaseDetails(`${prefix}-r1`)),
+      }
+      const responseOrder = shuffledBySeed(seed, Object.keys(responses))
+      for (const response of responseOrder) {
+        await responses[response]()
+        events.push(response)
+      }
+
+      const currentHydration = await backend.next(`release:${prefix}-r2`)
+      await currentHydration.reply(releaseDetails(`${prefix}-r2`))
+      events.push('currentHydration')
+      const destination = await backend.next('destination')
+      await destination.reply({ state: 'not_found', exists: false })
+      events.push('destination-ready')
+
+      await expect(page.locator('.selection-preview')).toContainText(
+        `Playlist ${prefix}-p2`,
+      )
+      await expect(page.locator('.selection-preview')).toContainText(
+        `Release ${prefix}-r2`,
+      )
+      await expect(page.locator('.selection-preview')).not.toContainText(
+        `Playlist ${prefix}-p1`,
+      )
+      await expect(page.getByText(`stale playlist mismatch seed=${seed}`)).toHaveCount(0)
+      await continueToReview(page, backend)
+      await expect(page.getByText('Both selections are ready to download.')).toBeVisible()
+      expect(backend.callCount('download')).toBe(0)
+    } catch (error) {
+      const lastState = await page.locator('body').innerText().catch(() => '<unavailable>')
+      throw new Error(
+        `Seeded selection chaos failed. seed=${seed} ` +
+        `events=${JSON.stringify(events)} reproduce=${JSON.stringify(reproduce)} ` +
+        `lastState=${JSON.stringify(lastState)} reason=${error.message}`,
+      )
+    }
+  })
+}
 
 test('existing albums are explained and blocked before enqueue', async ({ page }) => {
   const backend = new ControlledBackend()
