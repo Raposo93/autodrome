@@ -8,7 +8,8 @@ No lo ejecutes sobre la única copia de una biblioteca ni en un host compartido.
 
 1. Usa un host desechable o self-hosted con acceso de consola y una copia limpia
    de Autodrome. Registra el commit probado con `git rev-parse HEAD`.
-2. Instala y habilita `deploy/autodrome.service` siguiendo el README. Confirma que
+2. Instala y habilita `deploy/autodrome.service` siguiendo la
+   [guía de instalación nativa](installation-native.md). Confirma que
    es una unidad del sistema, no de usuario:
 
    ```bash
