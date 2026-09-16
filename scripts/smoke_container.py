@@ -2,14 +2,20 @@
 """Smoke a running Autodrome container from inside its network namespace."""
 
 import json
+import asyncio
 import os
 import subprocess
 import urllib.request
 from importlib.metadata import version
+from pathlib import Path
+from unittest.mock import AsyncMock
+from uuid import uuid4
 
 from websockets.sync.client import connect
 
 from autodrome.config import Config
+from autodrome.metadata_service import MetadataService
+import autodrome
 from autodrome.version import build_commit
 
 
@@ -48,6 +54,26 @@ def main() -> None:
     subprocess.run(["ffmpeg", "-version"], check=True, stdout=subprocess.DEVNULL)
 
     settings = Config()
+    package = Path(autodrome.__file__).resolve().parent
+    if os.access(package, os.W_OK) or os.access(package.parent, os.W_OK):
+        raise RuntimeError("Container Python installation must not be writable")
+    cache = Path(settings.cover_art_cache_path)
+    if cache != Path("/music/.autodrome-cover-cache"):
+        raise RuntimeError(f"Unexpected container cover cache: {cache}")
+    release_id = str(uuid4())
+    client = AsyncMock()
+    client.get_binary.return_value = b"controlled CAA smoke content"
+    service = MetadataService(
+        http_client=client, cover_art_cache_path=str(cache)
+    )
+    cover = cache / f"{release_id}.jpg"
+    try:
+        assert asyncio.run(service.get_cover_art(release_id)) == str(cover)
+        assert cover.read_bytes() == client.get_binary.return_value
+        assert asyncio.run(service.get_cover_art(release_id)) == str(cover)
+        client.get_binary.assert_awaited_once()
+    finally:
+        cover.unlink(missing_ok=True)
     if settings.version != f"autodrome/{version('autodrome')}":
         raise RuntimeError("Container is not using installed package version metadata")
     expected_commit = os.getenv("EXPECTED_AUTODROME_COMMIT")

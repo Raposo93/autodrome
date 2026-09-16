@@ -8,9 +8,9 @@ definidas tienen prioridad. Usa [.env.example](../.env.example) como punto de
 partida. Reinicia la aplicación después de cambiar la configuración.
 
 En el servicio nativo, usa rutas absolutas. El Compose distribuido fija dentro
-del contenedor las rutas de biblioteca, staging, cola, catálogo y portadas
-alternativas bajo `/music`, además de la escucha en `0.0.0.0:5000`; cambiar esos
-valores en `.env` no sustituye los de `compose.yaml`.
+del contenedor las rutas de biblioteca, staging, cola, catálogo, caché de Cover
+Art Archive y portadas alternativas bajo `/music`, además de la escucha en
+`0.0.0.0:5000`; cambiar esos valores en `.env` no sustituye los de `compose.yaml`.
 
 ## Proveedores e identificación
 
@@ -68,10 +68,19 @@ valores en `.env` no sustituye los de `compose.yaml`.
   defecto.
 - `MAX_COVER_UPLOAD_BYTES`: tamaño máximo de una portada alternativa recibida;
   10 MiB por defecto.
+- `COVER_ART_CACHE_PATH`: caché regenerable de Cover Art Archive; por defecto,
+  la ruta absoluta `~/.cache/autodrome/cover-art` del usuario que ejecuta el
+  proceso, independiente del directorio de trabajo y del paquete instalado.
+  Si se configura, debe ser una ruta absoluta no vacía; para conservar el
+  valor predeterminado, omite la variable. Docker y Compose la fijan en
+  `/music/.autodrome-cover-cache`. El directorio se crea al guardar una portada
+  descargada; una respuesta 404 no lo crea. El usuario del servicio necesita
+  permisos para crearlo y escribir en él.
 - `COVER_STORAGE_PATH`: almacenamiento durable para portadas preparadas;
   `covers/selected` por defecto, relativo al directorio de trabajo. Usa una
-  ruta absoluta para el servicio nativo. No configura la caché de Cover Art
-  Archive; consulta el [límite actual](installation-native.md#portadas-de-cover-art-archive).
+  ruta absoluta para el servicio nativo. Esas portadas pueden ser necesarias
+  para Retry y reinicios; mantenlas en un directorio distinto de
+  `COVER_ART_CACHE_PATH`.
 
 ## Red y frontend
 

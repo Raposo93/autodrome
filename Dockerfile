@@ -26,6 +26,7 @@ ARG AUTODROME_COMMIT=""
 ENV API_HOST=0.0.0.0 \
     API_PORT=5000 \
     AUTODROME_COMMIT=${AUTODROME_COMMIT} \
+    COVER_ART_CACHE_PATH=/music/.autodrome-cover-cache \
     COVER_STORAGE_PATH=/music/.autodrome-covers \
     DENO_DIR=/home/autodrome/.cache/deno \
     HOME=/home/autodrome \

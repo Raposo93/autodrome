@@ -42,6 +42,7 @@ python3.14 -m venv /opt/autodrome/.venv
 /opt/autodrome/.venv/bin/python -m pip install "$AUTODROME_WHEEL"
 sudo install -o "$USER" -g autodrome -m 0640 /dev/null /opt/autodrome/.env
 sudo install -d -o autodrome -g autodrome -m 0750 /opt/autodrome/covers
+sudo install -d -o autodrome -g autodrome -m 0750 /opt/autodrome/cache
 ```
 
 Edita `/opt/autodrome/.env` con esta configuración mínima, sustituyendo los
@@ -51,6 +52,7 @@ valores por los tuyos:
 GOOGLE_API_KEY=tu-clave-de-youtube
 CONTACT_EMAIL=tu-email-de-contacto
 LIBRARY_PATH=/ruta/absoluta/a/la/biblioteca
+COVER_ART_CACHE_PATH=/opt/autodrome/cache/cover-art
 COVER_STORAGE_PATH=/opt/autodrome/covers/selected
 ```
 
@@ -79,8 +81,9 @@ binario (o a su directorio), por ejemplo
 root para usarlo.
 
 El usuario `autodrome` también necesita lectura y escritura en `LIBRARY_PATH`,
-`STAGING_PATH`, `QUEUE_STATE_PATH`, `PUBLICATION_CATALOG_PATH` y
-`COVER_STORAGE_PATH`, incluidos los directorios donde se crean sus archivos.
+`STAGING_PATH`, `QUEUE_STATE_PATH`, `PUBLICATION_CATALOG_PATH`,
+`COVER_ART_CACHE_PATH` y `COVER_STORAGE_PATH`, incluidos los directorios donde
+se crean sus archivos.
 Staging y biblioteca deben estar en el mismo filesystem. La forma concreta de
 conceder permisos depende de si la biblioteca es exclusiva del servicio o
 compartida con otros usuarios.
@@ -227,10 +230,19 @@ sudo systemctl daemon-reload
 
 ## Portadas de Cover Art Archive
 
-En la versión de desarrollo actual, la caché de Cover Art Archive se resuelve
-junto al paquete Python (`site-packages/covers` en una instalación wheel), no
-en `COVER_STORAGE_PATH`. Una descarga que necesite escribir allí puede fallar
-por permisos con el usuario no root del servicio o del contenedor. Es un punto
-pendiente de corregir antes de la 0.2; crear `/opt/autodrome/covers` no cambia
-esa ruta. `COVER_STORAGE_PATH` controla únicamente las portadas alternativas
-preparadas.
+El ejemplo configura `COVER_ART_CACHE_PATH=/opt/autodrome/cache/cover-art` y
+prepara su directorio padre con permisos para `autodrome`. El servicio crea
+`cover-art` al guardar la primera portada descargada y reutiliza los archivos
+cacheados. Una respuesta 404 de Cover Art Archive significa que no hay portada
+y no crea el directorio. Si la caché no puede escribirse, el error identifica
+la ruta y pide comprobar sus permisos y el espacio disponible.
+
+Si se omite la variable, la caché usa `~/.cache/autodrome/cover-art` del usuario
+que ejecuta el proceso. Una ruta configurada debe ser absoluta y no vacía.
+El paquete instalado puede permanecer read-only: la caché no depende de
+`site-packages`, del checkout ni del directorio de trabajo.
+
+La caché es regenerable y no requiere migrar las portadas antiguas guardadas
+junto al paquete. `COVER_STORAGE_PATH` sigue almacenando las portadas
+preparadas necesarias para Retry y reinicios; conserva esa ruta por separado
+y respáldala con el resto del estado durable.

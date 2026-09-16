@@ -16,6 +16,17 @@ class ConfigurationError(RuntimeError):
     pass
 
 
+def resolve_cover_art_cache_path(path: Optional[str] = None) -> str:
+    if path is None:
+        path = os.getenv(
+            "COVER_ART_CACHE_PATH",
+            os.path.expanduser("~/.cache/autodrome/cover-art"),
+        )
+    if not path or not os.path.isabs(path):
+        raise ConfigurationError("COVER_ART_CACHE_PATH must be an absolute path")
+    return path
+
+
 class Config:
     def __init__(self):
         load_dotenv()
@@ -55,6 +66,7 @@ class Config:
         self.cover_storage_path = os.getenv(
             "COVER_STORAGE_PATH", os.path.join("covers", "selected")
         )
+        self.cover_art_cache_path = resolve_cover_art_cache_path()
         self.queue_state_path = os.getenv(
             "QUEUE_STATE_PATH",
             os.path.join(self.library_path, ".autodrome-queue.json"),

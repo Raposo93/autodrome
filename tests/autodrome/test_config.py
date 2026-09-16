@@ -116,6 +116,35 @@ class TestConfig(unittest.TestCase):
             "/var/lib/autodrome/covers",
         )
 
+    def test_cover_art_cache_defaults_to_runtime_users_cache(self):
+        with patch(
+            "autodrome.config.os.path.expanduser",
+            return_value="/home/runtime/.cache/autodrome/cover-art",
+        ):
+            settings = self.build_config(REQUIRED_ENV)
+
+        self.assertEqual(
+            settings.cover_art_cache_path,
+            "/home/runtime/.cache/autodrome/cover-art",
+        )
+
+    def test_cover_art_cache_is_configured_separately_from_prepared_covers(self):
+        settings = self.build_config({
+            **REQUIRED_ENV,
+            "COVER_ART_CACHE_PATH": "/var/cache/autodrome/cover-art",
+            "COVER_STORAGE_PATH": "/var/lib/autodrome/prepared-covers",
+        })
+
+        self.assertEqual(settings.cover_art_cache_path, "/var/cache/autodrome/cover-art")
+        self.assertEqual(settings.cover_storage_path, "/var/lib/autodrome/prepared-covers")
+
+    def test_cover_art_cache_rejects_empty_and_relative_paths(self):
+        for path in ("", "cache", "./covers", "~/covers"):
+            with self.subTest(path=path), self.assertRaisesRegex(
+                ConfigurationError, "COVER_ART_CACHE_PATH must be an absolute path"
+            ):
+                self.build_config({**REQUIRED_ENV, "COVER_ART_CACHE_PATH": path})
+
     def test_limited_track_download_concurrency_can_be_configured(self):
         for concurrency in (1, 2, 4):
             with self.subTest(concurrency=concurrency):

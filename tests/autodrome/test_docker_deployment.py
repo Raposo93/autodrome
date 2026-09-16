@@ -13,6 +13,8 @@ def test_runtime_image_uses_packaged_entrypoint_and_non_root_dependencies():
     assert "COPY --from=wheel /src/dist/*.whl" in runtime
     assert "COPY --from=deno /deno /usr/local/bin/deno" in runtime
     assert "apt-get install -y --no-install-recommends ffmpeg" in runtime
+    assert "COVER_ART_CACHE_PATH=/music/.autodrome-cover-cache" in runtime
+    assert "COVER_STORAGE_PATH=/music/.autodrome-covers" in runtime
     assert "USER 10001:10001" in runtime
     assert 'CMD ["autodrome"]' in runtime
     assert "HEALTHCHECK" in runtime
@@ -37,6 +39,14 @@ def test_compose_keeps_all_durable_paths_on_one_music_mount():
     ]
     assert service["user"] == "${AUTODROME_UID:-10001}:${AUTODROME_GID:-10001}"
     assert "redis" not in compose["services"]
+
+
+def test_compose_cover_art_cache_is_separate_from_durable_prepared_covers():
+    compose = yaml.safe_load((ROOT / "compose.yaml").read_text(encoding="utf-8"))
+    environment = compose["services"]["autodrome"]["environment"]
+
+    assert environment["COVER_ART_CACHE_PATH"] == "/music/.autodrome-cover-cache"
+    assert environment["COVER_STORAGE_PATH"] == "/music/.autodrome-covers"
 
 
 def test_container_build_context_excludes_secrets_and_local_state():

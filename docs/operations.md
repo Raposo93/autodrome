@@ -126,6 +126,10 @@ se puede reconstruir solo a partir de los MP3. Conserva una copia de:
 - `QUEUE_STATE_PATH` y `PUBLICATION_CATALOG_PATH`.
 - `COVER_STORAGE_PATH` y la configuración del servicio, incluido `.env`.
 
+`COVER_ART_CACHE_PATH` contiene solo la caché regenerable de Cover Art Archive;
+no es necesaria para restaurar el estado durable y puede quedar fuera de la
+copia. Mantén esa caché separada de `COVER_STORAGE_PATH`.
+
 Con las rutas predeterminadas de Docker, los datos están bajo el mismo mount
 `/music`; `.env` permanece en el host. En instalación nativa pueden estar en
 ubicaciones diferentes. Protege la copia de `.env`, que contiene credenciales.

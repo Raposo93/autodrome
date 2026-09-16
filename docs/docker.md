@@ -78,6 +78,7 @@ El compose aplica esta topología dentro de un único bind mount:
 ├── .autodrome-staging/
 ├── .autodrome-queue.json
 ├── .autodrome-publications.sqlite3
+├── .autodrome-cover-cache/
 └── .autodrome-covers/
 ```
 
@@ -87,10 +88,12 @@ alternativas necesarias para Retry sobreviven a recreaciones del contenedor.
 No configures `STAGING_PATH` en otro filesystem: Autodrome exige que staging y
 biblioteca compartan filesystem.
 
-`.autodrome-covers` contiene las portadas alternativas preparadas. La caché de
-Cover Art Archive usa actualmente otra ruta; consulta el
-[límite de la instalación con wheel](installation-native.md#portadas-de-cover-art-archive),
-que también afecta a la imagen Docker.
+`COVER_ART_CACHE_PATH=/music/.autodrome-cover-cache` guarda la caché regenerable
+de Cover Art Archive. El proceso crea ese directorio cuando necesita guardar
+una portada, con el mismo UID/GID que escribe en el mount. No necesita escribir
+en el paquete Python instalado. `COVER_STORAGE_PATH=/music/.autodrome-covers`
+contiene las portadas alternativas preparadas, que son estado durable para
+Retry y reinicios; conserva separados ambos directorios.
 
 Redis no forma parte del compose y permanece opcional. La fuente de verdad es
 el filesystem montado, no una caché.

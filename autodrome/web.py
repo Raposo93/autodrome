@@ -48,6 +48,7 @@ async def lifespan(app: FastAPI):
     metadata_service = MetadataService(
         http_client=http_client,
         redis_cache=redis_cache,
+        cover_art_cache_path=conf.cover_art_cache_path,
     )
     search_controller = SearchController(
         http_client=http_client,

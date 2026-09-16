@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock
 
 from autodrome.controllers.downloader_controller import DownloaderController
-from autodrome.metadata_service import MetadataService
+from autodrome.metadata_service import CoverArtCacheError, MetadataService
 from autodrome.models.release import Release
 from autodrome.models.track import Track
 from autodrome.services.redis_cache import RedisCache
@@ -243,6 +243,19 @@ class TestDownloaderController(unittest.IsolatedAsyncioTestCase):
             self.organizer.tag_and_rename.call_args.kwargs["prepared_cover"],
             "prepared-caa",
         )
+
+    async def test_cover_cache_error_is_preserved_and_prevents_publication(self):
+        error = CoverArtCacheError("Cannot write Cover Art Archive cache: COVER_ART_CACHE_PATH")
+        self.metadata_service.get_cover_art.side_effect = error
+
+        with self.assertRaises(CoverArtCacheError) as raised:
+            await self.controller.download_and_tag(
+                "https://example.test/playlist", "Artist", "Album", "release-1"
+            )
+
+        self.assertIs(raised.exception, error)
+        self.organizer.tag_and_rename.assert_not_called()
+        self.organizer.move_to_library.assert_not_called()
 
     async def test_alternative_cover_is_loaded_before_audio_and_reused(self):
         cover_selection = MagicMock()

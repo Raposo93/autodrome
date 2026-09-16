@@ -1,6 +1,7 @@
 import os
 import tempfile
 from typing import Any, Dict, List, Optional
+from autodrome.config import resolve_cover_art_cache_path
 from autodrome.logger import logger
 from autodrome.services.redis_cache import NullCache, ReleaseCache
 from autodrome.models.track import Track
@@ -9,6 +10,10 @@ from autodrome.http_client_async import AsyncHttpClient, UpstreamServiceError
 
 
 LUCENE_SPECIAL_CHARACTERS = frozenset('+-&|!(){}[]^"~*?:\\/')
+
+
+class CoverArtCacheError(RuntimeError):
+    """A local cover cache failure, independent of provider availability."""
 
 
 def quote_musicbrainz_field_value(value: str) -> str:
@@ -29,11 +34,12 @@ class MetadataService:
         self,
         http_client: AsyncHttpClient,
         redis_cache: Optional[ReleaseCache] = None,
+        *,
+        cover_art_cache_path: Optional[str] = None,
     ):
         self.http_client = http_client
         self.redis_cache = redis_cache if redis_cache is not None else NullCache()
-        self.base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.cover_dir = os.path.abspath(os.path.join(self.base_dir, '..', 'covers'))
+        self.cover_dir = resolve_cover_art_cache_path(cover_art_cache_path)
 
     async def search_releases(
         self,
@@ -197,7 +203,12 @@ class MetadataService:
         return os.path.abspath(path)
 
     def get_cover_path(self, release_id: str) -> str:
-        os.makedirs(self.cover_dir, exist_ok=True)
+        if (
+            not release_id
+            or release_id in {".", ".."}
+            or any(character in release_id for character in ("/", "\\", "\0"))
+        ):
+            raise ValueError("Cover release ID must be a single path component")
         return os.path.join(self.cover_dir, f"{release_id}.jpg")
 
     async def _get_cover_url(self, release_id: str) -> Optional[str]:
@@ -527,21 +538,30 @@ class MetadataService:
             context=f"downloading front cover for release {release_id}",
         )
         directory = os.path.dirname(path)
-        os.makedirs(directory, exist_ok=True)
-        descriptor, temp_path = tempfile.mkstemp(
-            prefix=".autodrome-cover-",
-            suffix=".tmp",
-            dir=directory,
-        )
+        temp_path = None
         try:
+            os.makedirs(directory, exist_ok=True)
+            descriptor, temp_path = tempfile.mkstemp(
+                prefix=".autodrome-cover-",
+                suffix=".tmp",
+                dir=directory,
+            )
             with os.fdopen(descriptor, "wb") as cover_file:
                 cover_file.write(content)
                 cover_file.flush()
                 os.fsync(cover_file.fileno())
             os.replace(temp_path, path)
-        except Exception:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
-            raise
+        except OSError as error:
+            raise CoverArtCacheError(
+                f"Cannot write Cover Art Archive cache at {self.cover_dir!r}: "
+                f"{error}. Check COVER_ART_CACHE_PATH and grant the runtime "
+                "user write access to that directory."
+            ) from error
+        finally:
+            if temp_path is not None and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    logger.warning("Could not remove temporary cover cache file %s", temp_path)
         logger.debug(f"Cover art saved to {path}")
         return True
