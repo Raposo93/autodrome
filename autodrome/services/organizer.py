@@ -20,6 +20,8 @@ from autodrome.services.cover_embedder import CoverEmbedder, PreparedCover
 from autodrome.path_safety import resolve_album_path, validate_path_component
 
 conf = config.Config()
+MAX_PORTABLE_FILENAME_BYTES = 255
+
 
 class Organizer:
     def __init__(self) -> None:
@@ -311,14 +313,26 @@ class Organizer:
         else:
             return album_folder
 
-        artist_folder = os.path.dirname(album_folder)
+        library_root = os.path.abspath(conf.library_path)
         try:
-            with os.scandir(artist_folder) as entries:
-                for entry in entries:
-                    if self._sanitize_filename(entry.name) == safe_album:
-                        return entry.path
+            with os.scandir(library_root) as artist_entries:
+                matching_artist_folders = []
+                for artist_entry in artist_entries:
+                    if self._sanitize_filename(artist_entry.name) != safe_artist:
+                        continue
+                    if not artist_entry.is_dir(follow_symlinks=False):
+                        raise OSError(
+                            "Normalized artist destination is not a directory"
+                        )
+                    matching_artist_folders.append(artist_entry.path)
         except FileNotFoundError:
             return None
+
+        for artist_folder in matching_artist_folders:
+            with os.scandir(artist_folder) as album_entries:
+                for entry in album_entries:
+                    if self._sanitize_filename(entry.name) == safe_album:
+                        return entry.path
         return None
 
     def _normalized_album_components(self, artist: str, album: str) -> Tuple[str, str]:
@@ -338,13 +352,25 @@ class Organizer:
         final_names = set()
         multi_disc = self._is_multi_disc(tracks)
 
+        filename_byte_limit = self._filename_byte_limit(folder_path)
         for file, track in match_track_files(files, tracks, downloaded=True):
-            sanitized_title = self._sanitize_filename(track.title)
+            sanitized_title = self._sanitize_filename(track.title) or "Untitled"
             if multi_disc:
                 prefix = f"{track.disc_number:02d}-{track.position:02d}"
             else:
                 prefix = f"{track.number:02d}"
-            new_filename = f"{prefix} - {sanitized_title}.mp3"
+            fixed_name = f"{prefix} - "
+            suffix = ".mp3"
+            title_byte_limit = (
+                filename_byte_limit
+                - len(os.fsencode(fixed_name))
+                - len(os.fsencode(suffix))
+            )
+            sanitized_title = self._truncate_to_bytes(
+                sanitized_title,
+                title_byte_limit,
+            ).rstrip(" .") or "Untitled"
+            new_filename = f"{fixed_name}{sanitized_title}{suffix}"
             collision_key = new_filename.casefold()
             if collision_key in final_names:
                 raise ValueError(
@@ -359,6 +385,25 @@ class Organizer:
             )
 
         return rename_plan
+
+    @staticmethod
+    def _filename_byte_limit(folder_path: str) -> int:
+        try:
+            filesystem_limit = os.pathconf(folder_path, "PC_NAME_MAX")
+        except (OSError, ValueError):
+            filesystem_limit = MAX_PORTABLE_FILENAME_BYTES
+        if filesystem_limit <= 0:
+            filesystem_limit = MAX_PORTABLE_FILENAME_BYTES
+        return min(filesystem_limit, MAX_PORTABLE_FILENAME_BYTES)
+
+    @staticmethod
+    def _truncate_to_bytes(value: str, maximum: int) -> str:
+        if maximum < 1:
+            raise ValueError("Track filename has no room for its title")
+        encoded = os.fsencode(value)
+        if len(encoded) <= maximum:
+            return value
+        return encoded[:maximum].decode(errors="ignore")
 
     @staticmethod
     def _is_multi_disc(tracks: List[Track]) -> bool:

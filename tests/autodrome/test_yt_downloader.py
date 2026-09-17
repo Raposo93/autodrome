@@ -423,7 +423,8 @@ class TestYTDownloader(unittest.IsolatedAsyncioTestCase):
             )
 
         options = youtube_dl.call_args.args[0]
-        self.assertTrue(options["outtmpl"].endswith("03 - %(title)s.%(ext)s"))
+        self.assertTrue(options["outtmpl"].endswith("03.%(ext)s"))
+        self.assertNotIn("%(title)", options["outtmpl"])
         self.assertTrue(options["noplaylist"])
         downloader.download.assert_called_once_with(["https://youtube.test/first"])
 

@@ -136,6 +136,42 @@ def test_tag_and_rename_removes_trailing_dots_from_track_names(monkeypatch):
         assert os.listdir(tmpdir) == ["01 - Closing Song.mp3"]
 
 
+def test_tag_and_rename_replaces_empty_sanitized_title(tmp_path, monkeypatch):
+    create_dummy_mp3(str(tmp_path), "01 - Audio.mp3")
+    organizer = Organizer()
+    monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
+
+    organizer.tag_and_rename(
+        str(tmp_path),
+        "Artist",
+        "Album",
+        [Track(1, "...")],
+    )
+
+    assert os.listdir(tmp_path) == ["01 - Untitled.mp3"]
+
+
+def test_tag_and_rename_bounds_multibyte_filename(tmp_path, monkeypatch):
+    create_dummy_mp3(str(tmp_path), "01 - Audio.mp3")
+    organizer = Organizer()
+    monkeypatch.setattr(organizer.tagger, "tag_files", mock.MagicMock())
+    title = "🚗" * 100
+
+    organizer.tag_and_rename(
+        str(tmp_path),
+        "Artist",
+        "Album",
+        [Track(1, title)],
+    )
+
+    [published_name] = os.listdir(tmp_path)
+    name_limit = min(os.pathconf(tmp_path, "PC_NAME_MAX"), 255)
+    assert published_name.startswith("01 - 🚗")
+    assert published_name.endswith(".mp3")
+    assert published_name != f"01 - {title}.mp3"
+    assert len(os.fsencode(published_name)) <= name_limit
+
+
 def test_adversarial_titles_remain_distinct_after_sanitization(tmp_path, monkeypatch):
     fixture = playlist_from_hell()
     entries_by_id = {
@@ -474,6 +510,23 @@ def test_destination_preflight_detects_legacy_trailing_dot_album(
     assert result["mp3_count"] == 1
 
 
+def test_destination_preflight_detects_legacy_trailing_dot_artist(
+    tmp_path,
+    monkeypatch,
+):
+    legacy_album = tmp_path / "Artist." / "Album"
+    legacy_album.mkdir(parents=True)
+    (legacy_album / "existing.mp3").write_bytes(b"audio")
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(tmp_path))
+
+    result = Organizer().inspect_album_destination("Artist.", "Album")
+
+    assert result["state"] == "exists"
+    assert result["exists"] is True
+    assert result["relative_path"] == "Artist/Album"
+    assert result["mp3_count"] == 1
+
+
 def test_create_staging_folder_rejects_legacy_trailing_dot_album(
     tmp_path,
     monkeypatch,
@@ -490,6 +543,24 @@ def test_create_staging_folder_rejects_legacy_trailing_dot_album(
 
     with pytest.raises(FileExistsError, match="Album already exists"):
         with Organizer().create_staging_folder("Artist", "Melody A.M."):
+            pass
+
+
+def test_create_staging_folder_rejects_legacy_trailing_dot_artist(
+    tmp_path,
+    monkeypatch,
+):
+    library = tmp_path / "library"
+    staging = tmp_path / "staging"
+    (library / "Artist." / "Album").mkdir(parents=True)
+    monkeypatch.setattr("autodrome.services.organizer.conf.library_path", str(library))
+    monkeypatch.setattr("autodrome.services.organizer.conf.staging_path", str(staging))
+    monkeypatch.setattr(
+        "autodrome.services.organizer.conf.minimum_staging_free_bytes", 0
+    )
+
+    with pytest.raises(FileExistsError, match="Album already exists"):
+        with Organizer().create_staging_folder("Artist.", "Album"):
             pass
 
 

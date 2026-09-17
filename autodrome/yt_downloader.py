@@ -345,7 +345,10 @@ class YTDownloader:
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'outtmpl': str(dest / f'{index:02d} - %(title)s.%(ext)s'),
+            # The provider title is metadata, not file identity. Keeping it out of
+            # the temporary name avoids platform-dependent filename overflows;
+            # Organizer applies the reviewed metadata to the final bounded name.
+            'outtmpl': str(dest / f'{index:02d}.%(ext)s'),
             'progress_hooks': [hook],
             'quiet': True,
             'ignoreerrors': False,
