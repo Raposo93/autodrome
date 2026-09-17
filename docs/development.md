@@ -37,7 +37,7 @@ Para construir el artefacto instalable:
 ```bash
 npm run build --prefix frontend
 .venv/bin/python -m build
-.venv/bin/python scripts/smoke_wheel.py dist/autodrome-0.2.0.dev0-py3-none-any.whl
+.venv/bin/python scripts/smoke_wheel.py dist/autodrome-0.2.0-py3-none-any.whl
 ```
 
 Sustituye el nombre del wheel por el generado a partir de `pyproject.toml`.

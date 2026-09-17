@@ -7,8 +7,8 @@ elegir su edición en MusicBrainz y descargar el audio como MP3 con metadatos y
 portada. Revisas la selección en el navegador; Autodrome prepara y valida los
 archivos antes de incorporarlos a la biblioteca.
 
-> La rama actual prepara la versión **0.2**. Para instalar una versión publicada,
-> consulta las [releases](https://github.com/raposo93/autodrome/releases).
+> **Autodrome 0.2.0**: consulta las [notas de versión](docs/v0.2.0-release-notes.md)
+> y los artefactos en [GitHub Releases](https://github.com/raposo93/autodrome/releases).
 
 ## Qué puedes hacer
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autodrome"
-version = "0.2.0.dev0"
+version = "0.2.0"
 description = "Self-hosted album downloader and music library organizer"
 readme = "README.md"
 requires-python = ">=3.14"
