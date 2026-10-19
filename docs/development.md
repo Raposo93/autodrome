@@ -131,3 +131,9 @@ En la misma revisión, `pip-audit` también informó tres avisos existentes en
 indicada en `3.14.4`. Tras actualizar únicamente `multidict` a `6.9.1`, su aviso
 desaparece; el job Python sigue fallando por esos avisos de `aiohttp`, pendientes
 de una actualización separada.
+
+La [ejecución manual en GitHub Actions](https://github.com/Raposo93/autodrome/actions/runs/39327293393)
+del commit `c7afa45` verificó ambos jobs independientes: cada auditoría se
+ejecutó y falló por los avisos anteriores, sin reportar `multidict`.
+La [CI del mismo commit](https://github.com/Raposo93/autodrome/actions/runs/39326746894)
+pasó, al igual que `./check.sh` en local.
