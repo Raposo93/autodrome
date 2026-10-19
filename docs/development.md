@@ -119,8 +119,9 @@ requieren una actualización separada de `frontend/package-lock.json`:
 | `@vue/server-renderer@3.5.17` (también afecta al resultado de `vue`) | [GHSA-g2v6-rqmx-r4w6](https://github.com/advisories/GHSA-g2v6-rqmx-r4w6) | Alta | `3.5.42` |
 | `source-map-js@1.2.1` | [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) | Alta | `1.2.2` |
 
-`npm audit --package-lock-only --audit-level=high --prefix frontend` informa
-tres paquetes afectados (dos avisos) y devuelve un código distinto de cero.
+`npm audit --package-lock-only --audit-level=high --prefix frontend` informó
+tres paquetes afectados (dos avisos) en el lock anterior a la #73 y devolvía un
+código distinto de cero.
 La corrección de `multidict` no modifica estas dependencias ni oculta esos
 fallos.
 
@@ -129,11 +130,20 @@ En la misma revisión, `pip-audit` también informó tres avisos existentes en
 [GHSA-2g87-pp6c-29x5](https://github.com/advisories/GHSA-2g87-pp6c-29x5) y
 [CVE-2026-111063](https://osv.dev/vulnerability/CVE-2026-111063), con corrección
 indicada en `3.14.4`. Tras actualizar únicamente `multidict` a `6.9.1`, su aviso
-desaparece; el job Python sigue fallando por esos avisos de `aiohttp`, pendientes
-de una actualización separada.
+desapareció; el job Python seguía fallando por esos avisos de `aiohttp`.
 
 La [ejecución manual en GitHub Actions](https://github.com/Raposo93/autodrome/actions/runs/39327293393)
 del commit `c7afa45` verificó ambos jobs independientes: cada auditoría se
 ejecutó y falló por los avisos anteriores, sin reportar `multidict`.
 La [CI del mismo commit](https://github.com/Raposo93/autodrome/actions/runs/39326746894)
 pasó, al igual que `./check.sh` en local.
+
+La #73 actualiza `aiohttp` a `3.14.4` y `yarl` a `1.25.1` (el mínimo requerido
+por esa versión de `aiohttp`), conservando los demás pins Python. En frontend,
+`npm audit fix --prefix frontend`, sin `--force`, actualiza Vue y sus paquetes
+asociados a `3.5.44`, `source-map-js` a `1.2.2` y las dependencias requeridas por
+Vue dentro de los rangos compatibles. `frontend/package.json` conserva sus
+rangos. Tras estas actualizaciones, `pip-audit` y
+`npm audit --package-lock-only --audit-level=high --prefix frontend` pasan sin
+avisos. Los dos jobs de auditoría mantienen su independencia y sus códigos de
+error.

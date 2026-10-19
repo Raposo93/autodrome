@@ -8,7 +8,7 @@ agent-detector==2.0.0
     # via fastapi-cloud-cli
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.3
+aiohttp==3.14.4
     # via -r requirements.txt
 aiosignal==1.4.0
     # via aiohttp
@@ -262,7 +262,7 @@ websockets==17.1
     #   yt-dlp
 wheel==0.48.0
     # via pip-tools
-yarl==1.24.5
+yarl==1.25.1
     # via aiohttp
 yt-dlp==2026.8.19
     # via -r requirements.txt
