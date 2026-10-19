@@ -147,3 +147,9 @@ rangos. Tras estas actualizaciones, `pip-audit` y
 `npm audit --package-lock-only --audit-level=high --prefix frontend` pasan sin
 avisos. Los dos jobs de auditoría mantienen su independencia y sus códigos de
 error.
+
+La [auditoría manual del commit `0c64692`](https://github.com/Raposo93/autodrome/actions/runs/39328467255)
+confirmó ambos jobs en verde, sin excepciones ni avisos ignorados.
+La [CI del mismo commit](https://github.com/Raposo93/autodrome/actions/runs/39328380425)
+pasó backend, frontend y construcción/smoke del contenedor; `./check.sh` también
+pasó completo en local.
