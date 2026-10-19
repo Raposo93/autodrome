@@ -105,3 +105,29 @@ Para actualizar dependencias frontend de forma intencionada, ejecuta
 `npm install --prefix frontend` y revisa `frontend/package-lock.json`. CI repite
 las pruebas y builds; la auditoría de dependencias informa vulnerabilidades sin
 aplicar actualizaciones automáticas.
+
+El workflow `Dependency audit` ejecuta `python-audit` y `frontend-audit` como
+jobs independientes: un fallo en uno no impide ejecutar el otro y las
+vulnerabilidades siguen produciendo checks fallidos. Se puede ejecutar
+manualmente desde GitHub Actions, además de la ejecución semanal.
+
+La revisión de la issue #72 (2026-10-19) detectó avisos frontend existentes que
+requieren una actualización separada de `frontend/package-lock.json`:
+
+| Paquete fijado | Aviso | Severidad | Versión corregida |
+| --- | --- | --- | --- |
+| `@vue/server-renderer@3.5.17` (también afecta al resultado de `vue`) | [GHSA-g2v6-rqmx-r4w6](https://github.com/advisories/GHSA-g2v6-rqmx-r4w6) | Alta | `3.5.42` |
+| `source-map-js@1.2.1` | [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) | Alta | `1.2.2` |
+
+`npm audit --package-lock-only --audit-level=high --prefix frontend` informa
+tres paquetes afectados (dos avisos) y devuelve un código distinto de cero.
+La corrección de `multidict` no modifica estas dependencias ni oculta esos
+fallos.
+
+En la misma revisión, `pip-audit` también informó tres avisos existentes en
+`aiohttp@3.14.3`: [CVE-2026-111064](https://osv.dev/vulnerability/CVE-2026-111064),
+[GHSA-2g87-pp6c-29x5](https://github.com/advisories/GHSA-2g87-pp6c-29x5) y
+[CVE-2026-111063](https://osv.dev/vulnerability/CVE-2026-111063), con corrección
+indicada en `3.14.4`. Tras actualizar únicamente `multidict` a `6.9.1`, su aviso
+desaparece; el job Python sigue fallando por esos avisos de `aiohttp`, pendientes
+de una actualización separada.
